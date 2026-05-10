@@ -1,0 +1,92 @@
+{
+  "name": "ripast",
+  "type": "module",
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.12.4",
+  "description": "AST-aware rename, move, find-usages, and tailwind/CSS class migration across TypeScript, JavaScript, and Vue SFCs (including <template>).",
+  "author": {
+    "name": "Harlan Wilton",
+    "email": "harlan@harlanzw.com",
+    "url": "https://harlanzw.com/"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/harlan-zw/ripast#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harlan-zw/ripast.git"
+  },
+  "bugs": {
+    "url": "https://github.com/harlan-zw/ripast/issues"
+  },
+  "keywords": [
+    "ast",
+    "refactor",
+    "rename",
+    "codemod",
+    "ts-morph",
+    "vue",
+    "volar",
+    "tailwind",
+    "ripgrep"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    },
+    "./cli": "./dist/cli.mjs"
+  },
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "ripast": "./bin/ripast.mjs"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "obuild",
+    "bench": "tsx bench/bench.ts",
+    "dev:prepare": "obuild --stub",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "release": "pnpm build && bumpp && pnpm publish"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.4"
+  },
+  "dependencies": {
+    "@volar/language-service": "^2.4.28",
+    "@volar/typescript": "^2.4.28",
+    "@vue/compiler-sfc": "^3.5.34",
+    "@vue/language-core": "^3.2.8",
+    "@vue/language-service": "^3.2.8",
+    "citty": "^0.2.2",
+    "diff": "^9.0.0",
+    "magic-string": "^0.30.21",
+    "oxc-parser": "^0.129.0",
+    "oxc-walker": "^1.0.0",
+    "std-env": "^4.1.0",
+    "ts-morph": "^28.0.0",
+    "volar-service-typescript": "^0.0.70",
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "vscode-uri": "^3.1.0"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "bumpp": "^9.0.0",
+    "eslint": "^9.0.0",
+    "obuild": "^0.2.0",
+    "tsx": "^4.20.6",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}
