@@ -1,12 +1,10 @@
-import type { FileChange } from './util.ts'
-import type { Regression } from './verify.ts'
+import type { FileChange, Regression } from '@ripast/core/adapter'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { posToLineCol, rewriteTemplateReferences } from '@ripast/core/adapter'
 import { URI } from 'vscode-uri'
-import { posToLineCol } from './util.ts'
-import { rewriteTemplateReferences } from './vue-template.ts'
-import { createVueService, workspaceEditToChanges } from './vue.ts'
+import { createVueService, workspaceEditToChanges } from './service.ts'
 
 export function hasVueFiles(cwd: string): boolean {
   const r = spawnSync('rg', ['--files', '--hidden', '--no-messages', '-g', '*.vue', '.'], { cwd, encoding: 'utf8' })

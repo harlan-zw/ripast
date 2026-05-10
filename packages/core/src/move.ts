@@ -4,14 +4,15 @@ import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { Project, SyntaxKind } from 'ts-morph'
+import { loadAdapter } from './adapters/resolve.ts'
 import { timed, timedAsync } from './profile.ts'
 import { resolveVerifyMode } from './project.ts'
+import { scan } from './scan.ts'
 import { rgFiles } from './util.ts'
 import { findRegressions, snapshotDiagnostics } from './verify.ts'
-import { applyVueImportRewrite, hasVueFilesContaining, vueRegressions } from './vue-bridge.ts'
 
 export interface MoveOptions {
   cwd?: string
@@ -142,22 +143,117 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   })
 
   const fromBasename = fromPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
-  if (vueEnabled && tsconfigPath && fromBasename && timed(profile, 'vue prefilter', () => hasVueFilesContaining(cwd, fromBasename))) {
-    const vueChanges = await timedAsync(profile, 'vue import rewrite', () => applyVueImportRewrite(tsconfigPath, cwd, fromAbs, toAbs))
+  const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
+  if (vueAdapter && tsconfigPath && fromBasename && timed(profile, 'vue prefilter', () => vueAdapter.hasFilesContaining(cwd, fromBasename))) {
+    const vueChanges = await timedAsync(profile, 'vue import rewrite', () => vueAdapter.applyImportRewrite(tsconfigPath, cwd, fromAbs, toAbs))
     for (const vc of vueChanges) {
       if (!changes.some(c => c.path === vc.path))
         changes.push(vc)
     }
   }
 
+  if (vueAdapter?.autoImportScopes) {
+    const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
+    if (isInsideAnyScope(fromAbs, scopes) && !isInsideAnyScope(toAbs, scopes)) {
+      const autoImportChanges = timed(profile, 'nuxt auto-import consumers', () => addNuxtExplicitImports(cwd, symbol, toAbs, changes, fromAbs))
+      for (const change of autoImportChanges) {
+        const existing = changes.find(c => c.path === change.path)
+        if (existing)
+          existing.after = change.after
+        else
+          changes.push(change)
+      }
+    }
+    if (scopes.size)
+      removeGeneratedNuxtChanges(cwd, changes)
+  }
+
   const regressions = baseline ? timed(profile, 'verify regressions', () => findRegressions(baseline, project, verifyFiles)) : []
 
-  if (vueEnabled && verifyMode !== 'none' && tsconfigPath && changes.some(c => c.path.endsWith('.vue'))) {
-    const vueRegs = await vueRegressions(tsconfigPath, cwd, changes)
+  if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => c.path.endsWith('.vue'))) {
+    const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes)
     regressions.push(...vueRegs)
   }
 
   return { changes, scanned: projectMode === 'full' ? project.getSourceFiles().length : candidateFiles.length, regressions }
+}
+
+function addNuxtExplicitImports(cwd: string, symbol: string, toAbs: string, changes: FileChange[], fromAbs: string): FileChange[] {
+  const byPath = new Map(changes.map(change => [change.path, change]))
+  const hits = scan(symbol, { cwd, kinds: ['identifier-reference'] })
+  const consumerPaths = new Set(hits.map(hit => resolve(cwd, hit.file)))
+  const out: FileChange[] = []
+  for (const filePath of consumerPaths) {
+    if (isGeneratedNuxtPath(cwd, filePath))
+      continue
+    if (filePath === fromAbs || filePath === toAbs)
+      continue
+    const current = byPath.get(filePath)?.after ?? readFileSync(filePath, 'utf8')
+    if (hasNamedImport(current, symbol))
+      continue
+    const specifier = computeSpecifier(filePath, toAbs, './placeholder')
+    const after = filePath.endsWith('.vue')
+      ? insertVueScriptImport(current, symbol, specifier, toAbs)
+      : insertTopLevelImport(current, symbol, specifier)
+    if (after !== current) {
+      out.push({
+        path: filePath,
+        rel: relative(cwd, filePath),
+        before: byPath.get(filePath)?.before ?? readFileSync(filePath, 'utf8'),
+        after,
+      })
+    }
+  }
+  return out
+}
+
+function removeGeneratedNuxtChanges(cwd: string, changes: FileChange[]): void {
+  for (let i = changes.length - 1; i >= 0; i--) {
+    if (isGeneratedNuxtPath(cwd, changes[i].path))
+      changes.splice(i, 1)
+  }
+}
+
+function isGeneratedNuxtPath(cwd: string, filePath: string): boolean {
+  const rel = relative(cwd, filePath).replace(/\\/g, '/')
+  return rel === '.nuxt' || rel.startsWith('.nuxt/')
+}
+
+function insertVueScriptImport(source: string, symbol: string, specifier: string, toAbs: string): string {
+  const match = source.match(/<script(?:\s[^>]*)?>/)
+  if (!match || match.index === undefined) {
+    throw new Error(
+      `ripast move: "${symbol}" is auto-imported in Nuxt; moving to ${toAbs}`
+      + ` removes it from auto-import scope. Either keep it in`
+      + ` composables/utils/components, or add explicit imports first.`,
+    )
+  }
+  const insertAt = match.index + match[0].length
+  const rest = source[insertAt] === '\n' ? source.slice(insertAt + 1) : source.slice(insertAt)
+  return `${source.slice(0, insertAt)}\nimport { ${symbol} } from '${specifier}'\n${rest}`
+}
+
+function insertTopLevelImport(source: string, symbol: string, specifier: string): string {
+  const importLine = `import { ${symbol} } from '${specifier}'\n`
+  if (source.startsWith('#!')) {
+    const nl = source.indexOf('\n')
+    if (nl >= 0)
+      return `${source.slice(0, nl + 1)}${importLine}${source.slice(nl + 1)}`
+  }
+  return `${importLine}${source}`
+}
+
+function hasNamedImport(source: string, symbol: string): boolean {
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`\\bimport\\s*\\{[^}]*\\b${escaped}\\b[^}]*\\}\\s*from\\s*['"]`).test(source)
+}
+
+function isInsideAnyScope(filePath: string, scopes: Set<string>): boolean {
+  for (const scope of scopes) {
+    if (filePath === scope || filePath.startsWith(`${scope}${sep}`))
+      return true
+  }
+  return false
 }
 
 function findNamedExport(sf: SourceFile, symbol: string): Node | null {

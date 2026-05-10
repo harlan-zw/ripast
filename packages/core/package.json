@@ -1,0 +1,68 @@
+{
+  "name": "@ripast/core",
+  "type": "module",
+  "version": "0.0.0",
+  "description": "AST refactor engine for AI coding agents. Deterministic rename, move, find-usages, and tailwind/CSS class migration across TypeScript. Framework adapters loaded via @ripast/<framework> packages.",
+  "author": {
+    "name": "Harlan Wilton",
+    "email": "harlan@harlanzw.com",
+    "url": "https://harlanzw.com/"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/harlan-zw/ripast#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harlan-zw/ripast.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/harlan-zw/ripast/issues"
+  },
+  "keywords": [
+    "ast",
+    "refactor",
+    "rename",
+    "codemod",
+    "ts-morph",
+    "typescript",
+    "tailwind",
+    "ripgrep",
+    "ai-agent",
+    "claude-code",
+    "cursor"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
+    },
+    "./adapter": {
+      "types": "./dist/adapter.d.ts",
+      "import": "./dist/adapter.mjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "obuild",
+    "dev:prepare": "obuild --stub"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.4"
+  },
+  "dependencies": {
+    "@vue/compiler-sfc": "^3.5.34",
+    "diff": "^9.0.0",
+    "magic-string": "^0.30.21",
+    "oxc-parser": "^0.129.0",
+    "oxc-walker": "^1.0.0",
+    "std-env": "^4.1.0",
+    "ts-morph": "^28.0.0"
+  }
+}

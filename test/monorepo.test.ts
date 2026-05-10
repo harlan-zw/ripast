@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { it } from 'vitest'
-import { runMove } from '../src/move.ts'
-import { runRename } from '../src/rename.ts'
-import { writeChanges } from '../src/util.ts'
+import { runMove } from '../packages/core/src/move.ts'
+import { runRename } from '../packages/core/src/rename.ts'
+import { writeChanges } from '../packages/core/src/util.ts'
 
 function makeMonorepo(): { dir: string, read: (rel: string) => string, cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'ripast-monorepo-'))

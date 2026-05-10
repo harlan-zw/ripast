@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { runRename } from '../src/rename.ts'
-import { writeChanges } from '../src/util.ts'
+import { runRename } from '../packages/core/src/rename.ts'
+import { writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
 
 it('rename throws on ambiguity across multiple files', async () => {

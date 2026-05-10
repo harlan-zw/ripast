@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, w
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'vitest'
-import { runRenameFile } from '../src/rename-file.ts'
-import { writeChanges } from '../src/util.ts'
+import { runRenameFile } from '../packages/core/src/rename-file.ts'
+import { writeChanges } from '../packages/core/src/util.ts'
 
 const VUE_TSCONFIG = JSON.stringify({
   compilerOptions: {

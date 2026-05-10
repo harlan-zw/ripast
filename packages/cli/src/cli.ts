@@ -1,19 +1,31 @@
-import type { VerifyMode } from './project.ts'
-import type { ExportFilter } from './scan.ts'
+import type { ExportFilter, VerifyMode } from '@ripast/core'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
+import {
+  buildDeclarationTree,
+  buildScanGraph,
+  formatAgentDeclarationTree,
+  formatAgentHits,
+  formatAgentScanHits,
+  formatDeclarationTree,
+  formatHits,
+  formatRegressions,
+  formatScanGraph,
+  formatScanHits,
+  printDiffs,
+  resolveVerifyMode,
+  runCssClassRename,
+  runCssClassScan,
+  runMove,
+  runRename,
+  runRenameFile,
+  scan,
+  summarize,
+  writeChanges,
+} from '@ripast/core'
 import { defineCommand, runMain } from 'citty'
 import { agent, isAgent } from 'std-env'
-import { runCssClassRename } from './css-class-rename.ts'
-import { formatAgentScanHits, formatScanHits, runCssClassScan } from './css-class-scan.ts'
-import { runMove } from './move.ts'
-import { resolveVerifyMode } from './project.ts'
-import { runRenameFile } from './rename-file.ts'
-import { runRename } from './rename.ts'
-import { buildDeclarationTree, buildScanGraph, formatAgentDeclarationTree, formatAgentHits, formatDeclarationTree, formatHits, formatScanGraph, scan } from './scan.ts'
-import { printDiffs, summarize, writeChanges } from './util.ts'
-import { formatRegressions } from './verify.ts'
 
 const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
 const applyArg = { type: 'boolean' as const, default: false, description: 'Write changes. Default prints a unified diff.' }

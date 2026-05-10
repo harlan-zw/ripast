@@ -23,17 +23,23 @@ When in doubt, start with `scan` — it's cheap, and its output tells you which 
 
 ## Invocation
 
-`ripast` is published on npm. Run via `npx`:
+`ripast` ships as `@ripast/cli` on npm. Run via `npx`:
 
 ```bash
-npx ripast <command> ...
+npx -y @ripast/cli <command> ...
 ```
 
 Or install once and call directly:
 
 ```bash
-npm i -g ripast
+npm i -g @ripast/cli
 ripast <command> ...
+```
+
+The CLI auto-installs the matching framework adapter (e.g. `@ripast/vue` for Vue/Nuxt projects) on first run. To pre-bundle and skip the re-exec, pass adapters with `-p`:
+
+```bash
+npx -y -p @ripast/cli -p @ripast/vue ripast rename useStore useAppStore --apply
 ```
 
 Requires `rg` (ripgrep) on PATH and Node 20.11+.

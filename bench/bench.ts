@@ -1,6 +1,6 @@
-import type { ProfileEvent, ProfileSink } from '../src/index.ts'
+import type { ProfileEvent, ProfileSink } from '@ripast/core'
 import { performance } from 'node:perf_hooks'
-import { buildDeclarationTree, buildScanGraph, runMove, runRename, scan } from '../src/index.ts'
+import { buildDeclarationTree, buildScanGraph, runMove, runRename, scan } from '@ripast/core'
 import { makeBenchFixture } from './fixture.ts'
 
 interface BenchCase {

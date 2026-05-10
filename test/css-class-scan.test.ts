@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { runCssClassScan } from '../src/css-class-scan.ts'
+import { runCssClassScan } from '../packages/core/src/css-class-scan.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('runCssClassScan', () => {

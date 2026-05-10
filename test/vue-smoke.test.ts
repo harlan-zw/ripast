@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { it } from 'vitest'
 import { URI } from 'vscode-uri'
-import { createVueService, workspaceEditToChanges } from '../src/vue.ts'
+import { createVueService, workspaceEditToChanges } from '../packages/vue/src/service.ts'
 import { makeFixture } from './helpers.ts'
 
 it('volar service can rename a symbol used in a vue file', async () => {

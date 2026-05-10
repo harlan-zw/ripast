@@ -41,7 +41,7 @@ Surgical text edits are slow and miss things: shadowed identifiers, type-only im
 | React (JSX / TSX) | ✅ Full | JSX component refs, hooks, type props all rename together. |
 | Solid (JSX / TSX) | ✅ Full | Same JSX engine path as React. |
 | Vue 3 SFC | ✅ Full | `<script setup>` + `<template>` (interpolations, `v-if`, `v-for`, `:prop`) + component tag PascalCase ↔ kebab-case. |
-| Nuxt | ✅ Full | Vue SFCs, auto-imports, `pages/` and `components/` rename + file move. |
+| Nuxt | ✅ Full | Vue SFCs plus auto-imported `composables/`, `utils/`, and `components/`. Moving a symbol out of Nuxt auto-import scope inserts explicit imports in consumers, or refuses when a Vue file has no script block to receive one. |
 | Svelte | 🚧 Roadmap | Script-block rename works via ts-morph; markup rewrites need `svelte/compiler` integration. |
 
 ### Why not just...
@@ -85,6 +85,20 @@ ripast rename useStore useAppStore --apply
 # Ambiguous declarations? Pick one or rename all
 ripast rename useStore useAppStore --scope src/store.ts --apply
 ripast rename useStore useAppStore --all --apply
+```
+</details>
+
+<details>
+<summary><b>🏔️ Refactor Nuxt auto-imports</b></summary>
+
+Nuxt-generated `.nuxt/*.d.ts` files let `ripast` treat auto-imported composables, utils, components, and pages like normal TypeScript symbols.
+
+```bash
+# A composable used in pages with no explicit import
+ripast rename useCounter useTally --tsconfig .nuxt/tsconfig.json --apply
+
+# Moving out of utils/composables/components adds explicit imports to consumers
+ripast move format --from utils/format.ts --to lib/format.ts --apply
 ```
 </details>
 
@@ -156,9 +170,21 @@ ripast rename useStore useAppStore --apply --json
 ## Installation
 
 ```bash
-npm i -g ripast
+npm i -g @ripast/cli
 # or one-shot
-npx ripast scan useStore
+npx -y @ripast/cli scan useStore
+```
+
+The CLI auto-installs framework adapters when it detects them in your project (`@ripast/vue` for Vue/Nuxt). To pre-bundle them and skip the re-exec:
+
+```bash
+npx -y -p @ripast/cli -p @ripast/vue ripast rename useStore useAppStore --apply
+```
+
+Programmatic users install `@ripast/core` (and any adapters they need) directly:
+
+```bash
+npm i @ripast/core @ripast/vue
 ```
 
 > [!TIP]
@@ -213,7 +239,7 @@ ripast css-class-rename --map tokens.json --apply
 ## Programmatic API
 
 ```ts
-import { runRename, scan } from 'ripast'
+import { runRename, scan } from '@ripast/core'
 
 const hits = scan('useStore', { cwd: process.cwd() })
 

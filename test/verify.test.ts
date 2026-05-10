@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { runMove } from '../src/move.ts'
-import { runRename } from '../src/rename.ts'
-import { writeChanges } from '../src/util.ts'
+import { runMove } from '../packages/core/src/move.ts'
+import { runRename } from '../packages/core/src/rename.ts'
+import { writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
 
 it('rename reports zero regressions on clean transforms', async () => {

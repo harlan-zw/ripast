@@ -1,7 +1,7 @@
+import type { FileChange } from '@ripast/core/adapter'
 import type { LanguageService, LanguageServiceEnvironment, ProjectContext } from '@volar/language-service'
 import type { TypeScriptProjectHost } from '@volar/typescript'
 import type { WorkspaceEdit } from 'vscode-languageserver-protocol'
-import type { FileChange } from './util.ts'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { it } from 'vitest'
-import { writeChanges } from '../src/util.ts'
+import { writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
 
 it('writeChanges leaves no partial state when a write fails mid-batch', () => {

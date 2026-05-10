@@ -1,6 +1,6 @@
 export { rewriteClassString, rewriteToken, runCssClassRename } from './css-class-rename.ts'
 export type { CssClassRenameOptions, CssClassRenameResult, RenameMap } from './css-class-rename.ts'
-export { runCssClassScan } from './css-class-scan.ts'
+export { formatAgentScanHits, formatScanHits, runCssClassScan } from './css-class-scan.ts'
 export { runMove } from './move.ts'
 export type { MoveOptions, MoveResult } from './move.ts'
 export type { ProfileEvent, ProfileSink } from './profile.ts'
