@@ -78,7 +78,7 @@ function hasLocalScriptBinding(source: string, name: string): boolean {
   if (!script?.includes(name))
     return false
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const withoutImports = script.replace(/^\s*import\s+[^;\n]*(?:;)?$/gm, '')
+  const withoutImports = script.replace(/^\s*import [^;\n]*;?$/gm, '')
   return new RegExp(`\\b(?:const|let|var|function|class|interface|type|enum)\\s+${escaped}\\b`).test(withoutImports)
 }
 

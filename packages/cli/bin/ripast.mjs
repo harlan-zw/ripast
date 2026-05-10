@@ -45,7 +45,9 @@ function ensureAdapters(needed) {
   const require = createRequire(import.meta.url)
   const missing = []
   for (const name of needed) {
-    try { require.resolve(`@ripast/${name}`) }
+    try {
+      require.resolve(`@ripast/${name}`)
+    }
     catch { missing.push(`@ripast/${name}`) }
   }
   if (!missing.length)

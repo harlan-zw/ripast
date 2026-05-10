@@ -3,7 +3,7 @@ import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { loadAdapter } from './adapters/resolve.ts'
+import { loadAdapter } from './adapter.ts'
 import { rgFiles } from './util.ts'
 import { rewriteTemplateReferences } from './vue-template.ts'
 

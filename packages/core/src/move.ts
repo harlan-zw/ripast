@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { Project, SyntaxKind } from 'ts-morph'
-import { loadAdapter } from './adapters/resolve.ts'
+import { loadAdapter } from './adapter.ts'
 import { timed, timedAsync } from './profile.ts'
 import { resolveVerifyMode } from './project.ts'
 import { scan } from './scan.ts'
@@ -334,9 +334,16 @@ function countReferencesOutside(sf: SourceFile, symbol: string, decl: Node): num
 
 interface CollectedImport {
   moduleSpecifier: string
-  namedImports: { name: string, alias?: string }[]
+  namedImports: ImportName[]
   defaultImport?: string
   namespaceImport?: string
+  isTypeOnly?: boolean
+}
+
+interface ImportName {
+  name: string
+  alias?: string
+  isTypeOnly?: boolean
 }
 
 function collectUsedImports(decl: Node, fromSF: SourceFile, selfName: string): CollectedImport[] {
@@ -351,30 +358,31 @@ function collectUsedImports(decl: Node, fromSF: SourceFile, selfName: string): C
 
   const result: CollectedImport[] = []
   for (const imp of fromSF.getImportDeclarations()) {
-    const names: { name: string, alias?: string }[] = []
+    const names: ImportName[] = []
+    const importIsTypeOnly = imp.isTypeOnly()
     for (const ni of imp.getNamedImports()) {
       const local = ni.getAliasNode()?.getText() ?? ni.getName()
       if (referenced.has(local))
-        names.push({ name: ni.getName(), alias: ni.getAliasNode()?.getText() })
+        names.push({ name: ni.getName(), alias: ni.getAliasNode()?.getText(), isTypeOnly: importIsTypeOnly || ni.isTypeOnly() })
     }
     const defaultImport = imp.getDefaultImport()
     const defaultName = defaultImport && referenced.has(defaultImport.getText()) ? defaultImport.getText() : undefined
     const ns = imp.getNamespaceImport()
     const nsName = ns && referenced.has(ns.getText()) ? ns.getText() : undefined
     if (names.length || defaultName || nsName) {
-      result.push({ moduleSpecifier: imp.getModuleSpecifierValue(), namedImports: names, defaultImport: defaultName, namespaceImport: nsName })
+      result.push({ moduleSpecifier: imp.getModuleSpecifierValue(), namedImports: names, defaultImport: defaultName, namespaceImport: nsName, isTypeOnly: importIsTypeOnly })
     }
   }
   return result
 }
 
-function addOrMergeImport(sf: SourceFile, moduleSpecifier: string, spec: { namedImports: { name: string, alias?: string }[], defaultImport?: string, namespaceImport?: string }) {
-  const existing = sf.getImportDeclarations().find(i => i.getModuleSpecifierValue() === moduleSpecifier)
+function addOrMergeImport(sf: SourceFile, moduleSpecifier: string, spec: { namedImports: ImportName[], defaultImport?: string, namespaceImport?: string, isTypeOnly?: boolean }) {
+  const existing = sf.getImportDeclarations().find(i => i.getModuleSpecifierValue() === moduleSpecifier && i.isTypeOnly() === !!spec.isTypeOnly)
   if (existing) {
     const have = new Set(existing.getNamedImports().map(ni => ni.getName()))
     for (const ni of spec.namedImports) {
       if (!have.has(ni.name))
-        existing.addNamedImport({ name: ni.name, alias: ni.alias })
+        existing.addNamedImport({ name: ni.name, alias: ni.alias, isTypeOnly: !existing.isTypeOnly() && ni.isTypeOnly })
     }
     if (spec.defaultImport && !existing.getDefaultImport())
       existing.setDefaultImport(spec.defaultImport)
@@ -384,7 +392,8 @@ function addOrMergeImport(sf: SourceFile, moduleSpecifier: string, spec: { named
   }
   sf.addImportDeclaration({
     moduleSpecifier,
-    namedImports: spec.namedImports,
+    isTypeOnly: spec.isTypeOnly,
+    namedImports: spec.namedImports.map(ni => ({ name: ni.name, alias: ni.alias, isTypeOnly: !spec.isTypeOnly && ni.isTypeOnly })),
     defaultImport: spec.defaultImport,
     namespaceImport: spec.namespaceImport,
   })
@@ -429,6 +438,7 @@ function rewriteImportSites(sf: SourceFile, fromAbs: string, toAbs: string, symb
     if (!match && def?.getText() !== symbol)
       continue
     const alias = match?.getAliasNode()?.getText()
+    const isTypeOnly = imp.isTypeOnly() || !!match?.isTypeOnly()
     const oldSpec = imp.getModuleSpecifierValue()
     const newSpec = computeSpecifier(sf.getFilePath(), toAbs, oldSpec)
     const existing = sf.getImportDeclarations().find(i => i.getModuleSpecifierValue() === newSpec && i !== imp)
@@ -441,10 +451,10 @@ function rewriteImportSites(sf: SourceFile, fromAbs: string, toAbs: string, symb
     if (!match && def?.getText() === symbol)
       imp.removeDefaultImport()
     if (existing) {
-      existing.addNamedImport({ name: symbol, alias })
+      existing.addNamedImport({ name: symbol, alias, isTypeOnly: !existing.isTypeOnly() && isTypeOnly })
     }
     else {
-      sf.addImportDeclaration({ moduleSpecifier: newSpec, namedImports: [{ name: symbol, alias }] })
+      sf.addImportDeclaration({ moduleSpecifier: newSpec, isTypeOnly, namedImports: [{ name: symbol, alias }] })
     }
     if (imp.getNamedImports().length === 0 && !imp.getDefaultImport() && !imp.getNamespaceImport())
       imp.remove()

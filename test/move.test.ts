@@ -159,6 +159,20 @@ it('move handles type-only sole named imports', async () => {
   finally { fx.cleanup() }
 })
 
+it('move copies type-only imports as type-only imports', async () => {
+  const fx = makeFixture({
+    'types.ts': 'export interface Base { value: number }\n',
+    'a.ts': 'import type { Base } from \'./types.ts\'\nexport interface MyType extends Base { label: string }\n',
+    'c.ts': '',
+  })
+  try {
+    writeChanges((await runMove('MyType', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    assert.match(fx.read('c.ts'), /import (?:type \{ Base \}|\{ type Base \}) from ['"]\.\/types\.ts['"]/)
+    assert.doesNotMatch(fx.read('c.ts'), /import \{ Base \}/)
+  }
+  finally { fx.cleanup() }
+})
+
 it('move handles multiline named imports via fallback path', async () => {
   const fx = makeFixture({
     'a.ts': 'export function helper() { return 1 }\nexport function other() { return 2 }\n',
