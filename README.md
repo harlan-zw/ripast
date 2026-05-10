@@ -20,12 +20,10 @@
 
 - 🤖 **Built for agents**: Compact summaries, `--json` output, `--profile agent` auto-detect via `std-env`. Stop burning tokens reading 50 files to rename one symbol.
 - 🧠 **Semantic, not textual**: ts-morph drives renames so shadowed identifiers, type-only imports, JSX/TSX refs, re-exports, and aliased imports all resolve correctly. No more partial renames.
-- 🎯 **Framework-aware**: First-class TypeScript, JavaScript, React (JSX/TSX), Solid (JSX/TSX), Vue (`<script>` + `<template>`), and Nuxt. Svelte on the roadmap.
-- 🟢 **Vue / Nuxt SFCs**: Volar bridge propagates rename + move into `<script>` blocks; a template-AST post-pass rewrites `<MyButton>` / `<my-button>` tag usage and `v-if` / `:prop` expressions.
+- 🎯 **JS Frameworks**: First-class TypeScript / JavaScript, React + Solid (JSX/TSX), and Vue + Nuxt SFCs. Volar bridge propagates renames into `<script>` blocks; template-AST post-pass rewrites `<MyButton>` / `<my-button>` tags and `v-if` / `:prop` expressions. Svelte on the roadmap.
 - 🛡️ **Dry-run by default**: Every mutating command prints a unified diff with a `N files, +A -R lines` header. Pass `--apply` to write.
 - ✅ **--verify catches regressions**: Post-transform typecheck refuses `--apply` if new diagnostics appear. Scoped to touched files for speed.
 - ⚡ **ripgrep-prefiltered**: Only files containing the token are loaded into ts-morph. Median `move` on a 500-file fixture runs in ~37ms.
-- 🎨 **Tailwind / CSS class migration**: `css-class-rename` rewrites utility tokens repo-wide; preserves variants (`hover:`), `!` markers, and arbitrary values (`bg-[url(a:b)]`).
 
 ## What is ripast?
 
