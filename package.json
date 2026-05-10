@@ -2,7 +2,7 @@
   "name": "ripast",
   "type": "module",
   "version": "0.0.0",
-  "packageManager": "pnpm@10.12.4",
+  "packageManager": "pnpm@11.0.9",
   "description": "AST-aware rename, move, find-usages, and tailwind/CSS class migration across TypeScript, JavaScript, and Vue SFCs (including <template>).",
   "author": {
     "name": "Harlan Wilton",
@@ -86,7 +86,7 @@
     "bumpp": "^11.1.0",
     "eslint": "^10.3.0",
     "obuild": "^0.4.35",
-    "tsx": "^4.20.6",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   }
