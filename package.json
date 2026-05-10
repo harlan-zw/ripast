@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.0",
   "packageManager": "pnpm@11.0.9",
-  "description": "AST-aware rename, move, find-usages, and tailwind/CSS class migration across TypeScript, JavaScript, and Vue SFCs (including <template>).",
+  "description": "AST refactor toolkit for AI coding agents. Deterministic rename, move, find-usages, and tailwind/CSS class migration across TypeScript and frontend frameworks (React, Solid, Vue, Nuxt). Type-checked, dry-run by default.",
   "author": {
     "name": "Harlan Wilton",
     "email": "harlan@harlanzw.com",
@@ -24,10 +24,19 @@
     "rename",
     "codemod",
     "ts-morph",
+    "typescript",
+    "react",
+    "solid",
     "vue",
+    "nuxt",
     "volar",
+    "jsx",
+    "tsx",
     "tailwind",
-    "ripgrep"
+    "ripgrep",
+    "ai-agent",
+    "claude-code",
+    "cursor"
   ],
   "exports": {
     ".": {
