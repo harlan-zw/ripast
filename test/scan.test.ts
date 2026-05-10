@@ -202,6 +202,48 @@ it('formatAgentDeclarationTree emits compact exported and local summaries', () =
   finally { fx.cleanup() }
 })
 
+it('buildDeclarationTree includes function signatures for declarations and function-valued consts', () => {
+  const fx = makeFixture({
+    'src/a.ts': [
+      'export async function useFoo<T>(id: string, opts?: UseFooOptions): Promise<T> { return null as T }',
+      'export const useBar = (n: number, label = \'x\'): string => label',
+      'const internal = function(event: H3Event) { return event }',
+      'export { internal }',
+      '',
+    ].join('\n'),
+  }, false)
+  try {
+    const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    assert.deepEqual(
+      tree.files.flatMap(f => f.declarations.map(d => d.signature)),
+      [
+        'useFoo<T>(id: string, opts?: UseFooOptions): Promise<T>',
+        'useBar(n: number, label = \'x\'): string',
+        'internal(event: H3Event)',
+      ],
+    )
+
+    const agent = formatAgentDeclarationTree(tree, 'exported')
+    assert.match(agent, /exports: function useFoo<T>\(id: string, opts\?: UseFooOptions\): Promise<T>; const useBar\(n: number, label = 'x'\): string, internal\(event: H3Event\)/)
+
+    const text = formatDeclarationTree(tree, false)
+    assert.match(text, /export function\s+useFoo<T>\(id: string, opts\?: UseFooOptions\): Promise<T>/)
+    assert.match(text, /export const\s+useBar\(n: number, label = 'x'\): string/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('buildDeclarationTree truncates long signatures in compact summaries', () => {
+  const fx = makeFixture({
+    'src/a.ts': 'export function many(a: string, b: number, c: boolean, d: Date, e: Error): void {}\n',
+  }, false)
+  try {
+    const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    assert.equal(tree.files[0].declarations[0].signature, 'many(a: string, b: number, c: boolean, d: Date, ...1 more): void')
+  }
+  finally { fx.cleanup() }
+})
+
 it('formatAgentScanHits limits class token output', () => {
   const out = formatAgentScanHits([
     { token: 'text-sm', count: 10, files: ['a.vue'] },

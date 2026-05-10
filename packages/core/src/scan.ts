@@ -43,6 +43,7 @@ export interface DeclarationTreeItem {
   name: string
   kind: string
   exported: boolean
+  signature?: string
   line: number
   col: number
 }
@@ -354,7 +355,7 @@ export function formatDeclarationTree(tree: DeclarationTree, json: boolean): str
       lines.push('  declarations')
       for (const decl of file.declarations) {
         const marker = decl.exported ? 'export' : 'local'
-        lines.push(`    ${marker.padEnd(6)} ${decl.kind.padEnd(10)} ${decl.name}  L${decl.line}:${decl.col}`)
+        lines.push(`    ${marker.padEnd(6)} ${decl.kind.padEnd(10)} ${declarationLabel(decl)}  L${decl.line}:${decl.col}`)
       }
     }
     lines.push('')
@@ -473,7 +474,7 @@ function declarationItems(
 ): DeclarationTreeItem[] {
   switch (node.type) {
     case 'FunctionDeclaration':
-      return singleDeclaration(node, node.id?.name, 'function', exported || declaredExports.has(node.id?.name), fullSource, offset)
+      return singleDeclaration(node, node.id?.name, 'function', exported || declaredExports.has(node.id?.name), fullSource, offset, functionSignature(node, node.id?.name, fullSource, offset))
     case 'ClassDeclaration':
       return singleDeclaration(node, node.id?.name, 'class', exported || declaredExports.has(node.id?.name), fullSource, offset)
     case 'TSInterfaceDeclaration':
@@ -487,7 +488,7 @@ function declarationItems(
         const name = bindingName(decl.id)
         if (!name)
           return []
-        return singleDeclaration(decl, name, node.kind ?? 'var', exported || declaredExports.has(name), fullSource, offset)
+        return singleDeclaration(decl, name, node.kind ?? 'var', exported || declaredExports.has(name), fullSource, offset, functionSignature(decl.init, name, fullSource, offset))
       })
     default:
       return []
@@ -501,8 +502,11 @@ function defaultDeclarationItems(node: any, fullSource: string, offset: number):
     ? 'function'
     : node.type === 'ClassDeclaration'
       ? 'class'
-      : 'default'
-  return singleDeclaration(node, node.id?.name ?? 'default', kind, true, fullSource, offset)
+      : node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression'
+        ? 'function'
+        : 'default'
+  const name = node.id?.name ?? 'default'
+  return singleDeclaration(node, name, kind, true, fullSource, offset, functionSignature(node, name, fullSource, offset))
 }
 
 function singleDeclaration(
@@ -512,11 +516,46 @@ function singleDeclaration(
   exported: boolean,
   fullSource: string,
   offset: number,
+  signature?: string,
 ): DeclarationTreeItem[] {
   if (!name)
     return []
   const { line, col } = posToLineCol(fullSource, (node.start ?? 0) + offset)
-  return [{ name, kind, exported, line, col }]
+  return [{ name, kind, exported, signature, line, col }]
+}
+
+function functionSignature(node: any, name: string | undefined, fullSource: string, offset: number): string | undefined {
+  if (!node || !name)
+    return undefined
+  if (node.type !== 'FunctionDeclaration' && node.type !== 'FunctionExpression' && node.type !== 'ArrowFunctionExpression')
+    return undefined
+  const typeParameters = sourceSlice(fullSource, node.typeParameters, offset)
+  const params = summarizeParams(node.params ?? [], fullSource, offset)
+  const returnType = truncatePart(normalizeSource(sourceSlice(fullSource, node.returnType, offset) ?? ''), 80)
+  return `${name}${typeParameters ?? ''}(${params})${returnType}`
+}
+
+function summarizeParams(params: any[], fullSource: string, offset: number): string {
+  const visible = params.slice(0, 4).map(param => truncatePart(normalizeSource(sourceSlice(fullSource, param, offset) ?? ''), 80))
+  if (params.length > visible.length)
+    visible.push(`...${params.length - visible.length} more`)
+  return visible.join(', ')
+}
+
+function sourceSlice(fullSource: string, node: any, offset: number): string | undefined {
+  if (!node || typeof node.start !== 'number' || typeof node.end !== 'number')
+    return undefined
+  return fullSource.slice(node.start + offset, node.end + offset)
+}
+
+function normalizeSource(source: string): string {
+  return source.replace(/\s+/g, ' ').trim()
+}
+
+function truncatePart(source: string, max: number): string {
+  if (source.length <= max)
+    return source
+  return `${source.slice(0, max - 3)}...`
 }
 
 function bindingName(node: any): string | undefined {
@@ -587,12 +626,16 @@ function summarizeDeclarations(declarations: DeclarationTreeItem[]): string {
   const byKind = new Map<string, string[]>()
   for (const decl of declarations) {
     const names = byKind.get(decl.kind) ?? []
-    names.push(decl.name)
+    names.push(declarationLabel(decl))
     byKind.set(decl.kind, names)
   }
   return [...byKind.entries()]
     .map(([kind, names]) => `${kind} ${names.join(', ')}`)
     .join('; ')
+}
+
+function declarationLabel(decl: DeclarationTreeItem): string {
+  return decl.signature ?? decl.name
 }
 
 function nodeIds(files: string[]): Map<string, string> {
