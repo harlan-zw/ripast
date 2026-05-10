@@ -3,16 +3,16 @@ import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
 import { Project, SyntaxKind } from 'ts-morph'
 import { loadAdapter } from './adapter.ts'
+import { isGeneratedNuxtPath, isInsideNuxtAutoImportScope, removeGeneratedNuxtChanges } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { projectSourceFiles, resolveVerifyMode } from './project.ts'
-import { parseFile, rgFiles, spliceScript } from './util.ts'
+import { findTsconfig, projectSourceFiles, resolveVerifyMode } from './project.ts'
+import { applyTextEdits, mergeFileChanges, parseFile, parseSourceFile, rgFiles, spliceScript } from './util.ts'
 import { findRegressions, snapshotDiagnostics } from './verify.ts'
 import { rewriteTemplateReferences } from './vue-template.ts'
 
@@ -138,16 +138,10 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
   if (vueAdapter?.autoImportScopes) {
     const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
-    if (declarations.some(decl => isInsideAnyScope(decl.getSourceFile().getFilePath(), scopes))) {
+    if (declarations.some(decl => isInsideNuxtAutoImportScope(decl.getSourceFile().getFilePath(), scopes))) {
       removeVueLocalBindingChanges(changes, from)
       const fallbackChanges = timed(profile, 'nuxt rename fallback', () => applyNuxtBareIdentifierRename(cwd, from, to, changes))
-      for (const change of fallbackChanges) {
-        const existing = changes.find(c => c.path === change.path)
-        if (existing)
-          existing.after = change.after
-        else
-          changes.push(change)
-      }
+      mergeFileChanges(changes, fallbackChanges)
     }
     if (scopes.size)
       removeGeneratedNuxtChanges(cwd, changes)
@@ -172,7 +166,7 @@ function applyNuxtBareIdentifierRename(cwd: string, from: string, to: string, ch
     const file = parseFile(path, cwd)
     const before = byPath.get(path)?.before ?? file.fullSource
     const current = byPath.get(path)?.after ?? before
-    const currentFile = current === file.fullSource ? file : parseFileFromSource(path, cwd, current)
+    const currentFile = current === file.fullSource ? file : parseSourceFile(path, current, cwd)
     if (scriptDeclaresBinding(currentFile.scriptSource, from))
       continue
     const script = rewriteScriptIdentifiers(currentFile.scriptSource, from, to)
@@ -255,18 +249,6 @@ function bindingIncludes(node: any, name: string): boolean {
   return false
 }
 
-function removeGeneratedNuxtChanges(cwd: string, changes: FileChange[]): void {
-  for (let i = changes.length - 1; i >= 0; i--) {
-    if (isGeneratedNuxtPath(cwd, changes[i].path))
-      changes.splice(i, 1)
-  }
-}
-
-function isGeneratedNuxtPath(cwd: string, filePath: string): boolean {
-  const rel = relative(cwd, filePath).replace(/\\/g, '/')
-  return rel === '.nuxt' || rel.startsWith('.nuxt/')
-}
-
 function rewriteScriptIdentifiers(source: string, from: string, to: string): string {
   if (!source.includes(from))
     return source
@@ -297,56 +279,7 @@ function rewriteScriptIdentifiers(source: string, from: string, to: string): str
       edits.push({ start: node.start, end: node.end })
     },
   })
-  return applyIdentifierEdits(source, edits, to)
-}
-
-function applyIdentifierEdits(source: string, edits: { start: number, end: number }[], to: string): string {
-  if (!edits.length)
-    return source
-  edits.sort((a, b) => a.start - b.start)
-  let out = ''
-  let cursor = 0
-  for (const edit of edits) {
-    if (edit.start < cursor)
-      continue
-    out += source.slice(cursor, edit.start) + to
-    cursor = edit.end
-  }
-  out += source.slice(cursor)
-  return out
-}
-
-function parseFileFromSource(path: string, cwd: string, source: string): ReturnType<typeof parseFile> {
-  const rel = relative(cwd, path)
-  if (!path.endsWith('.vue')) {
-    let program: any = null
-    try {
-      program = parseSync(path, source).program
-    }
-    catch {}
-    return { path, rel, fullSource: source, scriptSource: source, scriptStart: 0, scriptEnd: source.length, program, isSfc: false }
-  }
-  const match = [...source.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
-    .filter(m => !/\bsrc\s*=/.test(source.slice(m.index ?? 0, source.indexOf('>', m.index ?? 0) + 1)))
-    .at(0)
-  if (!match || match.index === undefined)
-    return { path, rel, fullSource: source, scriptSource: '', scriptStart: 0, scriptEnd: 0, program: null, isSfc: true }
-  const tagEnd = source.indexOf('>', match.index) + 1
-  const scriptSource = match[1]
-  let program: any = null
-  try {
-    program = parseSync(`${path}.ts`, scriptSource).program
-  }
-  catch {}
-  return { path, rel, fullSource: source, scriptSource, scriptStart: tagEnd, scriptEnd: tagEnd + scriptSource.length, program, isSfc: true }
-}
-
-function isInsideAnyScope(filePath: string, scopes: Set<string>): boolean {
-  for (const scope of scopes) {
-    if (filePath === scope || filePath.startsWith(`${scope}/`))
-      return true
-  }
-  return false
+  return applyTextEdits(source, edits.map(edit => ({ ...edit, replacement: to })))
 }
 
 function findDeclarations(sourceFiles: SourceFile[], name: string): Identifier[] {
@@ -398,16 +331,4 @@ function sourceFilesMatching(project: Project, paths: string[]): SourceFile[] {
     out.push(sf)
   }
   return out
-}
-
-function findTsconfig(cwd: string): string | null {
-  const tries = ['tsconfig.json', 'tsconfig.build.json']
-  for (const t of tries) {
-    try {
-      readFileSync(resolve(cwd, t))
-      return resolve(cwd, t)
-    }
-    catch {}
-  }
-  return null
 }

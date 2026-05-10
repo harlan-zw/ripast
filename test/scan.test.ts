@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
 import { formatAgentScanHits } from '../packages/core/src/css-class-scan.ts'
-import { buildDeclarationTree, buildScanGraph, formatAgentDeclarationTree, formatDeclarationTree, formatScanGraph, scan } from '../packages/core/src/scan.ts'
+import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, formatAgentDeclarationTree, formatDeclarationTree, formatScanGraph, formatUnusedDeclarations, scan } from '../packages/core/src/scan.ts'
 import { makeFixture } from './helpers.ts'
 
 it('scan classifies identifier kinds', () => {
@@ -240,6 +240,92 @@ it('buildDeclarationTree truncates long signatures in compact summaries', () => 
   try {
     const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
     assert.equal(tree.files[0].declarations[0].signature, 'many(a: string, b: number, c: boolean, d: Date, ...1 more): void')
+  }
+  finally { fx.cleanup() }
+})
+
+it('buildUnusedDeclarations reports unreferenced top-level local declarations by default', () => {
+  const fx = makeFixture({
+    'src/a.ts': [
+      'function usedLocal() { return 1 }',
+      'function unusedLocal() { return 2 }',
+      'export function publicApi() { return usedLocal() }',
+      '',
+    ].join('\n'),
+    'src/b.ts': 'import { publicApi } from \'./a.ts\'\npublicApi()\n',
+  }, false)
+  try {
+    const unused = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts' })
+    assert.deepEqual(unused.files.map(f => f.file), ['src/a.ts'])
+    assert.deepEqual(unused.files[0].declarations.map(d => d.name), ['unusedLocal'])
+
+    const text = formatUnusedDeclarations(unused, false)
+    assert.match(text, /src\/a\.ts/)
+    assert.match(text, /unusedLocal\(\) function local line 2: no project references/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('buildUnusedDeclarations supports exported and all filters', () => {
+  const fx = makeFixture({
+    'src/a.ts': [
+      'const unusedLocal = 1',
+      'export const unusedExport = 2',
+      'export const usedExport = 3',
+      '',
+    ].join('\n'),
+    'src/b.ts': 'import { usedExport } from \'./a.ts\'\nconsole.log(usedExport)\n',
+  }, false)
+  try {
+    const exported = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    assert.deepEqual(exported.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedExport'])
+
+    const all = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'all' })
+    assert.deepEqual(all.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedLocal', 'unusedExport'])
+
+    const json = JSON.parse(formatUnusedDeclarations(exported, true))
+    assert.equal(json.files[0].declarations[0].name, 'unusedExport')
+  }
+  finally { fx.cleanup() }
+})
+
+it('buildUnusedDeclarations does not treat same-file named export specifiers as references', () => {
+  const fx = makeFixture({
+    'src/a.ts': 'type PublicType = string\nexport { PublicType }\n',
+  }, false)
+  try {
+    const unused = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    assert.deepEqual(unused.files.flatMap(f => f.declarations.map(d => d.name)), ['PublicType'])
+  }
+  finally { fx.cleanup() }
+})
+
+it('buildUnusedDeclarations handles JavaScript files when a tsconfig exists', () => {
+  const fx = makeFixture({
+    'tsconfig.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext' }, include: ['src/**/*.ts'] }),
+    'src/a.mjs': 'function unusedJs() {}\nexport function usedJs() {}\n',
+    'src/b.ts': 'import { usedJs } from \'./a.mjs\'\nusedJs()\n',
+  }, false)
+  try {
+    const unused = buildUnusedDeclarations({ cwd: fx.dir, glob: ['*.ts', '*.mjs'], exports: 'all' })
+    assert.deepEqual(unused.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedJs'])
+  }
+  finally { fx.cleanup() }
+})
+
+it('buildUnusedDeclarations treats type references and shorthand properties as references', () => {
+  const fx = makeFixture({
+    'src/a.ts': [
+      'interface Shape { value: string }',
+      'const schema = { value: \'x\' }',
+      'const table: Record<string, Shape> = { schema }',
+      'console.log(table)',
+      '',
+    ].join('\n'),
+  }, false)
+  try {
+    const unused = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts' })
+    assert.deepEqual(unused.files, [])
   }
   finally { fx.cleanup() }
 })

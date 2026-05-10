@@ -5,6 +5,7 @@ import process from 'node:process'
 import {
   buildDeclarationTree,
   buildScanGraph,
+  buildUnusedDeclarations,
   formatAgentDeclarationTree,
   formatAgentHits,
   formatAgentScanHits,
@@ -13,6 +14,7 @@ import {
   formatRegressions,
   formatScanGraph,
   formatScanHits,
+  formatUnusedDeclarations,
   printDiffs,
   resolveVerifyMode,
   runCssClassRename,
@@ -72,7 +74,7 @@ function resolveCliVerifyMode(verify: unknown, verifyMode: unknown): VerifyMode 
 
 function resolveExportFilter(raw: unknown): ExportFilter {
   if (raw !== 'all' && raw !== 'exported' && raw !== 'local') {
-    process.stderr.write(`ripast tree: --exports must be "all", "exported", or "local".\n`)
+    process.stderr.write(`ripast: --exports must be "all", "exported", or "local".\n`)
     process.exit(2)
   }
   return raw
@@ -161,6 +163,25 @@ const treeCmd = defineCommand({
       return
     }
     process.stdout.write(`${formatDeclarationTree(tree, !!args.json)}\n`)
+  },
+})
+
+const unusedCmd = defineCommand({
+  meta: { name: 'unused', description: 'Find unreferenced top-level declarations.' },
+  args: {
+    glob: globArg,
+    exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to local.' },
+    tsconfig: { type: 'string' },
+    json: jsonArg,
+  },
+  run({ args }) {
+    const exportFilter = args.exports == null ? 'local' : resolveExportFilter(args.exports)
+    const unused = buildUnusedDeclarations({
+      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      exports: exportFilter,
+      tsconfig: args.tsconfig as string | undefined,
+    })
+    process.stdout.write(`${formatUnusedDeclarations(unused, !!args.json)}\n`)
   },
 })
 
@@ -444,6 +465,7 @@ runMain(defineCommand({
   subCommands: {
     'scan': scanCmd,
     'tree': treeCmd,
+    'unused': unusedCmd,
     'rename': renameCmd,
     'rename-file': renameFileCmd,
     'move': moveCmd,

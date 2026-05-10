@@ -4,14 +4,15 @@ import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { Project, SyntaxKind } from 'ts-morph'
 import { loadAdapter } from './adapter.ts'
+import { isGeneratedNuxtPath, isInsideNuxtAutoImportScope, removeGeneratedNuxtChanges } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { resolveVerifyMode } from './project.ts'
+import { findTsconfig, resolveVerifyMode } from './project.ts'
 import { scan } from './scan.ts'
-import { rgFiles } from './util.ts'
+import { mergeFileChanges, rgFiles } from './util.ts'
 import { findRegressions, snapshotDiagnostics } from './verify.ts'
 
 export interface MoveOptions {
@@ -154,15 +155,9 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
 
   if (vueAdapter?.autoImportScopes) {
     const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
-    if (isInsideAnyScope(fromAbs, scopes) && !isInsideAnyScope(toAbs, scopes)) {
+    if (isInsideNuxtAutoImportScope(fromAbs, scopes) && !isInsideNuxtAutoImportScope(toAbs, scopes)) {
       const autoImportChanges = timed(profile, 'nuxt auto-import consumers', () => addNuxtExplicitImports(cwd, symbol, toAbs, changes, fromAbs))
-      for (const change of autoImportChanges) {
-        const existing = changes.find(c => c.path === change.path)
-        if (existing)
-          existing.after = change.after
-        else
-          changes.push(change)
-      }
+      mergeFileChanges(changes, autoImportChanges)
     }
     if (scopes.size)
       removeGeneratedNuxtChanges(cwd, changes)
@@ -205,18 +200,6 @@ function addNuxtExplicitImports(cwd: string, symbol: string, toAbs: string, chan
     }
   }
   return out
-}
-
-function removeGeneratedNuxtChanges(cwd: string, changes: FileChange[]): void {
-  for (let i = changes.length - 1; i >= 0; i--) {
-    if (isGeneratedNuxtPath(cwd, changes[i].path))
-      changes.splice(i, 1)
-  }
-}
-
-function isGeneratedNuxtPath(cwd: string, filePath: string): boolean {
-  const rel = relative(cwd, filePath).replace(/\\/g, '/')
-  return rel === '.nuxt' || rel.startsWith('.nuxt/')
 }
 
 function insertVueScriptImport(source: string, symbol: string, specifier: string, toAbs: string): string {
@@ -267,14 +250,6 @@ function mergeNamedImport(source: string, symbol: string, specifier: string): st
     return source
   const replacement = `import { ${[...names, symbol].join(', ')} } from ${match[2]}${specifier}${match[2]}`
   return `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match[0].length)}`
-}
-
-function isInsideAnyScope(filePath: string, scopes: Set<string>): boolean {
-  for (const scope of scopes) {
-    if (filePath === scope || filePath.startsWith(`${scope}${sep}`))
-      return true
-  }
-  return false
 }
 
 function findNamedExport(sf: SourceFile, symbol: string): Node | null {
@@ -669,16 +644,4 @@ function collectLocalBindingNames(decl: Node): Set<string> {
     }
   })
   return out
-}
-
-function findTsconfig(cwd: string): string | null {
-  const tries = ['tsconfig.json', 'tsconfig.build.json']
-  for (const t of tries) {
-    try {
-      readFileSync(resolve(cwd, t))
-      return resolve(cwd, t)
-    }
-    catch {}
-  }
-  return null
 }

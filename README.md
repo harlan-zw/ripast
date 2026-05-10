@@ -153,6 +153,18 @@ In agent environments (`std-env`'s `isAgent`), defaults to a compact architectur
 </details>
 
 <details>
+<summary><b>🔎 Find unreferenced top-level declarations</b></summary>
+
+Report top-level declarations with no semantic project references. This is intentionally narrower than "all dead code"; exported APIs, framework conventions, side-effect modules, dynamic registries, and entrypoints can still be live.
+
+```bash
+ripast unused
+ripast unused --exports local
+ripast unused --exports all --json
+```
+</details>
+
+<details>
 <summary><b>🤖 Drive from an AI agent</b></summary>
 
 `--json` emits machine-readable output. `--profile agent` (auto-detected) returns compact summaries instead of full diffs. Atomic apply: blocked-by-regression exits non-zero with diagnostics.
@@ -230,6 +242,7 @@ ripast css-class-rename --map tokens.json --apply
 | --- | --- |
 | `ripast scan <pattern>` | Classify every occurrence (identifier vs string vs property vs JSX). Optional `--graph mermaid\|dot`. |
 | `ripast tree` | Print a project declaration tree, grouped by file. |
+| `ripast unused` | Find unreferenced top-level declarations. |
 | `ripast rename <from> <to>` | Scope-aware symbol rename via ts-morph. |
 | `ripast move <symbol> --from <a> --to <b>` | Move a top-level export and rewrite every import site. |
 | `ripast rename-file <old> <new>` | Rename a file and rewrite every import site (including `.vue` consumers). |
@@ -247,7 +260,7 @@ const result = await runRename('useStore', 'useAppStore', { cwd: process.cwd() }
 // result.changes, result.regressions, result.scanned
 ```
 
-Exports cover `runRename`, `runMove`, `runRenameFile`, `runCssClassRename`, `runCssClassScan`, `scan`, `buildScanGraph`, `buildDeclarationTree`, plus formatters and the `writeChanges` helper.
+Exports cover `runRename`, `runMove`, `runRenameFile`, `runCssClassRename`, `runCssClassScan`, `scan`, `buildScanGraph`, `buildDeclarationTree`, `buildUnusedDeclarations`, plus formatters and the `writeChanges` helper.
 
 For batching, both `runRename` and `runMove` accept an existing ts-morph `project` so callers pay the project setup cost once.
 
@@ -257,6 +270,7 @@ For batching, both `runRename` and `runMove` accept an existing ts-morph `projec
 | --- | --- |
 | Single site, or <5 matches in one file | Plain edit |
 | "Where is X used?" | `ripast scan` |
+| "Which top-level declarations have no project references?" | `ripast unused` |
 | Rename a symbol across the repo | `ripast rename` |
 | Move a declaration to another file (update all imports) | `ripast move` |
 | Rename a file and update every import site | `ripast rename-file` |

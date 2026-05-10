@@ -13,11 +13,13 @@ export type { RenameOptions, RenameResult } from './rename.ts'
 export {
   buildDeclarationTree,
   buildScanGraph,
+  buildUnusedDeclarations,
   formatAgentDeclarationTree,
   formatAgentHits,
   formatDeclarationTree,
   formatHits,
   formatScanGraph,
+  formatUnusedDeclarations,
   scan,
 } from './scan.ts'
 export type {
@@ -30,6 +32,8 @@ export type {
   ScanGraphNode,
   ScanHit,
   ScanOptions,
+  UnusedDeclarationFile,
+  UnusedDeclarations,
 } from './scan.ts'
 export { printDiffs, summarize, writeChanges } from './util.ts'
 export type { FileChange } from './util.ts'

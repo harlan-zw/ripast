@@ -3,6 +3,8 @@ import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
+import { Project, SyntaxKind } from 'ts-morph'
+import { findTsconfig } from './project.ts'
 import { parseFile, posToLineCol, rgFiles } from './util.ts'
 import { extractTemplateExpressions } from './vue-template.ts'
 
@@ -57,6 +59,15 @@ export interface DeclarationTreeFile {
 
 export interface DeclarationTree {
   files: DeclarationTreeFile[]
+}
+
+export interface UnusedDeclarationFile {
+  file: string
+  declarations: DeclarationTreeItem[]
+}
+
+export interface UnusedDeclarations {
+  files: UnusedDeclarationFile[]
 }
 
 export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
@@ -152,6 +163,10 @@ export function buildDeclarationTree(opts: ScanOptions & { exports?: ExportFilte
   const cwd = opts.cwd ?? process.cwd()
   const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
   const exportFilter = opts.exports ?? 'all'
+  return buildDeclarationTreeForPaths(cwd, files, exportFilter)
+}
+
+function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter: ExportFilter): DeclarationTree {
   const out: DeclarationTreeFile[] = []
   for (const abs of files) {
     const file = parseFile(abs, cwd)
@@ -178,6 +193,84 @@ export function buildDeclarationTree(opts: ScanOptions & { exports?: ExportFilte
   }
   out.sort((a, b) => a.file.localeCompare(b.file))
   return { files: out }
+}
+
+export function buildUnusedDeclarations(opts: ScanOptions & { exports?: ExportFilter, tsconfig?: string, project?: Project } = {}): UnusedDeclarations {
+  const cwd = opts.cwd ?? process.cwd()
+  const exportFilter = opts.exports ?? 'local'
+  const candidates = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+    .filter(path => !path.endsWith('.vue'))
+  const tree = buildDeclarationTreeForPaths(cwd, candidates, exportFilter)
+  const treeByFile = new Map(tree.files.map(file => [resolve(cwd, file.file), file]))
+  const potentialReferenceNames = buildPotentialReferenceNames(candidates, cwd)
+  const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
+  const project = opts.project ?? (tsconfigPath
+    ? new Project({ tsConfigFilePath: tsconfigPath, skipAddingFilesFromTsConfig: true, compilerOptions: { allowJs: true, checkJs: true } })
+    : new Project({ compilerOptions: { allowJs: true, checkJs: true } }))
+
+  for (const path of candidates) {
+    if (!project.getSourceFile(path))
+      project.addSourceFileAtPathIfExists(path)
+  }
+
+  const sourceFiles = candidates.flatMap((path) => {
+    const sourceFile = project.getSourceFile(path)
+    return sourceFile ? [sourceFile] : []
+  })
+  const symbolDeclarations = new Map<string, TopLevelSymbolDeclaration[]>()
+  const candidateKeys = new Set<string>()
+  const candidateNames = new Set<string>()
+  for (const path of candidates) {
+    const sourceFile = project.getSourceFile(path)
+    const treeFile = treeByFile.get(path)
+    if (!sourceFile || !treeFile)
+      continue
+    for (const decl of collectTopLevelSymbolDeclarations(sourceFile)) {
+      if (exportFilter === 'exported' && !decl.exported)
+        continue
+      if (exportFilter === 'local' && decl.exported)
+        continue
+      const declarations = symbolDeclarations.get(path) ?? []
+      declarations.push(decl)
+      symbolDeclarations.set(path, declarations)
+      if (potentialReferenceNames.has(decl.name)) {
+        for (const key of decl.keys)
+          candidateKeys.add(key)
+        candidateNames.add(decl.name)
+      }
+    }
+  }
+
+  const referencedKeys = buildReferencedTopLevelSymbolKeys(sourceFiles, candidateKeys, candidateNames)
+  const unusedByFile = new Map<string, Set<string>>()
+  for (const [path, declarations] of symbolDeclarations) {
+    for (const decl of declarations) {
+      if (!potentialReferenceNames.has(decl.name)) {
+        addUnusedName(unusedByFile, path, decl.name)
+        continue
+      }
+      if (decl.keys.some(key => referencedKeys.has(key)))
+        continue
+      addUnusedName(unusedByFile, path, decl.name)
+    }
+  }
+
+  const files: UnusedDeclarationFile[] = []
+  for (const file of tree.files) {
+    const names = unusedByFile.get(resolve(cwd, file.file))
+    if (!names?.size)
+      continue
+    const declarations = file.declarations.filter(decl => names.has(decl.name))
+    if (declarations.length)
+      files.push({ file: file.file, declarations })
+  }
+  return { files }
+}
+
+function addUnusedName(unusedByFile: Map<string, Set<string>>, path: string, name: string): void {
+  const names = unusedByFile.get(path) ?? new Set<string>()
+  names.add(name)
+  unusedByFile.set(path, names)
 }
 
 function scanTemplate(
@@ -364,6 +457,23 @@ export function formatDeclarationTree(tree: DeclarationTree, json: boolean): str
   return lines.join('\n')
 }
 
+export function formatUnusedDeclarations(unused: UnusedDeclarations, json: boolean): string {
+  if (json)
+    return JSON.stringify(unused, null, 2)
+  const lines: string[] = []
+  for (const file of unused.files) {
+    lines.push(file.file)
+    for (const decl of file.declarations) {
+      const marker = decl.exported ? 'exported' : 'local'
+      lines.push(`  ${declarationLabel(decl)} ${decl.kind} ${marker} line ${decl.line}: no project references`)
+    }
+    lines.push('')
+  }
+  const count = unused.files.reduce((total, file) => total + file.declarations.length, 0)
+  lines.push(`${count} unused declaration${count === 1 ? '' : 's'} across ${unused.files.length} file${unused.files.length === 1 ? '' : 's'}`)
+  return lines.join('\n')
+}
+
 export function formatAgentDeclarationTree(tree: DeclarationTree, exportFilter: ExportFilter = 'exported'): string {
   const lines = ['architecture']
   for (const file of tree.files) {
@@ -394,6 +504,225 @@ export function formatAgentDeclarationTree(tree: DeclarationTree, exportFilter: 
   }
   lines.push(`${tree.files.length} files`)
   return lines.join('\n')
+}
+
+interface TopLevelSymbolDeclaration {
+  name: string
+  nameNode: any
+  node: any
+  keys: string[]
+  exported: boolean
+}
+
+interface SourceRange {
+  start: number
+  end: number
+}
+
+function buildPotentialReferenceNames(paths: string[], cwd: string): Set<string> {
+  const out = new Set<string>()
+  for (const path of paths) {
+    const file = parseFile(path, cwd)
+    if (!file.program)
+      continue
+    const ignored = ignoredTopLevelNameRanges(file.program as any, file.scriptStart)
+    walk(file.program as any, {
+      enter(node: any) {
+        const name = identifierName(node)
+        if (!name)
+          return
+        const start = (node.start ?? 0) + file.scriptStart
+        if (ignored.some(range => start >= range.start && start < range.end))
+          return
+        out.add(name)
+      },
+    })
+  }
+  return out
+}
+
+function identifierName(node: any): string | null {
+  if (node?.type === 'Identifier' || node?.type === 'JSXIdentifier')
+    return node.name ?? null
+  return null
+}
+
+function ignoredTopLevelNameRanges(program: any, offset: number): SourceRange[] {
+  const ranges: SourceRange[] = []
+  const body = program?.body ?? []
+  for (const node of body) {
+    const declaration = node.type === 'ExportNamedDeclaration' && node.declaration ? node.declaration : node
+    if (node.type === 'ExportNamedDeclaration' && !node.declaration && !node.source) {
+      for (const spec of node.specifiers ?? [])
+        pushNodeRange(ranges, spec.local, offset)
+      continue
+    }
+    if (node.type === 'ExportDefaultDeclaration') {
+      pushNodeRange(ranges, node.declaration?.id, offset)
+      continue
+    }
+    if (node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration')
+      continue
+    switch (declaration.type) {
+      case 'FunctionDeclaration':
+      case 'ClassDeclaration':
+      case 'TSInterfaceDeclaration':
+      case 'TSTypeAliasDeclaration':
+      case 'TSEnumDeclaration':
+        pushBindingNameRange(ranges, declaration.id, offset)
+        break
+      case 'VariableDeclaration':
+        for (const decl of declaration.declarations ?? [])
+          pushBindingNameRange(ranges, decl.id, offset)
+        break
+    }
+  }
+  return ranges
+}
+
+function pushNodeRange(ranges: SourceRange[], node: any, offset: number): void {
+  if (!node || typeof node.start !== 'number' || typeof node.end !== 'number')
+    return
+  ranges.push({ start: node.start + offset, end: node.end + offset })
+}
+
+function pushBindingNameRange(ranges: SourceRange[], node: any, offset: number): void {
+  if (node?.type === 'Identifier' && typeof node.start === 'number' && typeof node.name === 'string') {
+    ranges.push({ start: node.start + offset, end: node.start + offset + node.name.length })
+    return
+  }
+  pushNodeRange(ranges, node, offset)
+}
+
+function collectTopLevelSymbolDeclarations(sourceFile: any): TopLevelSymbolDeclaration[] {
+  const declaredExports = tsMorphNamedExportSpecifiers(sourceFile)
+  const out: TopLevelSymbolDeclaration[] = []
+  for (const statement of sourceFile.getStatements()) {
+    const kind = statement.getKind()
+    if (kind === SyntaxKind.FunctionDeclaration
+      || kind === SyntaxKind.ClassDeclaration
+      || kind === SyntaxKind.InterfaceDeclaration
+      || kind === SyntaxKind.TypeAliasDeclaration
+      || kind === SyntaxKind.EnumDeclaration) {
+      const nameNode = statement.getNameNode?.()
+      const name = nameNode?.getText?.()
+      if (name)
+        out.push({ name, nameNode, node: statement, keys: topLevelSymbolKeys(statement, nameNode), exported: !!statement.isExported?.() || declaredExports.has(name) })
+      continue
+    }
+    if (kind === SyntaxKind.VariableStatement) {
+      const exported = !!statement.isExported?.()
+      for (const decl of statement.getDeclarationList().getDeclarations()) {
+        const nameNode = decl.getNameNode()
+        if (nameNode.getKind() !== SyntaxKind.Identifier)
+          continue
+        const name = nameNode.getText()
+        out.push({ name, nameNode, node: decl, keys: topLevelSymbolKeys(decl, nameNode), exported: exported || declaredExports.has(name) })
+      }
+    }
+  }
+  return out
+}
+
+function topLevelSymbolKeys(node: any, nameNode: any): string[] {
+  const keys = new Set<string>([nodeKey(node), nodeKey(nameNode)])
+  for (const key of symbolDeclarationKeys(nameNode))
+    keys.add(key)
+  return [...keys]
+}
+
+function buildReferencedTopLevelSymbolKeys(sourceFiles: any[], candidateKeys: Set<string>, candidateNames: Set<string>): Set<string> {
+  const out = new Set<string>()
+  if (!candidateKeys.size)
+    return out
+  for (const sourceFile of sourceFiles) {
+    sourceFile.forEachDescendant((node: any) => {
+      if (node.getKind?.() !== SyntaxKind.Identifier)
+        return
+      if (!candidateNames.has(node.getText?.()))
+        return
+      if (isTopLevelDeclarationNameNode(node) || isLocalExportSpecifierNameNode(node))
+        return
+      for (const key of symbolDeclarationKeys(node)) {
+        if (candidateKeys.has(key))
+          out.add(key)
+      }
+    })
+  }
+  return out
+}
+
+function symbolDeclarationKeys(node: any): Set<string> {
+  const out = new Set<string>()
+  addSymbolDeclarationKeys(out, node.getSymbol?.())
+  const parent = node.getParent?.()
+  if (parent?.getKind?.() === SyntaxKind.ShorthandPropertyAssignment)
+    addSymbolDeclarationKeys(out, parent.getValueSymbol?.())
+  try {
+    addSymbolDeclarationKeys(out, node.getSymbol?.()?.getAliasedSymbol?.())
+  }
+  catch {}
+  return out
+}
+
+function addSymbolDeclarationKeys(out: Set<string>, symbol: any): void {
+  for (const declaration of symbol?.getDeclarations?.() ?? [])
+    out.add(nodeKey(declaration))
+}
+
+function nodeKey(node: any): string {
+  return `${node.getSourceFile().getFilePath()}:${node.getStart()}`
+}
+
+function isTopLevelDeclarationNameNode(node: any): boolean {
+  const parent = node.getParent?.()
+  if (!parent)
+    return false
+  const parentKind = parent.getKind?.()
+  if (parentKind === SyntaxKind.VariableDeclaration)
+    return parent.getNameNode?.() === node && parent.getParent?.()?.getParent?.()?.getParent?.()?.getKind?.() === SyntaxKind.SourceFile
+  if (
+    parentKind === SyntaxKind.FunctionDeclaration
+    || parentKind === SyntaxKind.ClassDeclaration
+    || parentKind === SyntaxKind.InterfaceDeclaration
+    || parentKind === SyntaxKind.TypeAliasDeclaration
+    || parentKind === SyntaxKind.EnumDeclaration
+  ) {
+    return parent.getNameNode?.() === node && isTopLevelStatement(parent)
+  }
+  return false
+}
+
+function isTopLevelStatement(node: any): boolean {
+  const parent = node.getParent?.()
+  if (!parent)
+    return false
+  if (parent.getKind?.() === SyntaxKind.SourceFile)
+    return true
+  return parent.getKind?.() === SyntaxKind.ExportDeclaration && parent.getParent?.()?.getKind?.() === SyntaxKind.SourceFile
+}
+
+function isLocalExportSpecifierNameNode(node: any): boolean {
+  const parent = node.getParent?.()
+  if (!parent || parent.getKind?.() !== SyntaxKind.ExportSpecifier)
+    return false
+  const exportDeclaration = parent.getParent?.()?.getParent?.()
+  return exportDeclaration?.getKind?.() === SyntaxKind.ExportDeclaration
+    && !exportDeclaration.getModuleSpecifierValue?.()
+}
+
+function tsMorphNamedExportSpecifiers(sourceFile: any): Set<string> {
+  const out = new Set<string>()
+  for (const statement of sourceFile.getStatements()) {
+    if (statement.getKind() !== SyntaxKind.ExportDeclaration || statement.getModuleSpecifierValue?.())
+      continue
+    for (const spec of statement.getNamedExports?.() ?? []) {
+      const local = spec.getNameNode?.()?.getText?.()
+      if (local)
+        out.add(local)
+    }
+  }
+  return out
 }
 
 function importSpecifiers(program: any): string[] {

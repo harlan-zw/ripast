@@ -4,8 +4,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { loadAdapter } from './adapter.ts'
-import { rgFiles } from './util.ts'
-import { rewriteTemplateReferences } from './vue-template.ts'
+import { isGeneratedNuxtPath } from './nuxt.ts'
+import { findTsconfig } from './project.ts'
+import { mergeFileChanges, rgFiles } from './util.ts'
+import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
 export interface RenameFileOptions {
   cwd?: string
@@ -41,13 +43,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
 
   const consumerChanges = await vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
   const templateChanges = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, consumerChanges)
-  for (const change of templateChanges) {
-    const existing = consumerChanges.find(c => c.path === change.path)
-    if (existing)
-      existing.after = change.after
-    else
-      consumerChanges.push(change)
-  }
+  mergeFileChanges(consumerChanges, templateChanges)
   const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !isGeneratedNuxtPath(cwd, c.path))
 
   const verify = opts.verify ?? true
@@ -73,7 +69,7 @@ function applyComponentTemplateRenameFallback(cwd: string, oldAbs: string, newAb
   const byPath = new Map(changes.map(change => [change.path, change]))
   const candidates = new Set([
     ...rgFiles(oldName, { cwd, glob: '*.vue' }),
-    ...rgFiles(hyphenate(oldName), { cwd, glob: '*.vue' }),
+    ...rgFiles(hyphenateVueName(oldName), { cwd, glob: '*.vue' }),
   ])
   const out: FileChange[] = []
   for (const path of candidates) {
@@ -90,25 +86,4 @@ function applyComponentTemplateRenameFallback(cwd: string, oldAbs: string, newAb
     })
   }
   return out
-}
-
-function isGeneratedNuxtPath(cwd: string, filePath: string): boolean {
-  const rel = relative(cwd, filePath).replace(/\\/g, '/')
-  return rel === '.nuxt' || rel.startsWith('.nuxt/')
-}
-
-function hyphenate(s: string): string {
-  return s.replace(/\B([A-Z])/g, '-$1').toLowerCase()
-}
-
-function findTsconfig(cwd: string): string | null {
-  const tries = ['tsconfig.json', 'tsconfig.build.json']
-  for (const t of tries) {
-    try {
-      readFileSync(resolve(cwd, t))
-      return resolve(cwd, t)
-    }
-    catch {}
-  }
-  return null
 }

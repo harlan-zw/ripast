@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { rewriteClassString, visitClassTokens } from './css-class-token.ts'
-import { parseFile, rgFiles } from './util.ts'
+import { applyTextEdits, parseFile, rgFiles } from './util.ts'
 
 export interface CssClassSourceOptions {
   cwd?: string
@@ -20,7 +20,7 @@ export interface CssClassSourceFile {
 const CSS_EXTS = ['.css', '.scss', '.sass', '.less', '.postcss', '.pcss']
 const CODE_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 
-export function defaultCssClassGlobs(): string[] {
+function defaultCssClassGlobs(): string[] {
   return [...CODE_EXTS, '.vue', ...CSS_EXTS].map(e => `*${e}`)
 }
 
@@ -185,21 +185,7 @@ function rewriteStringsInProgram(source: string, program: any, map: RenameMap, o
       }
     },
   })
-  return applyEdits(source, edits)
-}
-
-function applyEdits(source: string, edits: { start: number, end: number, replacement: string }[]): string {
-  if (!edits.length)
-    return source
-  edits.sort((a, b) => a.start - b.start)
-  let out = ''
-  let cursor = 0
-  for (const edit of edits) {
-    out += source.slice(cursor, edit.start) + edit.replacement
-    cursor = edit.end
-  }
-  out += source.slice(cursor)
-  return out
+  return applyTextEdits(source, edits)
 }
 
 function rewriteVue(file: CssClassSourceFile, map: RenameMap): string {

@@ -175,7 +175,7 @@ export function workspaceEditToChanges(
       return
     out.push({
       path: fileName,
-      rel: relPath(fileName, cwd),
+      rel: workspaceRelativePath(fileName, cwd),
       before,
       after,
     })
@@ -195,6 +195,6 @@ export function workspaceEditToChanges(
   return out
 }
 
-function relPath(fileName: string, cwd: string): string {
+export function workspaceRelativePath(fileName: string, cwd: string): string {
   return fileName.startsWith(cwd) ? fileName.slice(cwd.length).replace(/^[/\\]/, '') : fileName
 }

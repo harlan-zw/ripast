@@ -23,6 +23,38 @@ export interface FileChange {
   after: string
 }
 
+export interface TextEdit {
+  start: number
+  end: number
+  replacement: string
+}
+
+export function mergeFileChanges(target: FileChange[], incoming: FileChange[]): void {
+  for (const change of incoming) {
+    const existing = target.find(c => c.path === change.path)
+    if (existing)
+      existing.after = change.after
+    else
+      target.push(change)
+  }
+}
+
+export function applyTextEdits(source: string, edits: TextEdit[]): string {
+  if (!edits.length)
+    return source
+  edits.sort((a, b) => a.start - b.start)
+  let out = ''
+  let cursor = 0
+  for (const edit of edits) {
+    if (edit.start < cursor)
+      continue
+    out += source.slice(cursor, edit.start) + edit.replacement
+    cursor = edit.end
+  }
+  out += source.slice(cursor)
+  return out
+}
+
 const EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
 
 export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {
@@ -71,6 +103,10 @@ function extractScript(source: string): { start: number, end: number, code: stri
 
 export function parseFile(path: string, cwd: string = process.cwd()): ParsedFile {
   const source = readFileSync(path, 'utf8')
+  return parseSourceFile(path, source, cwd)
+}
+
+export function parseSourceFile(path: string, source: string, cwd: string = process.cwd()): ParsedFile {
   const rel = relative(cwd, path)
   if (path.endsWith('.vue')) {
     const block = extractScript(source)

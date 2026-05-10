@@ -1,6 +1,7 @@
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
+import { applyTextEdits } from './util.ts'
 
 export interface TemplateExpression {
   code: string
@@ -13,7 +14,7 @@ const NODE_ELEMENT = 1
 const NODE_SIMPLE_EXPRESSION = 4
 const NODE_COMPOUND_EXPRESSION = 8
 
-function hyphenate(s: string): string {
+export function hyphenateVueName(s: string): string {
   return s.replace(/\B([A-Z])/g, '-$1').toLowerCase()
 }
 
@@ -31,8 +32,8 @@ export function rewriteTemplateReferences(source: string, oldName: string, newNa
   if (!tmpl?.ast)
     return source
   const isComponentName = /^[A-Z]/.test(oldName)
-  const oldKebab = hyphenate(oldName)
-  const newKebab = hyphenate(newName)
+  const oldKebab = hyphenateVueName(oldName)
+  const newKebab = hyphenateVueName(newName)
   const edits: Edit[] = []
 
   function rewriteTag(node: any, oldTag: string, newTag: string): void {
@@ -174,17 +175,7 @@ export function rewriteTemplateReferences(source: string, oldName: string, newNa
 
   if (!edits.length)
     return source
-  edits.sort((a, b) => a.start - b.start)
-  let out = ''
-  let cursor = 0
-  for (const e of edits) {
-    if (e.start < cursor)
-      continue
-    out += source.slice(cursor, e.start) + e.replacement
-    cursor = e.end
-  }
-  out += source.slice(cursor)
-  return out
+  return applyTextEdits(source, edits)
 }
 
 export function extractTemplateExpressions(source: string): TemplateExpression[] {

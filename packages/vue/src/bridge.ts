@@ -1,19 +1,13 @@
 import type { FileChange, Regression } from '@ripast/core/adapter'
-import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { posToLineCol, rewriteTemplateReferences } from '@ripast/core/adapter'
 import { URI } from 'vscode-uri'
-import { createVueService, workspaceEditToChanges } from './service.ts'
-
-export function hasVueFiles(cwd: string): boolean {
-  const r = spawnSync('rg', ['--files', '--hidden', '--no-messages', '-g', '*.vue', '.'], { cwd, encoding: 'utf8' })
-  return !!r.stdout.trim()
-}
+import { createVueService, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
+import { hasVueFilesContaining as hasVueFilesContainingInWorkspace, listVueFiles, listVueFilesContaining } from './vue-files.ts'
 
 export function hasVueFilesContaining(cwd: string, pattern: string): boolean {
-  const r = spawnSync('rg', ['--files-with-matches', '--hidden', '--no-messages', '--fixed-strings', '-g', '*.vue', pattern, '.'], { cwd, encoding: 'utf8' })
-  return !!r.stdout.trim()
+  return hasVueFilesContainingInWorkspace(cwd, pattern)
 }
 
 export interface RenameSite {
@@ -63,7 +57,7 @@ export async function applyVueRename(
         continue
       byPath.set(path, {
         path,
-        rel: existing?.rel ?? relPath(path, cwd),
+        rel: existing?.rel ?? workspaceRelativePath(path, cwd),
         before,
         after: rewritten,
       })
@@ -87,11 +81,6 @@ function extractScript(source: string): string | null {
   return match?.[1] ?? null
 }
 
-function listVueFilesContaining(cwd: string, pattern: string): string[] {
-  const r = spawnSync('rg', ['--files-with-matches', '--hidden', '--no-messages', '--fixed-strings', '-g', '*.vue', pattern, '.'], { cwd, encoding: 'utf8' })
-  return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
-}
-
 function safeReadFile(path: string): string | undefined {
   try {
     return readFileSync(path, 'utf8')
@@ -99,10 +88,6 @@ function safeReadFile(path: string): string | undefined {
   catch {
     return undefined
   }
-}
-
-function relPath(fileName: string, cwd: string): string {
-  return fileName.startsWith(cwd) ? fileName.slice(cwd.length).replace(/^[/\\]/, '') : fileName
 }
 
 export async function applyVueImportRewrite(
@@ -179,9 +164,4 @@ async function getDiags(vue: ReturnType<typeof createVueService>, fileName: stri
 
 function diagKey(d: { range: { start: { line: number, character: number } }, code?: string | number, message: string }): string {
   return `${d.range.start.line}:${d.range.start.character}:${d.code ?? ''}:${d.message}`
-}
-
-function listVueFiles(cwd: string): string[] {
-  const r = spawnSync('rg', ['--files', '--hidden', '--no-messages', '-g', '*.vue', '.'], { cwd, encoding: 'utf8' })
-  return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
 }

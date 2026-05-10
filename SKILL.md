@@ -82,6 +82,16 @@ ripast tree --exports local --glob '*.ts'
 ripast tree --profile agent --glob '*.ts,!test/**'
 ```
 
+### `ripast unused [--glob g1,g2] [--exports all|exported|local] [--tsconfig path] [--json]`
+
+Report top-level declarations with no semantic project references. The default is `--exports local`; use `--exports exported` or `--exports all` when you explicitly want to inspect public API symbols too. Treat this as "unreferenced top-level declarations", not a complete dead-code or entrypoint reachability model.
+
+```bash
+ripast unused
+ripast unused --exports local
+ripast unused --exports all --json
+```
+
 ### `ripast rename <from> <to> [--scope file] [--all] [--tsconfig path] [--apply] [--no-verify] [--verify-mode touched|project|none] [--profile auto|agent|full] [--json]`
 
 Scope-aware rename via ts-morph. Finds the declaration, TypeScript propagates to every reference (imports, JSX, type positions, aliased imports). Object property keys with the same spelling are NOT touched unless they genuinely reference the same symbol.
