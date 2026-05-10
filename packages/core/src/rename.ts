@@ -139,6 +139,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   if (vueAdapter?.autoImportScopes) {
     const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
     if (declarations.some(decl => isInsideAnyScope(decl.getSourceFile().getFilePath(), scopes))) {
+      removeVueLocalBindingChanges(changes, from)
       const fallbackChanges = timed(profile, 'nuxt rename fallback', () => applyNuxtBareIdentifierRename(cwd, from, to, changes))
       for (const change of fallbackChanges) {
         const existing = changes.find(c => c.path === change.path)
@@ -172,6 +173,8 @@ function applyNuxtBareIdentifierRename(cwd: string, from: string, to: string, ch
     const before = byPath.get(path)?.before ?? file.fullSource
     const current = byPath.get(path)?.after ?? before
     const currentFile = current === file.fullSource ? file : parseFileFromSource(path, cwd, current)
+    if (scriptDeclaresBinding(currentFile.scriptSource, from))
+      continue
     const script = rewriteScriptIdentifiers(currentFile.scriptSource, from, to)
     let after = spliceScript(currentFile, script)
     if (currentFile.isSfc)
@@ -186,6 +189,70 @@ function applyNuxtBareIdentifierRename(cwd: string, from: string, to: string, ch
     })
   }
   return out
+}
+
+function removeVueLocalBindingChanges(changes: FileChange[], from: string): void {
+  for (let i = changes.length - 1; i >= 0; i--) {
+    const change = changes[i]
+    if (change.path.endsWith('.vue') && scriptDeclaresBinding(change.before, from, false))
+      changes.splice(i, 1)
+  }
+}
+
+function scriptDeclaresBinding(source: string, name: string, includeImports: boolean = true): boolean {
+  source = extractScriptSource(source) ?? source
+  if (!source.includes(name))
+    return false
+  let program: any
+  try {
+    program = parseSync('script.ts', source).program
+  }
+  catch {
+    return false
+  }
+  let found = false
+  walk(program, {
+    enter(node: any) {
+      if (found)
+        return
+      if (node.type === 'VariableDeclarator' && bindingIncludes(node.id, name)) {
+        found = true
+        return
+      }
+      if ((node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration' || node.type === 'TSInterfaceDeclaration' || node.type === 'TSTypeAliasDeclaration' || node.type === 'TSEnumDeclaration') && node.id?.name === name) {
+        found = true
+        return
+      }
+      if (includeImports && node.type === 'ImportSpecifier' && (node.local?.name ?? node.imported?.name) === name) {
+        found = true
+        return
+      }
+      if (includeImports && (node.type === 'ImportDefaultSpecifier' || node.type === 'ImportNamespaceSpecifier') && node.local?.name === name)
+        found = true
+    },
+  })
+  return found
+}
+
+function extractScriptSource(source: string): string | null {
+  const match = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/i.exec(source)
+  return match?.[1] ?? null
+}
+
+function bindingIncludes(node: any, name: string): boolean {
+  if (!node)
+    return false
+  if (node.type === 'Identifier')
+    return node.name === name
+  if (node.type === 'ObjectPattern')
+    return (node.properties ?? []).some((prop: any) => bindingIncludes(prop.value ?? prop.argument ?? prop.key, name))
+  if (node.type === 'ArrayPattern')
+    return (node.elements ?? []).some((element: any) => bindingIncludes(element, name))
+  if (node.type === 'AssignmentPattern')
+    return bindingIncludes(node.left, name)
+  if (node.type === 'RestElement')
+    return bindingIncludes(node.argument, name)
+  return false
 }
 
 function removeGeneratedNuxtChanges(cwd: string, changes: FileChange[]): void {

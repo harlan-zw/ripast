@@ -56,6 +56,8 @@ export async function applyVueRename(
       if (before === undefined)
         continue
       const baseAfter = existing?.after ?? before
+      if (hasLocalScriptBinding(baseAfter, from))
+        continue
       const rewritten = rewriteTemplateReferences(baseAfter, from, to)
       if (rewritten === baseAfter)
         continue
@@ -69,6 +71,20 @@ export async function applyVueRename(
     return [...byPath.values()]
   }
   finally { vue.dispose() }
+}
+
+function hasLocalScriptBinding(source: string, name: string): boolean {
+  const script = extractScript(source)
+  if (!script?.includes(name))
+    return false
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const withoutImports = script.replace(/^\s*import\s+[^;\n]*(?:;)?$/gm, '')
+  return new RegExp(`\\b(?:const|let|var|function|class|interface|type|enum)\\s+${escaped}\\b`).test(withoutImports)
+}
+
+function extractScript(source: string): string | null {
+  const match = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/i.exec(source)
+  return match?.[1] ?? null
 }
 
 function listVueFilesContaining(cwd: string, pattern: string): string[] {

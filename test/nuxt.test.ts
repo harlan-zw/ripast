@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,6 +18,11 @@ function makeNuxtFixture() {
   return {
     dir,
     read: (rel: string) => readFileSync(join(dir, rel), 'utf8'),
+    write: (rel: string, content: string) => {
+      const abs = join(dir, rel)
+      mkdirSync(dirname(abs), { recursive: true })
+      writeFileSync(abs, content)
+    },
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   }
 }
@@ -88,6 +93,91 @@ describe('nuxt auto-imports', () => {
       assert.match(fx.read('pages/index.vue'), /import \{ format \} from '\.\.\/lib\/format'/)
       assert.match(fx.read('pages/index.vue'), /\{\{ format\(count\.value\) \}\}/)
       assert.equal(fx.read('.nuxt/imports.d.ts'), generated)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('adds explicit imports to TS consumers when moving an auto-imported util out of scope', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('plugins/consumer.ts', 'export const pluginLabel = format(7)\n')
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verify: false })
+      writeChanges(result.changes)
+
+      assert.match(fx.read('plugins/consumer.ts'), /import \{ format \} from '\.\.\/lib\/format'/)
+      assert.match(fx.read('plugins/consumer.ts'), /export const pluginLabel = format\(7\)/)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('merges explicit imports into an existing target-module import', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('lib/format.ts', 'export const existing = 1\n')
+      fx.write('pages/merge.vue', `<script setup lang="ts">\nimport { existing } from '../lib/format'\nconst label = format(existing)\n</script>\n<template>{{ label }}</template>\n`)
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verify: false })
+      writeChanges(result.changes)
+
+      const page = fx.read('pages/merge.vue')
+      assert.match(page, /import \{ existing, format \} from '\.\.\/lib\/format'/)
+      assert.equal((page.match(/from '\.\.\/lib\/format'/g) ?? []).length, 1)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('refuses move-out-of-scope when a Vue auto-import consumer has no script block', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('pages/template-only.vue', `<template><p>{{ format(1) }}</p></template>\n`)
+      await assert.rejects(
+        () => runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verify: false }),
+        /ripast move: "format" is auto-imported in Nuxt; moving to .*lib\/format\.ts removes it from auto-import scope/,
+      )
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('treats configured Nuxt import dirs as auto-import scope', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('nuxt.config.ts', `export default defineNuxtConfig({\n  imports: { dirs: ['custom'] },\n})\n`)
+      fx.write('custom/formatCustom.ts', 'export function customFormat(value: number) { return value + 1 }\n')
+      fx.write('pages/custom.vue', `<script setup lang="ts">\nconst value = customFormat(1)\n</script>\n<template>{{ value }}</template>\n`)
+      const result = await runMove('customFormat', 'custom/formatCustom.ts', 'custom/string.ts', { cwd: fx.dir, verify: false })
+      writeChanges(result.changes)
+
+      assert.match(fx.read('custom/string.ts'), /export function customFormat/)
+      assert.doesNotMatch(fx.read('pages/custom.vue'), /import \{ customFormat \}/)
+      assert.match(fx.read('pages/custom.vue'), /const value = customFormat\(1\)/)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('does not rename shadowed Nuxt fallback identifiers in script or template', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('pages/shadow.vue', `<script setup lang="ts">\nconst useCounter = () => 'local'\nconst local = useCounter()\n</script>\n<template><p>{{ useCounter() }} {{ local }}</p></template>\n`)
+      const result = await runRename('useCounter', 'useTally', { cwd: fx.dir, verify: false })
+      writeChanges(result.changes)
+
+      const page = fx.read('pages/shadow.vue')
+      assert.match(page, /const useCounter = \(\) => 'local'/)
+      assert.match(page, /const local = useCounter\(\)/)
+      assert.match(page, /\{\{ useCounter\(\) \}\}/)
+      assert.doesNotMatch(page, /useTally/)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('renames kebab-only auto-imported component tags after a component file rename', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('pages/kebab.vue', `<template><my-button label="kebab"></my-button></template>\n`)
+      const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { cwd: fx.dir, verify: false })
+      applyRenameFile(result)
+
+      assert.match(fx.read('pages/kebab.vue'), /<primary-button label="kebab"><\/primary-button>/)
+      assert.doesNotMatch(fx.read('pages/kebab.vue'), /my-button/)
     }
     finally { fx.cleanup() }
   })

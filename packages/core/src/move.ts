@@ -230,10 +230,18 @@ function insertVueScriptImport(source: string, symbol: string, specifier: string
   }
   const insertAt = match.index + match[0].length
   const rest = source[insertAt] === '\n' ? source.slice(insertAt + 1) : source.slice(insertAt)
+  const scriptEnd = source.indexOf('</script>', insertAt)
+  const scriptSource = scriptEnd >= 0 ? source.slice(insertAt, scriptEnd) : source.slice(insertAt)
+  const mergedScript = mergeNamedImport(scriptSource, symbol, specifier)
+  if (mergedScript !== scriptSource)
+    return `${source.slice(0, insertAt)}${mergedScript}${scriptEnd >= 0 ? source.slice(scriptEnd) : ''}`
   return `${source.slice(0, insertAt)}\nimport { ${symbol} } from '${specifier}'\n${rest}`
 }
 
 function insertTopLevelImport(source: string, symbol: string, specifier: string): string {
+  const merged = mergeNamedImport(source, symbol, specifier)
+  if (merged !== source)
+    return merged
   const importLine = `import { ${symbol} } from '${specifier}'\n`
   if (source.startsWith('#!')) {
     const nl = source.indexOf('\n')
@@ -246,6 +254,19 @@ function insertTopLevelImport(source: string, symbol: string, specifier: string)
 function hasNamedImport(source: string, symbol: string): boolean {
   const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(`\\bimport\\s*\\{[^}]*\\b${escaped}\\b[^}]*\\}\\s*from\\s*['"]`).test(source)
+}
+
+function mergeNamedImport(source: string, symbol: string, specifier: string): string {
+  const spec = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const importRe = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*(['"])${spec}\\2`)
+  const match = importRe.exec(source)
+  if (!match)
+    return source
+  const names = match[1].split(',').map(part => part.trim()).filter(Boolean)
+  if (names.some(name => name === symbol || name.startsWith(`${symbol} as `)))
+    return source
+  const replacement = `import { ${[...names, symbol].join(', ')} } from ${match[2]}${specifier}${match[2]}`
+  return `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match[0].length)}`
 }
 
 function isInsideAnyScope(filePath: string, scopes: Set<string>): boolean {
