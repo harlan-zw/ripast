@@ -1,7 +1,7 @@
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
-import { extname, relative, resolve } from 'node:path'
+import { extname, resolve } from 'node:path'
 import process from 'node:process'
 import { URI } from 'vscode-uri'
 import { vueRegressions } from './vue-bridge.ts'

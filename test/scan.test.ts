@@ -138,9 +138,9 @@ it('buildDeclarationTree reports top-level exported and local declarations', () 
     const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts' })
     const a = tree.files.find(f => f.file === 'src/a.ts')
     assert.ok(a)
-    assert.deepEqual(a.imports, ['./dep.ts'])
+    assert.deepEqual(a!.imports, ['./dep.ts'])
     assert.deepEqual(
-      a.declarations.map(d => `${d.exported ? 'export' : 'local'}:${d.kind}:${d.name}`),
+      a!.declarations.map(d => `${d.exported ? 'export' : 'local'}:${d.kind}:${d.name}`),
       [
         'local:const:localValue',
         'local:function:localHelper',

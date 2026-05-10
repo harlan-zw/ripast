@@ -107,7 +107,7 @@ describe('vue sfc rename', () => {
 describe('vue verify', () => {
   it('reports zero vue regressions on a clean cross-vue rename', async () => {
     const fx = makeVueFixture({
-      'src/utils.ts': 'export function greet(name: string) { return `hi ${name}` }\n',
+      'src/utils.ts': 'export function greet(name: string) { return `hi $' + '{name}` }\n',
       'src/Comp.vue': `<script setup lang="ts">\nimport { greet } from './utils.ts'\nconst v = greet('alice')\n</script>\n<template>{{ v }}</template>\n`,
     })
     try {

@@ -75,7 +75,7 @@ export async function applyVueRename(
 
 function listVueFilesContaining(cwd: string, pattern: string): string[] {
   const r = spawnSync('rg', ['--files-with-matches', '--hidden', '--no-messages', '--fixed-strings', '-g', '*.vue', pattern, '.'], { cwd, encoding: 'utf8' })
-  return r.stdout.split('\n').filter(Boolean).map(p => resolve(cwd, p))
+  return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
 }
 
 function safeReadFile(path: string): string | undefined {
@@ -169,5 +169,5 @@ function diagKey(d: { range: { start: { line: number, character: number } }, cod
 
 function listVueFiles(cwd: string): string[] {
   const r = spawnSync('rg', ['--files', '--hidden', '--no-messages', '-g', '*.vue', '.'], { cwd, encoding: 'utf8' })
-  return r.stdout.split('\n').filter(Boolean).map(p => resolve(cwd, p))
+  return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
 }

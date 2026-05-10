@@ -40,7 +40,7 @@ export function createVueService(tsconfigPath: string, cwd: string): VueService 
     undefined,
     vueExts,
   )
-  commandLine.fileNames = reparsed.fileNames
+  const fileNames = reparsed.fileNames
   if (commandLine.options.allowNonTsExtensions === undefined)
     commandLine.options.allowNonTsExtensions = true
 
@@ -77,7 +77,7 @@ export function createVueService(tsconfigPath: string, cwd: string): VueService 
     getCurrentDirectory: () => cwd,
     getCompilationSettings: () => commandLine.options,
     getProjectReferences: () => commandLine.projectReferences,
-    getScriptFileNames: () => commandLine.fileNames.map(f => resolve(cwd, f)),
+    getScriptFileNames: () => fileNames.map((f: string) => resolve(cwd, f)),
     getProjectVersion: () => String(projectVersion),
   }
 
@@ -103,8 +103,12 @@ export function createVueService(tsconfigPath: string, cwd: string): VueService 
       readFile(uri) {
         if (uri.scheme !== 'file')
           return undefined
-        try { return readFileSync(uri.fsPath, 'utf8') }
-        catch { return undefined }
+        try {
+          return readFileSync(uri.fsPath, 'utf8')
+        }
+        catch {
+          return undefined
+        }
       },
       readDirectory() { return [] },
     },
@@ -131,8 +135,12 @@ export function createVueService(tsconfigPath: string, cwd: string): VueService 
     fileToUri,
     uriToFile,
     read: (fileName: string) => {
-      try { return readFileSync(fileName, 'utf8') }
-      catch { return undefined }
+      try {
+        return readFileSync(fileName, 'utf8')
+      }
+      catch {
+        return undefined
+      }
     },
     setSnapshot: (fileName: string, text: string) => {
       language.scripts.set(URI.file(resolve(cwd, fileName)), ts.ScriptSnapshot.fromString(text))

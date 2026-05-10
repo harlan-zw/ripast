@@ -38,13 +38,14 @@ export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?:
     args.push('--files-with-matches', '--hidden', '--no-messages')
     if (opts.fixedStrings !== false)
       args.push('--fixed-strings')
-    for (const g of globs) args.push('-g', g)
+    for (const g of globs)
+      args.push('-g', g)
     args.push(pattern, '.')
   }
   const r = spawnSync('rg', args, { cwd, encoding: 'utf8' })
   if (r.status !== 0 && r.status !== 1)
     throw new Error(`rg failed: ${r.stderr}`)
-  return r.stdout.split('\n').filter(Boolean).map(p => resolve(cwd, p))
+  return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
 }
 
 const SFC_SCRIPT_RE = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi
@@ -100,7 +101,8 @@ export function writeChanges(changes: FileChange[]): void {
       writeFileSync(tmp, c.after)
       staged.push({ tmp, target: c.path })
     }
-    for (const { tmp, target } of staged) renameSync(tmp, target)
+    for (const { tmp, target } of staged)
+      renameSync(tmp, target)
   }
   catch (err) {
     for (const { tmp } of staged) {

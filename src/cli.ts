@@ -1,3 +1,5 @@
+import type { VerifyMode } from './project.ts'
+import type { ExportFilter } from './scan.ts'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
@@ -22,6 +24,7 @@ const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit m
 const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto uses std-env isAgent.' }
 
 type OutputProfile = 'auto' | 'agent' | 'full'
+type GraphFormat = 'mermaid' | 'dot'
 
 function resolveProfile(raw: unknown): { profile: OutputProfile, agentProfile: boolean } {
   const profile = (raw as OutputProfile | undefined) ?? 'auto'
@@ -32,20 +35,35 @@ function resolveProfile(raw: unknown): { profile: OutputProfile, agentProfile: b
   return { profile, agentProfile: profile === 'agent' || (profile === 'auto' && isAgent) }
 }
 
+function resolveGraphFormat(raw: unknown): GraphFormat {
+  if (raw !== 'mermaid' && raw !== 'dot') {
+    process.stderr.write(`ripast scan: --graph must be "mermaid" or "dot".\n`)
+    process.exit(2)
+  }
+  return raw
+}
+
 function profileHeader(): string {
   return `# profile: agent${agent ? ` (${agent})` : ''}`
 }
 
-function resolveCliVerifyMode(verify: unknown, verifyMode: unknown) {
+function resolveCliVerifyMode(verify: unknown, verifyMode: unknown): VerifyMode {
   if (verifyMode != null) {
-    const mode = verifyMode as string
-    if (mode !== 'none' && mode !== 'touched' && mode !== 'project') {
+    if (verifyMode !== 'none' && verifyMode !== 'touched' && verifyMode !== 'project') {
       process.stderr.write(`ripast: --verify-mode must be "none", "touched", or "project".\n`)
       process.exit(2)
     }
-    return mode
+    return verifyMode
   }
   return resolveVerifyMode(verify as boolean | undefined)
+}
+
+function resolveExportFilter(raw: unknown): ExportFilter {
+  if (raw !== 'all' && raw !== 'exported' && raw !== 'local') {
+    process.stderr.write(`ripast tree: --exports must be "all", "exported", or "local".\n`)
+    process.exit(2)
+  }
+  return raw
 }
 
 const scanCmd = defineCommand({
@@ -65,11 +83,7 @@ const scanCmd = defineCommand({
       kinds: args.kind ? (args.kind as string).split(',') : undefined,
     }
     if (args.graph) {
-      const graphFormat = args.graph as string
-      if (graphFormat !== 'mermaid' && graphFormat !== 'dot') {
-        process.stderr.write(`ripast scan: --graph must be "mermaid" or "dot".\n`)
-        process.exit(2)
-      }
+      const graphFormat = resolveGraphFormat(args.graph)
       process.stdout.write(`${formatScanGraph(buildScanGraph(args.pattern as string, opts), graphFormat)}\n`)
       return
     }
@@ -122,11 +136,9 @@ const treeCmd = defineCommand({
   },
   run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
-    const exportFilter = (args.exports as string | undefined) ?? (agentProfile ? 'exported' : 'all')
-    if (exportFilter !== 'all' && exportFilter !== 'exported' && exportFilter !== 'local') {
-      process.stderr.write(`ripast tree: --exports must be "all", "exported", or "local".\n`)
-      process.exit(2)
-    }
+    const exportFilter = args.exports == null
+      ? agentProfile ? 'exported' : 'all'
+      : resolveExportFilter(args.exports)
     const tree = buildDeclarationTree({
       glob: args.glob ? (args.glob as string).split(',') : undefined,
       exports: agentProfile ? 'all' : exportFilter,
@@ -384,7 +396,7 @@ function buildRenameMap(from: string | undefined, to: string | undefined, mapPat
       process.stderr.write(`ripast css-class-rename: --map has an empty key.\n`)
       process.exit(2)
     }
-    entries.push([k, v])
+    entries.push([k, String(v)])
   }
   if (!entries.length) {
     process.stderr.write(`ripast css-class-rename: --map is empty.\n`)

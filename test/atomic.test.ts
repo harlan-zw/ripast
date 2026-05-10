@@ -18,7 +18,7 @@ it('writeChanges leaves no partial state when a write fails mid-batch', () => {
     assert.throws(() => writeChanges(changes))
     assert.equal(readFileSync(join(fx.dir, 'a.ts'), 'utf8'), 'original-a\n', 'a.ts unchanged after failure')
     assert.ok(!existsSync(join(fx.dir, 'missing-dir')), 'target dir was never created')
-    const leftover = readdirSync(fx.dir).filter(f => f.includes('ripast-tmp'))
+    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripast-tmp'))
     assert.equal(leftover.length, 0, `no tmp files leaked: ${leftover.join(', ')}`)
   }
   finally { fx.cleanup() }
@@ -36,7 +36,7 @@ it('writeChanges applies all changes successfully when every target is writable'
     ])
     assert.equal(fx.read('a.ts'), 'new-a\n')
     assert.equal(fx.read('b.ts'), 'new-b\n')
-    const leftover = readdirSync(fx.dir).filter(f => f.includes('ripast-tmp'))
+    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripast-tmp'))
     assert.equal(leftover.length, 0, 'no tmp files left after success')
   }
   finally { fx.cleanup() }

@@ -189,8 +189,12 @@ function scanTemplate(
   seen: Set<string>,
 ): void {
   const source = fullSource || (() => {
-    try { return readFileSync(absPath, 'utf8') }
-    catch { return '' }
+    try {
+      return readFileSync(absPath, 'utf8')
+    }
+    catch {
+      return ''
+    }
   })()
   if (!source.includes(pattern))
     return
@@ -199,8 +203,12 @@ function scanTemplate(
     if (!expr.code.includes(pattern))
       continue
     let program: any
-    try { program = parseSync(`${absPath}.expr.ts`, expr.code).program }
-    catch { continue }
+    try {
+      program = parseSync(`${absPath}.expr.ts`, expr.code).program
+    }
+    catch {
+      continue
+    }
     if (!program)
       continue
     walk(program, {
@@ -477,6 +485,8 @@ function declarationItems(
     case 'VariableDeclaration':
       return (node.declarations ?? []).flatMap((decl: any) => {
         const name = bindingName(decl.id)
+        if (!name)
+          return []
         return singleDeclaration(decl, name, node.kind ?? 'var', exported || declaredExports.has(name), fullSource, offset)
       })
     default:

@@ -21,8 +21,12 @@ interface Edit { start: number, end: number, replacement: string }
 
 export function rewriteTemplateReferences(source: string, oldName: string, newName: string): string {
   let descriptor: any
-  try { descriptor = parseSfc(source).descriptor }
-  catch { return source }
+  try {
+    descriptor = parseSfc(source).descriptor
+  }
+  catch {
+    return source
+  }
   const tmpl = descriptor.template
   if (!tmpl?.ast)
     return source
@@ -85,8 +89,12 @@ export function rewriteTemplateReferences(source: string, oldName: string, newNa
     if (exprStartInSource === undefined)
       return
     let program: any
-    try { program = parseSync('expr.ts', expr.content).program }
-    catch { return }
+    try {
+      program = parseSync('expr.ts', expr.content).program
+    }
+    catch {
+      return
+    }
     if (!program)
       return
     walk(program, {

@@ -24,8 +24,8 @@ it('volar service can rename a symbol used in a vue file', async () => {
       const changes = workspaceEditToChanges(edits, vue, fx.dir)
       const vueChange = changes.find(c => c.path.endsWith('Comp.vue'))
       assert.ok(vueChange, `expected .vue change, got: ${changes.map(c => c.rel).join(', ')}`)
-      assert.ok(vueChange.after.includes('import { salute } from'), 'import rewritten')
-      assert.ok(vueChange.after.includes('const msg = salute()'), 'call rewritten')
+      assert.ok(vueChange!.after.includes('import { salute } from'), 'import rewritten')
+      assert.ok(vueChange!.after.includes('const msg = salute()'), 'call rewritten')
     }
     finally { vue.dispose() }
   }
