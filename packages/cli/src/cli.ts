@@ -7,9 +7,11 @@ import {
   buildScanGraph,
   buildUnusedDeclarations,
   formatAgentDeclarationTree,
+  formatAgentFileScanHits,
   formatAgentHits,
   formatAgentScanHits,
   formatDeclarationTree,
+  formatFileScanHits,
   formatHits,
   formatRegressions,
   formatScanGraph,
@@ -17,11 +19,14 @@ import {
   formatUnusedDeclarations,
   printDiffs,
   resolveVerifyMode,
+  runCssClassFileScan,
   runCssClassRename,
   runCssClassScan,
+  runDelete,
   runMove,
   runRename,
   runRenameFile,
+  runReplace,
   scan,
   summarize,
   writeChanges,
@@ -140,6 +145,32 @@ const renameCmd = defineCommand({
   },
 })
 
+const replaceCmd = defineCommand({
+  meta: { name: 'replace', description: 'Replace an imported symbol with another project export; updates imports and call sites.' },
+  args: {
+    'from': { type: 'positional', required: true },
+    'to': { type: 'positional', required: true },
+    'tsconfig': { type: 'string' },
+    'glob': globArg,
+    'target-scope': { type: 'string', description: 'Restrict target symbol resolution to a single file when multiple files export the same name.' },
+    'apply': applyArg,
+    'verify': verifyArg,
+    'verifyMode': verifyModeArg,
+    'profile': profileArg,
+    'json': jsonArg,
+  },
+  async run({ args }) {
+    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
+    const r = await runReplace(args.from as string, args.to as string, {
+      tsconfig: args.tsconfig as string | undefined,
+      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      verify: verifyMode,
+      targetScope: args['target-scope'] as string | undefined,
+    })
+    emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
+  },
+})
+
 const treeCmd = defineCommand({
   meta: { name: 'tree', description: 'Print a project declaration tree from top-level AST declarations, grouped by file.' },
   args: {
@@ -205,6 +236,28 @@ const moveCmd = defineCommand({
       tsconfig: args.tsconfig as string | undefined,
       verify: verifyMode,
       vue: args.vue as boolean,
+    })
+    emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
+  },
+})
+
+const deleteCmd = defineCommand({
+  meta: { name: 'delete', description: 'Delete an unused top-level declaration from a file; refuses if references remain.' },
+  args: {
+    symbol: { type: 'positional', required: true },
+    from: { type: 'string', required: true, description: 'Source file path.' },
+    tsconfig: { type: 'string' },
+    apply: applyArg,
+    verify: verifyArg,
+    verifyMode: verifyModeArg,
+    profile: profileArg,
+    json: jsonArg,
+  },
+  async run({ args }) {
+    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
+    const r = await runDelete(args.symbol as string, args.from as string, {
+      tsconfig: args.tsconfig as string | undefined,
+      verify: verifyMode,
     })
     emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
   },
@@ -439,19 +492,32 @@ function buildRenameMap(from: string | undefined, to: string | undefined, mapPat
 }
 
 const cssClassScanCmd = defineCommand({
-  meta: { name: 'css-class-scan', description: 'Tokenize every class site (strings, Vue class attrs, @apply) and emit a frequency-sorted list. Feeds --map for css-class-rename.' },
+  meta: { name: 'css-class-scan', description: 'Tokenize every class site (strings, Vue class attrs, @apply) and emit sortable token or file frequency lists. Use --sort count-asc for rare tokens or --by file for files introducing the most unique classes.' },
   args: {
     pattern: { type: 'string', description: 'Comma-separated globs matched against the bare token (e.g. "bg-*,text-*"). Default: all tokens.' },
     glob: globArg,
+    by: { type: 'string', description: 'Group by token or file. Default: token.' },
+    sort: { type: 'string', description: 'Sort order. Token: count-desc, count-asc, token. File: unique-desc, unique-asc, count-desc, count-asc, file.' },
     profile: profileArg,
     json: jsonArg,
   },
   run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
-    const hits = runCssClassScan({
+    const by = resolveCssClassScanGroup(args.by)
+    const base = {
       glob: args.glob ? (args.glob as string).split(',') : undefined,
       pattern: args.pattern ? (args.pattern as string).split(',') : undefined,
-    })
+    }
+    if (by === 'file') {
+      const hits = runCssClassFileScan({ ...base, sort: resolveCssClassFileScanSort(args.sort) })
+      if (agentProfile && !args.json) {
+        process.stdout.write(`${profileHeader()}\n${formatAgentFileScanHits(hits)}\n`)
+        return
+      }
+      process.stdout.write(`${formatFileScanHits(hits, !!args.json)}\n`)
+      return
+    }
+    const hits = runCssClassScan({ ...base, sort: resolveCssClassScanSort(args.sort) })
     if (agentProfile && !args.json) {
       process.stdout.write(`${profileHeader()}\n${formatAgentScanHits(hits)}\n`)
       return
@@ -460,6 +526,36 @@ const cssClassScanCmd = defineCommand({
   },
 })
 
+function resolveCssClassScanGroup(raw: unknown): 'token' | 'file' {
+  if (raw == null)
+    return 'token'
+  if (raw !== 'token' && raw !== 'file') {
+    process.stderr.write(`ripast css-class-scan: --by must be "token" or "file".\n`)
+    process.exit(2)
+  }
+  return raw
+}
+
+function resolveCssClassScanSort(raw: unknown): 'count-desc' | 'count-asc' | 'token' {
+  if (raw == null)
+    return 'count-desc'
+  if (raw !== 'count-desc' && raw !== 'count-asc' && raw !== 'token') {
+    process.stderr.write(`ripast css-class-scan: --sort must be "count-desc", "count-asc", or "token".\n`)
+    process.exit(2)
+  }
+  return raw
+}
+
+function resolveCssClassFileScanSort(raw: unknown): 'unique-desc' | 'unique-asc' | 'count-desc' | 'count-asc' | 'file' {
+  if (raw == null)
+    return 'unique-desc'
+  if (raw !== 'unique-desc' && raw !== 'unique-asc' && raw !== 'count-desc' && raw !== 'count-asc' && raw !== 'file') {
+    process.stderr.write(`ripast css-class-scan: --sort with --by file must be "unique-desc", "unique-asc", "count-desc", "count-asc", or "file".\n`)
+    process.exit(2)
+  }
+  return raw
+}
+
 runMain(defineCommand({
   meta: { name: 'ripast', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
@@ -467,8 +563,10 @@ runMain(defineCommand({
     'tree': treeCmd,
     'unused': unusedCmd,
     'rename': renameCmd,
+    'replace': replaceCmd,
     'rename-file': renameFileCmd,
     'move': moveCmd,
+    'delete': deleteCmd,
     'css-class-rename': cssClassRenameCmd,
     'css-class-scan': cssClassScanCmd,
   },

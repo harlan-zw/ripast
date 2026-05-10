@@ -180,7 +180,7 @@ describe('runCssClassRename', () => {
     try {
       const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
       assert.equal(r.changes.length, 1)
-      assert.ok(r.changes[0].after.includes('bg-neutral-500 carefully'))
+      assert.ok(r.changes[0].after.includes('bg-gray-500 carefully'))
       assert.ok(r.changes[0].after.includes(`const cls = 'bg-neutral-500'`))
     }
     finally { fx.cleanup() }
@@ -209,8 +209,8 @@ describe('runCssClassRename', () => {
 
   it('applies multi-pair map across multiple files', async () => {
     const fx = makeFixture({
-      'src/a.ts': `export const a = 'bg-gray-500'\n`,
-      'src/b.ts': `export const b = 'text-gray-900'\n`,
+      'src/a.ts': `export const cls = 'bg-gray-500'\n`,
+      'src/b.ts': `export const className = 'text-gray-900'\n`,
       'src/c.ts': `export const c = 'unrelated'\n`,
     }, false)
     try {

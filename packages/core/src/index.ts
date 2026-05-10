@@ -1,6 +1,8 @@
 export { rewriteClassString, rewriteToken, runCssClassRename } from './css-class-rename.ts'
 export type { CssClassRenameOptions, CssClassRenameResult, RenameMap } from './css-class-rename.ts'
-export { formatAgentScanHits, formatScanHits, runCssClassScan } from './css-class-scan.ts'
+export { formatAgentFileScanHits, formatAgentScanHits, formatFileScanHits, formatScanHits, runCssClassFileScan, runCssClassScan } from './css-class-scan.ts'
+export { runDelete } from './delete.ts'
+export type { DeleteOptions, DeleteReference, DeleteResult } from './delete.ts'
 export { runMove } from './move.ts'
 export type { MoveOptions, MoveResult } from './move.ts'
 export type { ProfileEvent, ProfileSink } from './profile.ts'
@@ -10,6 +12,8 @@ export { runRenameFile } from './rename-file.ts'
 export type { RenameFileOptions, RenameFileResult } from './rename-file.ts'
 export { runRename } from './rename.ts'
 export type { RenameOptions, RenameResult } from './rename.ts'
+export { runReplace } from './replace.ts'
+export type { ReplaceOptions, ReplaceResult } from './replace.ts'
 export {
   buildDeclarationTree,
   buildScanGraph,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { runCssClassScan } from '../packages/core/src/css-class-scan.ts'
+import { formatAgentFileScanHits, formatFileScanHits, runCssClassFileScan, runCssClassScan } from '../packages/core/src/css-class-scan.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('runCssClassScan', () => {
@@ -44,8 +44,8 @@ describe('runCssClassScan', () => {
 
   it('aggregates across files', async () => {
     const fx = makeFixture({
-      'src/a.ts': `export const a = 'bg-gray-500'\n`,
-      'src/b.ts': `export const b = 'bg-gray-500 text-white'\n`,
+      'src/a.ts': `export const cls = 'bg-gray-500'\n`,
+      'src/b.ts': `export const className = 'bg-gray-500 text-white'\n`,
     }, false)
     try {
       const hits = runCssClassScan({ cwd: fx.dir })
@@ -105,6 +105,70 @@ describe('runCssClassScan', () => {
     finally { fx.cleanup() }
   })
 
+  it('can sort by least used first', async () => {
+    const fx = makeFixture({
+      'src/a.ts': `export const cls = 'flex flex flex block block items-center'\n`,
+    }, false)
+    try {
+      const hits = runCssClassScan({ cwd: fx.dir, sort: 'count-asc' })
+      assert.deepEqual(hits.map(h => `${h.token}:${h.count}`), [
+        'items-center:1',
+        'block:2',
+        'flex:3',
+      ])
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('can sort by token', async () => {
+    const fx = makeFixture({
+      'src/a.ts': `export const cls = 'flex block items-center'\n`,
+    }, false)
+    try {
+      const hits = runCssClassScan({ cwd: fx.dir, sort: 'token' })
+      assert.deepEqual(hits.map(h => h.token), ['block', 'flex', 'items-center'])
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('can group by file and sort by unique token count', async () => {
+    const fx = makeFixture({
+      'src/a.ts': `export const cls = 'flex flex items-center text-sm'\n`,
+      'src/b.ts': `export const cls = 'flex'\n`,
+      'src/c.ts': `export const msg = 'not classes here'\n`,
+    }, false)
+    try {
+      const hits = runCssClassFileScan({ cwd: fx.dir })
+      assert.deepEqual(hits.map(h => `${h.file}:${h.unique}:${h.count}`), [
+        'src/a.ts:3:4',
+        'src/b.ts:1:1',
+      ])
+      assert.deepEqual(hits[0].tokens, ['flex', 'items-center', 'text-sm'])
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('can group by file and sort by least unique first', async () => {
+    const fx = makeFixture({
+      'src/a.ts': `export const cls = 'flex items-center text-sm'\n`,
+      'src/b.ts': `export const cls = 'flex'\n`,
+    }, false)
+    try {
+      const hits = runCssClassFileScan({ cwd: fx.dir, sort: 'unique-asc' })
+      assert.deepEqual(hits.map(h => h.file), ['src/b.ts', 'src/a.ts'])
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('formats file grouped scan output', async () => {
+    const hits = [
+      { file: 'src/a.ts', unique: 3, count: 4, tokens: ['flex', 'items-center', 'text-sm'] },
+      { file: 'src/b.ts', unique: 1, count: 1, tokens: ['flex'] },
+    ]
+    assert.match(formatFileScanHits(hits, false), /src\/a\.ts\s+3 unique\s+4 total/)
+    assert.match(formatAgentFileScanHits(hits, 1), /^class-files files=2 top=1 format=file=unique\/total\nsrc\/a\.ts=3\/4\n\+1 more$/)
+  })
+
   it('does not emit numbers or other non-class tokens', async () => {
     const fx = makeFixture({
       'src/a.ts': `export const x = 42\nexport const s = 'hello world 123'\nexport const cls = 'bg-gray-500'\n`,
@@ -113,7 +177,41 @@ describe('runCssClassScan', () => {
       const hits = runCssClassScan({ cwd: fx.dir })
       assert.ok(!hits.some(h => h.token === '42'))
       assert.ok(!hits.some(h => h.token === '123'))
+      assert.ok(!hits.some(h => h.token === 'hello'))
+      assert.ok(!hits.some(h => h.token === 'world'))
       assert.ok(hits.find(h => h.token === 'bg-gray-500'))
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('reads class helper arguments but not unrelated strings', async () => {
+    const fx = makeFixture({
+      'src/a.ts': `export const text = 'the Google default'\nexport const cls = cn('flex', active && 'text-sm', { 'items-center': active })\n`,
+    }, false)
+    try {
+      const hits = runCssClassScan({ cwd: fx.dir })
+      assert.ok(hits.find(h => h.token === 'flex'))
+      assert.ok(hits.find(h => h.token === 'text-sm'))
+      assert.ok(hits.find(h => h.token === 'items-center'))
+      assert.ok(!hits.some(h => h.token === 'the'))
+      assert.ok(!hits.some(h => h.token === 'Google'))
+      assert.ok(!hits.some(h => h.token === 'default'))
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('ignores non-source files matched by broad globs', async () => {
+    const fx = makeFixture({
+      'app/a.ts': `export const cls = 'flex'\n`,
+      'app/data.json': `{ "label": "the Google default" }\n`,
+      'layers/readme.md': `the Google default\n`,
+    }, false)
+    try {
+      const hits = runCssClassScan({ cwd: fx.dir, glob: ['app/**', 'layers/**'] })
+      assert.ok(hits.find(h => h.token === 'flex'))
+      assert.ok(!hits.some(h => h.token === 'the'))
+      assert.ok(!hits.some(h => h.token === 'Google'))
+      assert.ok(!hits.some(h => h.token === 'default'))
     }
     finally { fx.cleanup() }
   })

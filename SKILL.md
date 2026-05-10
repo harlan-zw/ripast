@@ -4,7 +4,7 @@ description: AST-aware rename, move, extract, find-usages, and tailwind/CSS clas
 user_invocable: true
 ---
 
-Surgical Edits are slow and miss things (shadowed identifiers, type-only imports, JSX refs). `ripast` parses only the files ripgrep says contain the token, then uses the AST to decide what to change. Six primitives; each gated by tests, and mutating primitives include a post-transform typecheck safety net (except `css-class-rename`, which targets CSS tokens and has no typecheck signal). Vue SFCs supported via Volar: rename + move propagate into `<script>` blocks; scan covers `<template>` interpolations and directive expressions; verify catches new diagnostics in `.vue` consumers.
+Surgical Edits are slow and miss things (shadowed identifiers, type-only imports, JSX refs). `ripast` parses only the files ripgrep says contain the token, then uses the AST to decide what to change. Core primitives are gated by tests, and mutating primitives include a post-transform typecheck safety net (except `css-class-rename`, which targets CSS tokens and has no typecheck signal). Vue SFCs supported via Volar: rename + move propagate into `<script>` blocks; scan covers `<template>` interpolations and directive expressions; verify catches new diagnostics in `.vue` consumers.
 
 ## When to reach for this vs Edit
 
@@ -13,7 +13,9 @@ Surgical Edits are slow and miss things (shadowed identifiers, type-only imports
 | Single site, or <5 matches in one file | Edit |
 | "Where is X used?" | `ripast scan` |
 | Rename a symbol across the repo | `ripast rename` |
+| Replace one imported API with another project export | `ripast replace` |
 | Move a declaration to another file (update all imports) | `ripast move` |
+| Delete an unused top-level declaration | `ripast delete` |
 | Rename a file and update every import site | `ripast rename-file` |
 | Rename a tailwind/CSS utility class across the repo | `ripast css-class-rename` |
 | List every class token in the repo (seeds a rename map) | `ripast css-class-scan` |
@@ -44,7 +46,7 @@ npx -y -p @ripast/cli -p @ripast/vue ripast rename useStore useAppStore --apply
 
 Requires `rg` (ripgrep) on PATH and Node 20.11+.
 
-All mutating commands default to **dry-run** (print a unified diff with a `N files, +A -R lines` header). Pass `--apply` to write. `--verify` (on by default for rename/move) runs a ts-morph post-transform typecheck and refuses `--apply` if new diagnostics appear; pass `--no-verify` to skip. Use `--verify-mode touched|project|none` to choose scoped, full-project, or no diagnostics. Pass `--json` on rename/move for machine-readable output (`{ applied, dryRun, blockedByRegression, scanned, summary, changes[], regressions[] }`).
+All mutating commands default to **dry-run** (print a unified diff with a `N files, +A -R lines` header). Pass `--apply` to write. `--verify` (on by default for rename/replace/move/delete) runs a ts-morph post-transform typecheck and refuses `--apply` if new diagnostics appear; pass `--no-verify` to skip. Use `--verify-mode touched|project|none` to choose scoped, full-project, or no diagnostics. Pass `--json` on rename/replace/move/delete for machine-readable output (`{ applied, dryRun, blockedByRegression, scanned, summary, changes[], regressions[] }`).
 
 All commands accept `--profile auto|agent|full`. `auto` uses `std-env`'s `isAgent`; detected agents get compact, low-token summaries by default. Use `--profile full` when you need full scan rows or dry-run diffs, and `--json` when another tool will parse the result.
 
@@ -104,6 +106,18 @@ ripast rename useStore useAppStore --apply
 - `--scope <file>` to target one declaration, or
 - `--all` to rename every declaration (plus all references) across files.
 
+### `ripast replace <from> <to> [--target-scope file] [--tsconfig path] [--glob g1,g2] [--apply] [--no-verify] [--verify-mode touched|project|none] [--profile auto|agent|full] [--json]`
+
+Replace references to an imported binding with another project export. Resolves `<to>` from exported declarations in the project, rewrites the consumer import, prunes the old import, and preserves the call/body shape. Use this for API migrations like `eventHandler(...)` → `defineAdminApiHandler(...)`; it does not remove semantic body statements such as `await requireAdminAuth(event)`.
+
+```bash
+ripast replace eventHandler defineAdminApiHandler
+ripast replace eventHandler defineAdminApiHandler --apply
+ripast replace eventHandler defineAdminApiHandler --target-scope layers/admin/server/utils/admin-api.ts --apply
+```
+
+**Ambiguity handling.** If `<to>` is exported from multiple files, ripast refuses and asks for `--target-scope <file>`.
+
 ### `ripast move <symbol> --from <source> --to <target> [--tsconfig path] [--apply] [--no-verify] [--verify-mode touched|project|none] [--profile auto|agent|full] [--json]`
 
 Move a top-level exported declaration and rewrite every import site. Supported: `function`, `class`, `interface`, `type`, `enum`, `const` (single declarator; multi-declarator is auto-split before moving). Default exports are rejected with a clear error.
@@ -123,6 +137,15 @@ ripast move helper --from src/utils/a.ts --to src/utils/helpers.ts --apply
 ```
 
 Target file is created if missing.
+
+### `ripast delete <symbol> --from <source> [--tsconfig path] [--apply] [--no-verify] [--verify-mode touched|project|none] [--profile auto|agent|full] [--json]`
+
+Delete one unused top-level declaration and prune imports that were only used by that declaration. Supported: `function`, `class`, `interface`, `type`, `enum`, `const`/`let`/`var` with a single declarator. Refuses if semantic reference lookup finds remaining usages and prints their locations.
+
+```bash
+ripast delete helper --from src/utils.ts
+ripast delete helper --from src/utils.ts --apply
+```
 
 ### `ripast rename-file <old> <new> [--tsconfig path] [--apply] [--profile auto|agent|full] [--json]`
 
@@ -169,17 +192,21 @@ Semantics:
 - **No typecheck verify** — classes aren't typed. Primary safety nets are the dry-run diff and your project's existing Tailwind/UnoCSS lint.
 - **No variant-group expansion in v0** (e.g., `hover:(bg-gray-500 text-white)` — the inner tokens aren't rewritten under the outer group).
 
-### `ripast css-class-scan [--pattern globs] [--glob g1,g2] [--profile auto|agent|full] [--json]`
+### `ripast css-class-scan [--pattern globs] [--glob g1,g2] [--by token|file] [--sort ...] [--profile auto|agent|full] [--json]`
 
-Tokenize every class site (string literals, Vue `class`/`:class` attrs, `@apply` bodies) and emit a frequency-sorted list of unique bare tokens. Variants and `!` important are stripped for counting, so `hover:bg-gray-500` contributes to the `bg-gray-500` count. Designed to seed `--map` files for `css-class-rename` — what scan reports is exactly what rename will match.
+Tokenize every class site (string literals, Vue `class`/`:class` attrs, `@apply` bodies) and emit sortable frequency lists. Variants and `!` important are stripped for counting, so `hover:bg-gray-500` contributes to the `bg-gray-500` count. Designed to seed `--map` files for `css-class-rename` — what token scan reports is exactly what rename will match. Use `--sort count-asc` to surface barely used classes for cleanup, or `--by file` to find files introducing the most unique class tokens.
 
 ```bash
 ripast css-class-scan
+ripast css-class-scan --sort count-asc
+ripast css-class-scan --by file
 ripast css-class-scan --pattern 'bg-*,text-*,border-*'
 ripast css-class-scan --json > tokens.raw.json
 ```
 
-Output format (text): `<token>  <count>  (N files)`, sorted by count desc then token asc.
+Token output format (text): `<token>  <count>  (N files)`. Default token sort is `count-desc`; other token modes are `count-asc` for rare tokens first and `token` for alphabetical output.
+
+File output format (`--by file`): `<file>  <unique> unique  <total> total`. Default file sort is `unique-desc`; other file modes are `unique-asc`, `count-desc`, `count-asc`, and `file`.
 
 Pattern filter is a trivial comma-separated glob (`*` wildcards only) matched against the bare token. Useful for narrowing to a palette (`bg-gray-*`) or a family of utilities. No pattern = all tokens.
 
@@ -196,9 +223,9 @@ Not a replacement for `rg` when you want exact positions — this is an aggregat
 
 ## Tests
 
-125 tests in `test/` (scan, tree, rename, rename-file, move, verify, roundtrip, idempotence, patterns, strict, smoke, atomic, vue). Run from the package repo with `pnpm test`.
+175 tests in `test/` (scan, tree, rename, replace, rename-file, move, delete, verify, roundtrip, idempotence, patterns, strict, smoke, atomic, vue). Run from the package repo with `pnpm test`.
 
-Coverage spans: kind classification, scan dependency graph output, Vue SFC script-block extraction, import dedupe, cross-file rename, property-vs-reference disambiguation, shadowing, aliased-import preservation, JSX components, type-only imports (both forms), re-exports, namespace imports, multi-named import splitting, transitive import copy, unused import pruning, decorator preservation, ambiguity detection with `--scope` / `--all`, idempotence (second run throws, no silent drift), roundtrip identity (rename A→B→A, move x a→b→a), typecheck regression detection, and a realistic multi-file smoke test.
+Coverage spans: kind classification, scan dependency graph output, Vue SFC script-block extraction, import dedupe, cross-file rename, imported-symbol replacement, property-vs-reference disambiguation, shadowing, aliased-import preservation, JSX components, type-only imports (both forms), re-exports, namespace imports, multi-named import splitting, transitive import copy, unused import pruning, safe declaration delete, decorator preservation, ambiguity detection with `--scope` / `--all`, idempotence (second run throws, no silent drift), roundtrip identity (rename A→B→A, move x a→b→a), typecheck regression detection, and a realistic multi-file smoke test.
 
 ## Gotchas
 

@@ -1,6 +1,6 @@
 # Next steps
 
-Tracked work beyond the stable three primitives. Ordered by priority, not commitment. Tiers are rough impact/effort buckets; within a tier, top = do first.
+Tracked work beyond the stable primitives. Ordered by priority, not commitment. Tiers are rough impact/effort buckets; within a tier, top = do first.
 
 ## Tier 1 — Correctness & safety
 
@@ -17,6 +17,7 @@ All shipped. Kept in the log as a pointer to where these live.
 - ~~**Vue SFC rename/move**~~ — Volar bridge in `vue.ts` + `vue-bridge.ts`. `rename` and `move` propagate into `<script>` blocks via `@volar/language-service` + `volar-service-typescript` + `@vue/language-core`. Template-AST post-pass in `vue-template.ts` (`rewriteTemplateReferences`) sweeps what Volar misses: pure-template-only identifier refs and component tag usage (PascalCase + kebab-case, casing preserved). Respects `v-for` shadowing; skips string literals, member-access keys, object-property keys.
 - ~~**Vue SFC scan (template)**~~ — `scan` now extracts template AST via `@vue/compiler-sfc` and parses each interpolation/directive expression with oxc, classifying like script.
 - ~~**`ripast rename-file`**~~ — new primitive. Calls Volar's `getFileRenameEdits` for cross-file import rewriting (handles `.vue` consumers + component-name mapping). Lazy-inits Volar only when needed.
+- ~~**`ripast delete`**~~ — deletes one unused top-level declaration, refuses if semantic references remain, prunes imports used only by that declaration, and runs the normal dry-run/apply/verify path. Tests in `delete.test.ts`.
 - ~~**Vue-aware `--verify`**~~ — `vueRegressions` in `vue-bridge.ts` snapshots Volar diagnostics on `.vue` files before, applies pending changes via `setSnapshot` (in-memory), re-checks. Pre-existing errors aren't flagged as new.
 
 ## Tier 3 — Dogfood & validate
@@ -32,6 +33,8 @@ Nothing else matters if the primitives drift on real repos.
 
 - ~~**`--json` for rename/move**~~ — emits `{ applied, dryRun, blockedByRegression, scanned, summary, changes[], regressions[] }`. Applies atomically when `--apply --json` is passed without regressions; exits 1 on blocked regression.
 - ~~**`ripast scan --graph`**~~ — mermaid/DOT dependency graph for a symbol. Uses scan's rg-prefiltered files and draws relative import/export edges between hit files. Tests in `scan.test.ts`.
+- **Negative `--glob` entries.** Scoping by inclusion alone is awkward on real repos: users want to keep the default extension set but exclude `.nuxt/**`, `**/*.d.ts`, fixtures. rg already supports `!`-prefixed globs; forward them through the CLI flag. Surfaced while integrating ripast into nuxt-improve-codebase-architecture: a default `tree --exports exported` on a Nuxt repo emits hundreds of lines of generated/test noise that an exclude pattern would cut at the source.
+- **Nuxt-aware default scope (or a documented recipe).** `--tsconfig .nuxt/tsconfig.json` already gives the right project; question is whether `tree`/`unused` should pick it up automatically when present, or whether docs should just spell out the exact invocation. Probably the latter — an opinionated default belongs in a skill, not the core CLI.
 - **Formatting preservation** — ts-morph's printer forces double quotes and semicolons. Post-write ESLint `--fix` or Prettier pass keeps diffs minimal. Gate behind a flag.
 - **Encoding / line endings** — assume UTF-8 + LF. CRLF / BOM files untested.
 

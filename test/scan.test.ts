@@ -336,11 +336,11 @@ it('formatAgentScanHits limits class token output', () => {
     { token: 'flex', count: 6, files: ['a.vue', 'b.vue'] },
     { token: 'mt-4', count: 2, files: ['b.vue'] },
   ], 2)
-  assert.match(out, /^class scan/)
-  assert.match(out, /text-sm: 10/)
-  assert.match(out, /flex: 6/)
-  assert.match(out, /\.\.\. 1 more/)
-  assert.doesNotMatch(out, /mt-4: 2/)
+  assert.match(out, /^class-scan tokens=3 files=2 top=2 format=token=count\/files/)
+  assert.match(out, /text-sm=10\/1/)
+  assert.match(out, /flex=6\/2/)
+  assert.match(out, /\+1 more/)
+  assert.doesNotMatch(out, /mt-4=2\/1/)
 })
 
 function groupByKind(hits: { kind: string }[]): Record<string, number> {

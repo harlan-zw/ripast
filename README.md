@@ -31,7 +31,7 @@ A CLI of AST refactor primitives purpose-built for TypeScript and modern fronten
 
 Surgical text edits are slow and miss things: shadowed identifiers, type-only imports, JSX component refs, kebab-case Vue tags, re-exported types. AI coding agents (Claude Code, Cursor, Aider) hit this constantly: a rename that should be one CLI call becomes a 50-file read + multi-edit dance, eating tokens and risking partial renames.
 
-`ripast` operates on the AST, so renames respect scope, moves rewrite all import sites, file renames update every importer (including `.vue` consumers), and verification fails closed when a transform introduces new type errors.
+`ripast` operates on the AST, so renames respect scope, imported symbols can be replaced with project exports, moves rewrite all import sites, unused declarations can be deleted with reference checks, file renames update every importer (including `.vue` consumers), and verification fails closed when a transform introduces new type errors.
 
 ### Supported targets
 
@@ -89,6 +89,20 @@ ripast rename useStore useAppStore --all --apply
 </details>
 
 <details>
+<summary><b>🔁 Replace an imported symbol with another export</b></summary>
+
+Replace references to an imported binding with a project export. `ripast` resolves the target export, rewrites the consumer import, prunes the old import, and preserves the call/body shape. This is for API migrations like swapping `eventHandler(...)` for `defineAdminApiHandler(...)`; it does not remove semantic body statements.
+
+```bash
+ripast replace eventHandler defineAdminApiHandler
+ripast replace eventHandler defineAdminApiHandler --apply
+
+# Ambiguous target exports? Pick the declaring file
+ripast replace eventHandler defineAdminApiHandler --target-scope layers/admin/server/utils/admin-api.ts --apply
+```
+</details>
+
+<details>
 <summary><b>🏔️ Refactor Nuxt auto-imports</b></summary>
 
 Nuxt-generated `.nuxt/*.d.ts` files let `ripast` treat auto-imported composables, utils, components, and pages like normal TypeScript symbols.
@@ -123,6 +137,17 @@ ripast rename-file src/utils.ts src/lib/helpers.ts --apply
 </details>
 
 <details>
+<summary><b>🧹 Delete an unused declaration</b></summary>
+
+Delete one top-level declaration from a file only when semantic reference lookup finds no remaining usages. Prunes imports that were only used by the deleted declaration, then runs verify before applying. Omit `--apply` to inspect the diff first; if references remain, ripast prints their locations and refuses the delete.
+
+```bash
+ripast delete helper --from src/utils.ts
+ripast delete helper --from src/utils.ts --apply
+```
+</details>
+
+<details>
 <summary><b>🎨 Migrate Tailwind / CSS class tokens</b></summary>
 
 Tokenizes every string literal, Vue template `class` / `:class` attribute, and `@apply` directive body. Preserves variant prefixes (`hover:`, `dark:md:`), `!` important markers, and arbitrary values.
@@ -136,6 +161,12 @@ ripast css-class-rename --map tokens.json --apply
 
 # Seed the map by listing every class in the repo
 ripast css-class-scan --json > tokens.raw.json
+
+# Find barely used classes to clean up
+ripast css-class-scan --sort count-asc
+
+# Find files introducing the most unique class tokens
+ripast css-class-scan --by file
 ```
 </details>
 
@@ -224,13 +255,16 @@ ripast move helper --from src/utils/a.ts --to src/utils/helpers.ts --apply
 # Rename a file and update every importer
 ripast rename-file src/utils.ts src/lib/helpers.ts --apply
 
+# Delete an unused top-level declaration
+ripast delete helper --from src/utils.ts --apply
+
 # Migrate a tailwind palette
 ripast css-class-rename --map tokens.json --apply
 ```
 
 ### Verify
 
-`--verify` (on by default for `rename` and `move`) runs a post-transform typecheck and refuses `--apply` if new diagnostics appear. Pass `--no-verify` to skip, or `--verify-mode touched|project|none` to choose scoped, full-project, or no diagnostics.
+`--verify` (on by default for `rename`, `replace`, `move`, and `delete`) runs a post-transform typecheck and refuses `--apply` if new diagnostics appear. Pass `--no-verify` to skip, or `--verify-mode touched|project|none` to choose scoped, full-project, or no diagnostics.
 
 ### Profiles
 
@@ -244,23 +278,27 @@ ripast css-class-rename --map tokens.json --apply
 | `ripast tree` | Print a project declaration tree, grouped by file. |
 | `ripast unused` | Find unreferenced top-level declarations. |
 | `ripast rename <from> <to>` | Scope-aware symbol rename via ts-morph. |
+| `ripast replace <from> <to>` | Replace an imported symbol with another project export; rewrites imports and references. |
 | `ripast move <symbol> --from <a> --to <b>` | Move a top-level export and rewrite every import site. |
+| `ripast delete <symbol> --from <file>` | Delete an unused top-level declaration; refuses if references remain. |
 | `ripast rename-file <old> <new>` | Rename a file and rewrite every import site (including `.vue` consumers). |
 | `ripast css-class-rename <from> <to> \| --map <file.json>` | Rename tailwind/CSS utility class tokens repo-wide. |
-| `ripast css-class-scan` | List every class token in the repo (seeds a rename map). |
+| `ripast css-class-scan` | List class tokens; use `--sort count-asc` for rare tokens or `--by file` for files with the most unique classes. |
 
 ## Programmatic API
 
 ```ts
-import { runRename, scan } from '@ripast/core'
+import { runRename, runReplace, scan } from '@ripast/core'
 
 const hits = scan('useStore', { cwd: process.cwd() })
 
 const result = await runRename('useStore', 'useAppStore', { cwd: process.cwd() })
 // result.changes, result.regressions, result.scanned
+
+const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cwd: process.cwd() })
 ```
 
-Exports cover `runRename`, `runMove`, `runRenameFile`, `runCssClassRename`, `runCssClassScan`, `scan`, `buildScanGraph`, `buildDeclarationTree`, `buildUnusedDeclarations`, plus formatters and the `writeChanges` helper.
+Exports cover `runRename`, `runReplace`, `runMove`, `runDelete`, `runRenameFile`, `runCssClassRename`, `runCssClassScan`, `scan`, `buildScanGraph`, `buildDeclarationTree`, `buildUnusedDeclarations`, plus formatters and the `writeChanges` helper.
 
 For batching, both `runRename` and `runMove` accept an existing ts-morph `project` so callers pay the project setup cost once.
 
@@ -272,7 +310,9 @@ For batching, both `runRename` and `runMove` accept an existing ts-morph `projec
 | "Where is X used?" | `ripast scan` |
 | "Which top-level declarations have no project references?" | `ripast unused` |
 | Rename a symbol across the repo | `ripast rename` |
+| Replace one imported API with another project export | `ripast replace` |
 | Move a declaration to another file (update all imports) | `ripast move` |
+| Delete an unused top-level declaration | `ripast delete` |
 | Rename a file and update every import site | `ripast rename-file` |
 | Rename a tailwind/CSS utility class across the repo | `ripast css-class-rename` |
 | Pattern is only meaningful inside strings/comments | plain `rg` + edit |

@@ -1,7 +1,6 @@
 import type { RenameMap } from './css-class-token.ts'
 import { readFileSync } from 'node:fs'
 import process from 'node:process'
-import { walk } from 'oxc-walker'
 import { rewriteClassString, visitClassTokens } from './css-class-token.ts'
 import { applyTextEdits, parseFile, rgFiles } from './util.ts'
 
@@ -64,6 +63,8 @@ export function rewriteCssClassTokensInFile(file: CssClassSourceFile, map: Renam
 function readSourceFiles(files: string[], cwd: string): CssClassSourceFile[] {
   const out: CssClassSourceFile[] = []
   for (const abs of files) {
+    if (!isCssClassSourcePath(abs))
+      continue
     const source = safeRead(abs)
     if (source == null)
       continue
@@ -89,29 +90,134 @@ function isVue(path: string): boolean {
   return path.endsWith('.vue')
 }
 
+function isCssClassSourcePath(path: string): boolean {
+  return isVue(path) || isCss(path) || CODE_EXTS.some(ext => path.endsWith(ext))
+}
+
 function visitScript(file: CssClassSourceFile, visit: (text: string) => void): void {
   const parsed = parseFile(file.abs, file.cwd)
   if (parsed.program)
-    visitProgramStrings(parsed.program, visit)
+    visitProgramClassStrings(parsed.program, visit)
 }
 
-function visitProgramStrings(program: any, visit: (text: string) => void): void {
-  walk(program, {
-    enter(node: any) {
-      if (node.type === 'Literal' && typeof node.value === 'string')
-        visit(node.value)
-      else if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string')
-        visit(node.value.raw)
-    },
+interface ScriptStringSite {
+  node: any
+}
+
+function visitProgramClassStrings(program: any, visit: (text: string) => void): void {
+  visitProgramClassStringSites(program, (site) => {
+    const node = site.node
+    if (node.type === 'Literal' && typeof node.value === 'string')
+      visit(node.value)
+    else if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string')
+      visit(node.value.raw)
   })
+}
+
+function visitProgramClassStringSites(program: any, visit: (site: ScriptStringSite) => void): void {
+  walkProgram(program, false, false, visit)
 }
 
 function visitVue(file: CssClassSourceFile, visit: (text: string) => void): void {
   const parsed = parseFile(file.abs, file.cwd)
   if (parsed.program)
-    visitProgramStrings(parsed.program, visit)
+    visitProgramClassStrings(parsed.program, visit)
   visitVueTemplateClassAttrs(file.source, visit)
   visitVueStyleBlocks(file.source, body => visitCss(body, text => visitClassTokens(text, visit)))
+}
+
+const CLASS_CALLEE_RE = /^(?:cva|cn|clsx|classNames|classnames|twJoin|twMerge)$/
+const CLASS_ATTR_RE_SCRIPT = /^(?:class|className)$/
+const CLASS_NAME_RE = /(?:^|[-_])(?:cls|class|classes|className|classList|activeClass|inactiveClass|exactActiveClass|ui|slots|variants|compoundVariants|defaultVariants)(?:$|[-_])/i
+
+function walkProgram(node: any, classContext: boolean, classObjectKeyContext: boolean, visit: (site: ScriptStringSite) => void): void {
+  if (!node || typeof node !== 'object')
+    return
+
+  if (node.type === 'Literal' && typeof node.value === 'string') {
+    if (classContext)
+      visit({ node })
+    return
+  }
+  if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
+    if (classContext)
+      visit({ node })
+    return
+  }
+
+  if (node.type === 'CallExpression') {
+    const nextClassContext = classContext || isClassCallee(node.callee)
+    walkProgram(node.callee, false, false, visit)
+    for (const arg of node.arguments ?? [])
+      walkProgram(arg, nextClassContext, nextClassContext, visit)
+    return
+  }
+
+  if (node.type === 'VariableDeclarator') {
+    walkProgram(node.id, false, false, visit)
+    walkProgram(node.init, classContext || isClassName(node.id), false, visit)
+    return
+  }
+
+  if (node.type === 'Property') {
+    const keyMatches = isClassName(node.key)
+    const valueContext = classContext || keyMatches
+    if (classObjectKeyContext)
+      walkProgram(node.key, true, true, visit)
+    else
+      walkProgram(node.key, false, false, visit)
+    walkProgram(node.value, valueContext, false, visit)
+    return
+  }
+
+  if (node.type === 'JSXAttribute') {
+    const attrContext = classContext || isClassName(node.name) || isJsxClassAttr(node.name)
+    walkProgram(node.value, attrContext, false, visit)
+    return
+  }
+
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'start' || key === 'end' || key === 'loc' || key === 'range')
+      continue
+    if (Array.isArray(value)) {
+      for (const child of value)
+        walkProgram(child, classContext, classObjectKeyContext, visit)
+    }
+    else {
+      walkProgram(value, classContext, classObjectKeyContext, visit)
+    }
+  }
+}
+
+function isClassCallee(node: any): boolean {
+  if (!node)
+    return false
+  if (node.type === 'Identifier')
+    return CLASS_CALLEE_RE.test(node.name)
+  if (node.type === 'MemberExpression')
+    return isClassName(node.property)
+  return false
+}
+
+function isJsxClassAttr(node: any): boolean {
+  return node?.type === 'JSXIdentifier' && CLASS_ATTR_RE_SCRIPT.test(node.name)
+}
+
+function isClassName(node: any): boolean {
+  const name = nodeName(node)
+  return !!name && CLASS_NAME_RE.test(name)
+}
+
+function nodeName(node: any): string | null {
+  if (!node)
+    return null
+  if (node.type === 'Identifier' || node.type === 'JSXIdentifier')
+    return node.name
+  if (node.type === 'Literal' && typeof node.value === 'string')
+    return node.value
+  if (node.type === 'PrivateIdentifier')
+    return node.name
+  return null
 }
 
 const TEMPLATE_BLOCK_RE = /<template(?:\s[^>]*)?>([\s\S]*?)<\/template>/gi
@@ -166,24 +272,22 @@ function rewriteScript(file: CssClassSourceFile, map: RenameMap): string {
 
 function rewriteStringsInProgram(source: string, program: any, map: RenameMap, offset: number): string {
   const edits: { start: number, end: number, replacement: string }[] = []
-  walk(program, {
-    enter(node: any) {
-      if (node.type === 'Literal' && typeof node.value === 'string') {
-        if (!mapIncludesAny(node.value, map))
-          return
-        const rewritten = rewriteClassString(node.value, map)
-        if (rewritten !== node.value)
-          edits.push({ start: node.start + offset + 1, end: node.end + offset - 1, replacement: rewritten })
-      }
-      else if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
-        const raw: string = node.value.raw
-        if (!mapIncludesAny(raw, map))
-          return
-        const rewritten = rewriteClassString(raw, map)
-        if (rewritten !== raw)
-          edits.push({ start: node.start + offset, end: node.end + offset, replacement: rewritten })
-      }
-    },
+  visitProgramClassStringSites(program, ({ node }) => {
+    if (node.type === 'Literal' && typeof node.value === 'string') {
+      if (!mapIncludesAny(node.value, map))
+        return
+      const rewritten = rewriteClassString(node.value, map)
+      if (rewritten !== node.value)
+        edits.push({ start: node.start + offset + 1, end: node.end + offset - 1, replacement: rewritten })
+    }
+    else if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
+      const raw: string = node.value.raw
+      if (!mapIncludesAny(raw, map))
+        return
+      const rewritten = rewriteClassString(raw, map)
+      if (rewritten !== raw)
+        edits.push({ start: node.start + offset, end: node.end + offset, replacement: rewritten })
+    }
   })
   return applyTextEdits(source, edits)
 }
