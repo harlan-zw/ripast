@@ -39,8 +39,13 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   const inferredNewPath = extname(newPath) ? newPath : `${newPath}${extname(oldPath)}`
   const newAbs = resolve(cwd, inferredNewPath)
 
-  if (!existsSync(oldAbs))
-    throw new Error(`ripast rename-file: source "${oldPath}" does not exist`)
+  if (!existsSync(oldAbs)) {
+    const looksSmushed = /\s/.test(oldPath)
+    const hint = looksSmushed
+      ? ` (path contains whitespace; if you meant two arguments, quote each path separately: rename-file "<old>" "<new>")`
+      : ''
+    throw new Error(`ripast rename-file: source "${oldPath}" does not exist${hint}`)
+  }
   if (existsSync(newAbs))
     throw new Error(`ripast rename-file: target "${newPath}" already exists`)
 

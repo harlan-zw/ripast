@@ -1,3 +1,4 @@
+import type { TextEdit } from './util.ts'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
@@ -175,6 +176,226 @@ export function rewriteTemplateReferences(source: string, oldName: string, newNa
 
   if (!edits.length)
     return source
+  return applyTextEdits(source, edits)
+}
+
+export interface TemplateSelector {
+  tag: string
+  attrs: { name: string, value?: string }[]
+}
+
+export function parseTemplateSelector(input: string): TemplateSelector {
+  const trimmed = input.trim()
+  if (!trimmed)
+    throw new Error('ripast: empty selector')
+  const tagMatch = trimmed.match(/^([A-Z][\w-]*)/i)
+  if (!tagMatch)
+    throw new Error(`ripast: invalid selector "${input}" (expected tag name, optionally with [attr] or [attr=value] predicates)`)
+  const tag = tagMatch[1]!
+  const rest = trimmed.slice(tag.length)
+  const attrs: { name: string, value?: string }[] = []
+  const attrRe = /\[([A-Z_:][\w:-]*)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]+)))?\]/gi
+  let m: RegExpExecArray | null
+  let consumed = 0
+  while ((m = attrRe.exec(rest))) {
+    if (m.index !== consumed)
+      throw new Error(`ripast: invalid selector "${input}" near "${rest.slice(consumed)}"`)
+    consumed = m.index + m[0].length
+    const value = m[2] ?? m[3] ?? m[4]
+    attrs.push(value === undefined ? { name: m[1]! } : { name: m[1]!, value })
+  }
+  if (consumed !== rest.length)
+    throw new Error(`ripast: invalid selector "${input}" (unexpected trailing "${rest.slice(consumed)}")`)
+  return { tag, attrs }
+}
+
+function tagMatches(node: any, sel: TemplateSelector): boolean {
+  if (node.type !== NODE_ELEMENT)
+    return false
+  if (node.tag !== sel.tag) {
+    const kebab = hyphenateVueName(sel.tag)
+    if (kebab === sel.tag || node.tag !== kebab)
+      return false
+  }
+  for (const pred of sel.attrs) {
+    const found = (node.props ?? []).find((p: any) =>
+      (p.type === 6 /* ATTRIBUTE */ && p.name === pred.name)
+      || (p.type === NODE_DIRECTIVE && p.name === 'bind' && p.arg?.content === pred.name),
+    )
+    if (!found)
+      return false
+    if (pred.value !== undefined) {
+      if (found.type === 6) {
+        if (found.value?.content !== pred.value)
+          return false
+      }
+      else {
+        return false // dynamic bind can't compare to literal string reliably
+      }
+    }
+  }
+  return true
+}
+
+function parseTemplate(source: string): any | null {
+  let descriptor: any
+  try {
+    descriptor = parseSfc(source).descriptor
+  }
+  catch {
+    return null
+  }
+  return descriptor.template?.ast ?? null
+}
+
+function getLineIndent(source: string, offset: number): { indent: string, lineStart: number, isAllWhitespace: boolean } {
+  let lineStart = offset
+  while (lineStart > 0 && source.charCodeAt(lineStart - 1) !== 10)
+    lineStart--
+  const indent = source.slice(lineStart, offset)
+  return { indent, lineStart, isAllWhitespace: /^[ \t]*$/.test(indent) }
+}
+
+function findOpenTagEnd(source: string, node: any): number {
+  const elStart = node.loc.start.offset
+  if (node.children?.length) {
+    const firstChildStart = node.children[0].loc.start.offset
+    const upToChild = source.slice(elStart, firstChildStart)
+    const gt = upToChild.lastIndexOf('>')
+    if (gt >= 0)
+      return elStart + gt + 1
+  }
+  const elEnd = node.loc.end.offset
+  const slice = source.slice(elStart, elEnd)
+  const gt = slice.indexOf('>')
+  if (gt < 0)
+    return elEnd
+  return elStart + gt + 1
+}
+
+function findCloseTagStart(source: string, node: any): number {
+  const elStart = node.loc.start.offset
+  const elEnd = node.loc.end.offset
+  const slice = source.slice(elStart, elEnd)
+  const idx = slice.lastIndexOf(`</${node.tag}`)
+  if (idx < 0) {
+    const kebab = hyphenateVueName(node.tag)
+    const idx2 = slice.lastIndexOf(`</${kebab}`)
+    if (idx2 >= 0)
+      return elStart + idx2
+    return elEnd
+  }
+  return elStart + idx
+}
+
+export interface TemplateMatchOptions {
+  rootOnly?: boolean
+}
+
+function collectMatches(ast: any, sel: TemplateSelector, recurseIntoMatches: boolean, opts: TemplateMatchOptions = {}): any[] {
+  const out: any[] = []
+  if (opts.rootOnly) {
+    for (const c of ast.children ?? []) {
+      if (c && typeof c === 'object' && tagMatches(c, sel))
+        out.push(c)
+    }
+    return out
+  }
+  function visit(node: any): void {
+    if (!node || typeof node !== 'object')
+      return
+    if (tagMatches(node, sel)) {
+      out.push(node)
+      if (!recurseIntoMatches)
+        return
+    }
+    for (const c of node.children ?? []) visit(c)
+  }
+  visit(ast)
+  return out
+}
+
+export function wrapTemplateElements(source: string, selector: TemplateSelector, wrapperInner: string, opts: TemplateMatchOptions = {}): string {
+  const ast = parseTemplate(source)
+  if (!ast)
+    return source
+  const wrapperTag = wrapperInner.trim().split(/\s/)[0]
+  if (!wrapperTag)
+    throw new Error('ripast: empty wrapper tag')
+  const matches = collectMatches(ast, selector, false, opts)
+  if (!matches.length)
+    return source
+  const edits: TextEdit[] = []
+  for (const node of matches) {
+    const start = node.loc.start.offset
+    const end = node.loc.end.offset
+    const { indent, isAllWhitespace } = getLineIndent(source, start)
+    if (isAllWhitespace) {
+      const inner = source.slice(start, end).replace(/\n/g, '\n  ')
+      edits.push({
+        start,
+        end,
+        replacement: `<${wrapperInner}>\n${indent}  ${inner}\n${indent}</${wrapperTag}>`,
+      })
+    }
+    else {
+      edits.push({
+        start,
+        end,
+        replacement: `<${wrapperInner}>${source.slice(start, end)}</${wrapperTag}>`,
+      })
+    }
+  }
+  return applyTextEdits(source, edits)
+}
+
+export function unwrapTemplateElements(source: string, selector: TemplateSelector, opts: TemplateMatchOptions = {}): string {
+  const ast = parseTemplate(source)
+  if (!ast)
+    return source
+  const matches = collectMatches(ast, selector, true, opts)
+  if (!matches.length)
+    return source
+  const edits: TextEdit[] = []
+  for (const node of matches) {
+    const start = node.loc.start.offset
+    const end = node.loc.end.offset
+    if (node.isSelfClosing || !node.children?.length) {
+      const { isAllWhitespace, lineStart } = getLineIndent(source, start)
+      if (isAllWhitespace) {
+        let lineEnd = end
+        if (source[lineEnd] === '\n')
+          lineEnd++
+        edits.push({ start: lineStart, end: lineEnd, replacement: '' })
+      }
+      else {
+        edits.push({ start, end, replacement: '' })
+      }
+      continue
+    }
+    const openEnd = findOpenTagEnd(source, node)
+    const closeStart = findCloseTagStart(source, node)
+    let innerStart = openEnd
+    let innerEnd = closeStart
+    if (source[innerStart] === '\n')
+      innerStart++
+    while (innerEnd > innerStart && (source[innerEnd - 1] === ' ' || source[innerEnd - 1] === '\t'))
+      innerEnd--
+    if (innerEnd > innerStart && source[innerEnd - 1] === '\n')
+      innerEnd--
+    let inner = source.slice(innerStart, innerEnd)
+    inner = inner.replace(/^ {2}/gm, '')
+    const { lineStart, isAllWhitespace } = getLineIndent(source, start)
+    if (isAllWhitespace) {
+      let lineEnd = end
+      if (source[lineEnd] === '\n')
+        lineEnd++
+      edits.push({ start: lineStart, end: lineEnd, replacement: `${inner}\n` })
+    }
+    else {
+      edits.push({ start, end, replacement: inner })
+    }
+  }
   return applyTextEdits(source, edits)
 }
 

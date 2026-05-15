@@ -1,5 +1,5 @@
 import type { ExportFilter, VerifyMode } from '@ripast/core'
-import { mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import {
@@ -27,6 +27,8 @@ import {
   runRename,
   runRenameFile,
   runReplace,
+  runVueTemplateUnwrap,
+  runVueTemplateWrap,
   scan,
   summarize,
   writeChanges,
@@ -75,6 +77,35 @@ function resolveCliVerifyMode(verify: unknown, verifyMode: unknown): VerifyMode 
     return verifyMode
   }
   return resolveVerifyMode(verify as boolean | undefined)
+}
+
+// Recover from agent quoting bugs where two positional paths get smushed into
+// `old`, leaving `new` empty (e.g. `rename-file "A.vue B.vue"` instead of two
+// args). Splits on whitespace, comma, or `:` when the literal `old` is missing
+// but the split halves resolve to a real source file + a non-existent target.
+function recoverSmushedPair(oldArg: string, newArg: string): { old: string, new: string, warning?: string } {
+  const cwd = process.cwd()
+  const oldExists = !!oldArg && existsSync(resolve(cwd, oldArg))
+  if (oldExists && newArg)
+    return { old: oldArg, new: newArg }
+  if (!oldArg)
+    return { old: oldArg, new: newArg }
+  const candidates: [string, string][] = []
+  for (const sep of [/\s+/, /\s*,\s*/, /\s*:\s*/]) {
+    const parts = oldArg.split(sep).filter(Boolean)
+    if (parts.length === 2)
+      candidates.push([parts[0]!, parts[1]!])
+  }
+  for (const [a, b] of candidates) {
+    if (existsSync(resolve(cwd, a)) && !existsSync(resolve(cwd, b))) {
+      return {
+        old: a,
+        new: b,
+        warning: `recovered smushed positional args: treating "${oldArg}" as old="${a}" new="${b}". Quote each path separately next time.`,
+      }
+    }
+  }
+  return { old: oldArg, new: newArg }
 }
 
 function resolveExportFilter(raw: unknown): ExportFilter {
@@ -353,7 +384,10 @@ const renameFileCmd = defineCommand({
   },
   async run({ args }) {
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
-    const r = await runRenameFile(args.old as string, args.new as string, {
+    const recovered = recoverSmushedPair(args.old as string, args.new as string)
+    if (recovered.warning)
+      process.stderr.write(`warning: ${recovered.warning}\n`)
+    const r = await runRenameFile(recovered.old, recovered.new, {
       tsconfig: args.tsconfig as string | undefined,
       verify: verifyMode,
     })
@@ -398,7 +432,7 @@ const renameFileCmd = defineCommand({
       process.stderr.write(`warning: ${w}\n`)
     if (agentProfile) {
       process.stdout.write(`${profileHeader()}\n`)
-      process.stdout.write(`rename-file: ${args.old} -> ${args.new}\n`)
+      process.stdout.write(`rename-file: ${recovered.old} -> ${recovered.new}\n`)
       process.stdout.write(`consumers: ${r.changes.length}/${r.scanned}, +${s.linesAdded} -${s.linesRemoved} lines\n`)
       if (selfChangeDisplay)
         process.stdout.write(`self: rewrote moved file's own relative imports\n`)
@@ -574,6 +608,52 @@ function resolveCssClassFileScanSort(raw: unknown): 'unique-desc' | 'unique-asc'
   return raw
 }
 
+const scopeArg = { type: 'string' as const, description: 'Restrict to a single .vue file (skips glob/rg).' }
+const rootOnlyArg = { type: 'boolean' as const, default: false, description: 'Match only template-root elements (direct children of <template>); ignores nested matches.' }
+
+const vueTemplateWrapCmd = defineCommand({
+  meta: { name: 'vue-template-wrap', description: 'Wrap every matching element in a Vue <template> with a parent component. Selector: "Tag" or "Tag[attr]" / "Tag[attr=value]". Wrapper: tag name with optional inline attributes (e.g. "ProPageStates name=\\"lh\\"").' },
+  args: {
+    selector: { type: 'positional', required: true },
+    wrapper: { type: 'positional', required: true },
+    glob: globArg,
+    scope: scopeArg,
+    rootOnly: rootOnlyArg,
+    apply: applyArg,
+    profile: profileArg,
+    json: jsonArg,
+  },
+  async run({ args }) {
+    const r = await runVueTemplateWrap(args.selector as string, args.wrapper as string, {
+      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      scope: args.scope as string | undefined,
+      rootOnly: args.rootOnly as boolean,
+    })
+    emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
+  },
+})
+
+const vueTemplateUnwrapCmd = defineCommand({
+  meta: { name: 'vue-template-unwrap', description: 'Remove every matching element in a Vue <template>, hoisting its children up one level. Inverse of vue-template-wrap.' },
+  args: {
+    selector: { type: 'positional', required: true },
+    glob: globArg,
+    scope: scopeArg,
+    rootOnly: rootOnlyArg,
+    apply: applyArg,
+    profile: profileArg,
+    json: jsonArg,
+  },
+  async run({ args }) {
+    const r = await runVueTemplateUnwrap(args.selector as string, {
+      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      scope: args.scope as string | undefined,
+      rootOnly: args.rootOnly as boolean,
+    })
+    emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
+  },
+})
+
 runMain(defineCommand({
   meta: { name: 'ripast', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
@@ -587,5 +667,7 @@ runMain(defineCommand({
     'delete': deleteCmd,
     'css-class-rename': cssClassRenameCmd,
     'css-class-scan': cssClassScanCmd,
+    'vue-template-wrap': vueTemplateWrapCmd,
+    'vue-template-unwrap': vueTemplateUnwrapCmd,
   },
 }))
