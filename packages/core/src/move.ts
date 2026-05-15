@@ -3,15 +3,14 @@ import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { Project, SyntaxKind } from 'ts-morph'
 import { loadAdapter } from './adapter.ts'
-import { isGeneratedNuxtPath, isInsideNuxtAutoImportScope, loadNuxtPathAliases, removeGeneratedNuxtChanges, resolveBestImportSpecifier } from './nuxt.ts'
+import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, resolveVerifyMode } from './project.ts'
-import { scan } from './scan.ts'
 import { mergeFileChanges, rgFiles } from './util.ts'
 import { findRegressions, snapshotDiagnostics } from './verify.ts'
 
@@ -155,12 +154,23 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
 
   if (vueAdapter?.autoImportScopes) {
     const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
-    if (isInsideNuxtAutoImportScope(fromAbs, scopes) && !isInsideNuxtAutoImportScope(toAbs, scopes)) {
-      const autoImportChanges = timed(profile, 'nuxt auto-import consumers', () => addNuxtExplicitImports(cwd, symbol, toAbs, changes, fromAbs))
+    if (isInsideAutoImportScope(fromAbs, scopes) && !isInsideAutoImportScope(toAbs, scopes) && vueAdapter.addExplicitImports) {
+      const autoImportChanges = timed(profile, 'nuxt auto-import consumers', () => vueAdapter.addExplicitImports!({
+        cwd,
+        symbols: [symbol],
+        toAbs,
+        fromAbs,
+        existingChanges: changes,
+        noScriptError: name => new Error(
+          `ripast move: "${name}" is auto-imported in Nuxt; moving to ${toAbs}`
+          + ` removes it from auto-import scope. Either keep it in`
+          + ` composables/utils/components, or add explicit imports first.`,
+        ),
+      }))
       mergeFileChanges(changes, autoImportChanges)
     }
     if (scopes.size)
-      removeGeneratedNuxtChanges(cwd, changes)
+      vueAdapter.filterGeneratedChanges?.(cwd, changes)
   }
 
   const regressions = baseline ? timed(profile, 'verify regressions', () => findRegressions(baseline, project, verifyFiles)) : []
@@ -171,86 +181,6 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   }
 
   return { changes, scanned: projectMode === 'full' ? project.getSourceFiles().length : candidateFiles.length, regressions }
-}
-
-function addNuxtExplicitImports(cwd: string, symbol: string, toAbs: string, changes: FileChange[], fromAbs: string): FileChange[] {
-  const byPath = new Map(changes.map(change => [change.path, change]))
-  const hits = scan(symbol, { cwd, kinds: ['identifier-reference'] })
-  const consumerPaths = new Set(hits.map(hit => resolve(cwd, hit.file)))
-  const aliases = loadNuxtPathAliases(cwd)
-  const out: FileChange[] = []
-  for (const filePath of consumerPaths) {
-    if (isGeneratedNuxtPath(cwd, filePath))
-      continue
-    if (filePath === fromAbs || filePath === toAbs)
-      continue
-    const current = byPath.get(filePath)?.after ?? readFileSync(filePath, 'utf8')
-    if (hasNamedImport(current, symbol))
-      continue
-    const specifier = resolveBestImportSpecifier(filePath, toAbs, aliases, './placeholder')
-    const after = filePath.endsWith('.vue')
-      ? insertVueScriptImport(current, symbol, specifier, toAbs)
-      : insertTopLevelImport(current, symbol, specifier)
-    if (after !== current) {
-      out.push({
-        path: filePath,
-        rel: relative(cwd, filePath),
-        before: byPath.get(filePath)?.before ?? readFileSync(filePath, 'utf8'),
-        after,
-      })
-    }
-  }
-  return out
-}
-
-function insertVueScriptImport(source: string, symbol: string, specifier: string, toAbs: string): string {
-  const match = source.match(/<script(?:\s[^>]*)?>/)
-  if (!match || match.index === undefined) {
-    throw new Error(
-      `ripast move: "${symbol}" is auto-imported in Nuxt; moving to ${toAbs}`
-      + ` removes it from auto-import scope. Either keep it in`
-      + ` composables/utils/components, or add explicit imports first.`,
-    )
-  }
-  const insertAt = match.index + match[0].length
-  const rest = source[insertAt] === '\n' ? source.slice(insertAt + 1) : source.slice(insertAt)
-  const scriptEnd = source.indexOf('</script>', insertAt)
-  const scriptSource = scriptEnd >= 0 ? source.slice(insertAt, scriptEnd) : source.slice(insertAt)
-  const mergedScript = mergeNamedImport(scriptSource, symbol, specifier)
-  if (mergedScript !== scriptSource)
-    return `${source.slice(0, insertAt)}${mergedScript}${scriptEnd >= 0 ? source.slice(scriptEnd) : ''}`
-  return `${source.slice(0, insertAt)}\nimport { ${symbol} } from '${specifier}'\n${rest}`
-}
-
-function insertTopLevelImport(source: string, symbol: string, specifier: string): string {
-  const merged = mergeNamedImport(source, symbol, specifier)
-  if (merged !== source)
-    return merged
-  const importLine = `import { ${symbol} } from '${specifier}'\n`
-  if (source.startsWith('#!')) {
-    const nl = source.indexOf('\n')
-    if (nl >= 0)
-      return `${source.slice(0, nl + 1)}${importLine}${source.slice(nl + 1)}`
-  }
-  return `${importLine}${source}`
-}
-
-function hasNamedImport(source: string, symbol: string): boolean {
-  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`\\bimport\\s*\\{[^}]*\\b${escaped}\\b[^}]*\\}\\s*from\\s*['"]`).test(source)
-}
-
-function mergeNamedImport(source: string, symbol: string, specifier: string): string {
-  const spec = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const importRe = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*(['"])${spec}\\2`)
-  const match = importRe.exec(source)
-  if (!match)
-    return source
-  const names = match[1].split(',').map(part => part.trim()).filter(Boolean)
-  if (names.some(name => name === symbol || name.startsWith(`${symbol} as `)))
-    return source
-  const replacement = `import { ${[...names, symbol].join(', ')} } from ${match[2]}${specifier}${match[2]}`
-  return `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match[0].length)}`
 }
 
 function findNamedExport(sf: SourceFile, symbol: string): Node | null {

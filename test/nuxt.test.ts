@@ -31,6 +31,8 @@ function applyRenameFile(result: Awaited<ReturnType<typeof runRenameFile>>) {
   writeChanges(result.changes)
   mkdirSync(dirname(result.fileMove.to), { recursive: true })
   renameSync(result.fileMove.from, result.fileMove.to)
+  if (result.selfChange)
+    writeFileSync(result.fileMove.to, result.selfChange.after)
 }
 
 describe('nuxt auto-imports', () => {
@@ -234,6 +236,36 @@ describe('nuxt auto-imports', () => {
       const result = await runRenameFile('components/MyButton.vue', 'lib/MyButton.vue', { cwd: fx.dir, verify: false })
       applyRenameFile(result)
       assert.match(fx.read('pages/index.vue'), /import MyButton from '#lib\/MyButton\.vue'/)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('adds explicit imports for sibling exports when moving an auto-imported composable file out of scope', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('composables/useCounter.ts', `import { ref } from 'vue'\n\nexport function useCounter() {\n  return ref(useCounterStart())\n}\n\nexport function useCounterStart() {\n  return 1\n}\n`)
+      fx.write('pages/sibling.vue', `<script setup lang="ts">\nconst counter = useCounter()\nconst start = useCounterStart()\n</script>\n<template>{{ counter }} {{ start }}</template>\n`)
+      const result = await runRenameFile('composables/useCounter.ts', 'internal/composables/useCounter.ts', { cwd: fx.dir, verify: false })
+      applyRenameFile(result)
+
+      const page = fx.read('pages/sibling.vue')
+      assert.match(page, /import \{[^}]*\buseCounter\b[^}]*\} from '\.\.\/internal\/composables\/useCounter'/, 'useCounter explicit import added')
+      assert.match(page, /import \{[^}]*\buseCounterStart\b[^}]*\} from '\.\.\/internal\/composables\/useCounter'/, 'sibling export explicit import added')
+      assert.equal((page.match(/from '\.\.\/internal\/composables\/useCounter'/g) ?? []).length, 1, 'imports merged into one line')
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('rewrites a moved composable\'s own relative imports when depth changes', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('shared/constant.ts', 'export const ONE = 1\n')
+      fx.write('composables/useThing.ts', `import { ONE } from '../shared/constant'\nexport function useThing() { return ONE }\n`)
+      fx.write('pages/thing.vue', `<script setup lang="ts">\nconst v = useThing()\n</script>\n<template>{{ v }}</template>\n`)
+      const result = await runRenameFile('composables/useThing.ts', 'internal/composables/useThing.ts', { cwd: fx.dir, verify: false })
+      applyRenameFile(result)
+
+      assert.match(fx.read('internal/composables/useThing.ts'), /from '\.\.\/\.\.\/shared\/constant/, 'moved file\'s own relative import updated for new depth')
     }
     finally { fx.cleanup() }
   })

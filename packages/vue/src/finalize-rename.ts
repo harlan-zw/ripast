@@ -3,12 +3,14 @@ import { readFileSync } from 'node:fs'
 import { basename, relative } from 'node:path'
 import {
   hyphenateVueName,
-  isGeneratedNuxtPath,
-  isInsideNuxtAutoImportScope,
-  loadNuxtPathAliases,
-  resolveBestImportSpecifier,
+  isInsideAutoImportScope,
   rgFiles,
+  scan,
 } from '@ripast/core/adapter'
+import { addNuxtExplicitImports, extractTopLevelExportNames } from './nuxt-imports.ts'
+import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
+
+const TS_LIKE_RE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
 
 export async function finalizeVueFileRename(
   cwd: string,
@@ -19,22 +21,62 @@ export async function finalizeVueFileRename(
 ): Promise<{ changes: FileChange[], warnings: string[] }> {
   const changes: FileChange[] = []
   const warnings: string[] = []
-  if (!oldAbs.endsWith('.vue') || !newAbs.endsWith('.vue'))
+
+  if (oldAbs.endsWith('.vue') && newAbs.endsWith('.vue')) {
+    const oldName = basename(oldAbs, '.vue')
+    const newName = basename(newAbs, '.vue')
+
+    const resolveCompEdits = rewriteResolveComponentSites(cwd, oldName, newName, existingChanges, oldAbs, newAbs, warnings)
+    mergeIntoChanges(changes, resolveCompEdits)
+
+    if (autoImportScopes.size && isInsideAutoImportScope(oldAbs, autoImportScopes) && !isInsideAutoImportScope(newAbs, autoImportScopes)) {
+      const merged = mergeView(existingChanges, changes)
+      const explicit = addExplicitComponentImports(cwd, oldName, newName, newAbs, merged, oldAbs)
+      mergeIntoChanges(changes, explicit)
+    }
     return { changes, warnings }
+  }
 
-  const oldName = basename(oldAbs, '.vue')
-  const newName = basename(newAbs, '.vue')
-
-  const resolveCompEdits = rewriteResolveComponentSites(cwd, oldName, newName, existingChanges, oldAbs, newAbs, warnings)
-  mergeIntoChanges(changes, resolveCompEdits)
-
-  if (autoImportScopes.size && isInsideNuxtAutoImportScope(oldAbs, autoImportScopes) && !isInsideNuxtAutoImportScope(newAbs, autoImportScopes)) {
-    const merged = mergeView(existingChanges, changes)
-    const explicit = addExplicitComponentImports(cwd, oldName, newName, newAbs, merged, oldAbs)
-    mergeIntoChanges(changes, explicit)
+  if (
+    TS_LIKE_RE.test(oldAbs)
+    && TS_LIKE_RE.test(newAbs)
+    && autoImportScopes.size
+    && isInsideAutoImportScope(oldAbs, autoImportScopes)
+    && !isInsideAutoImportScope(newAbs, autoImportScopes)
+  ) {
+    const movedSource = readMovedSource(oldAbs, newAbs, existingChanges)
+    const symbols = movedSource ? extractTopLevelExportNames(movedSource) : []
+    if (symbols.length) {
+      const explicit = addNuxtExplicitImports({
+        cwd,
+        symbols,
+        toAbs: newAbs,
+        fromAbs: oldAbs,
+        existingChanges: mergeView(existingChanges, changes),
+        scan,
+        noScriptError: name => new Error(
+          `ripast rename-file: "${name}" is auto-imported in Nuxt; moving ${basename(oldAbs)} to ${newAbs}`
+          + ` takes it out of auto-import scope but a consumer has no <script> block to receive an explicit import.`
+          + ` Add a <script setup> block first, or keep the file in composables/utils.`,
+        ),
+      })
+      mergeIntoChanges(changes, explicit)
+    }
   }
 
   return { changes, warnings }
+}
+
+function readMovedSource(oldAbs: string, newAbs: string, existingChanges: FileChange[]): string | null {
+  const self = existingChanges.find(c => c.path === oldAbs || c.path === newAbs)
+  if (self)
+    return self.before
+  try {
+    return readFileSync(oldAbs, 'utf8')
+  }
+  catch {
+    return null
+  }
 }
 
 function mergeView(a: FileChange[], b: FileChange[]): FileChange[] {

@@ -1,6 +1,6 @@
 import type { ExportFilter, VerifyMode } from '@ripast/core'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import {
   buildDeclarationTree,
@@ -347,19 +347,25 @@ const renameFileCmd = defineCommand({
     tsconfig: { type: 'string' },
     apply: applyArg,
     verify: verifyArg,
+    verifyMode: verifyModeArg,
     profile: profileArg,
     json: jsonArg,
   },
   async run({ args }) {
+    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
     const r = await runRenameFile(args.old as string, args.new as string, {
       tsconfig: args.tsconfig as string | undefined,
-      verify: args.verify as boolean,
+      verify: verifyMode,
     })
     const apply = !!args.apply
-    const verify = !!args.verify
+    const verify = verifyMode !== 'none'
     const json = !!args.json
     const { agentProfile } = resolveProfile(args.profile)
-    const s = summarize(r.changes)
+    const selfChangeDisplay = r.selfChange
+      ? { path: r.fileMove.to, rel: relative(process.cwd(), r.fileMove.to), before: r.selfChange.before, after: r.selfChange.after }
+      : null
+    const displayChanges = selfChangeDisplay ? [selfChangeDisplay, ...r.changes] : r.changes
+    const s = summarize(displayChanges)
     const blockedByRegression = verify && apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
 
@@ -367,6 +373,8 @@ const renameFileCmd = defineCommand({
       writeChanges(r.changes)
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
       renameSync(r.fileMove.from, r.fileMove.to)
+      if (selfChangeDisplay)
+        writeChanges([selfChangeDisplay])
     }
 
     if (json) {
@@ -377,6 +385,7 @@ const renameFileCmd = defineCommand({
         scanned: r.scanned,
         summary: s,
         fileMove: r.fileMove,
+        selfChange: r.selfChange,
         changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
         regressions: r.regressions,
         warnings: r.warnings,
@@ -391,11 +400,13 @@ const renameFileCmd = defineCommand({
       process.stdout.write(`${profileHeader()}\n`)
       process.stdout.write(`rename-file: ${args.old} -> ${args.new}\n`)
       process.stdout.write(`consumers: ${r.changes.length}/${r.scanned}, +${s.linesAdded} -${s.linesRemoved} lines\n`)
+      if (selfChangeDisplay)
+        process.stdout.write(`self: rewrote moved file's own relative imports\n`)
       process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
-      if (r.changes.length) {
+      if (displayChanges.length) {
         process.stdout.write(`files:\n`)
-        for (const c of r.changes)
-          process.stdout.write(`  ${c.rel}\n`)
+        for (const c of displayChanges)
+          process.stdout.write(`  ${c.rel}${selfChangeDisplay && c === selfChangeDisplay ? ' (moved file, intra-file imports)' : ''}\n`)
       }
       if (verify && r.regressions.length) {
         process.stdout.write(`regressions: ${r.regressions.length}\n`)
@@ -410,8 +421,10 @@ const renameFileCmd = defineCommand({
     }
     if (!apply) {
       process.stdout.write(`rename ${args.old} -> ${args.new}\n`)
-      process.stdout.write(`${s.files} consumer file${s.files === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
-      printDiffs(r.changes)
+      const consumerCount = r.changes.length
+      const selfSuffix = selfChangeDisplay ? ` (+ moved file's own imports)` : ''
+      process.stdout.write(`${consumerCount} consumer file${consumerCount === 1 ? '' : 's'}${selfSuffix}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
+      printDiffs(displayChanges)
     }
     if (verify && r.regressions.length) {
       process.stderr.write(`\n${formatRegressions(r.regressions, process.cwd())}\n`)
@@ -422,6 +435,8 @@ const renameFileCmd = defineCommand({
     }
     if (wrote) {
       for (const c of r.changes) process.stdout.write(`wrote ${c.rel}\n`)
+      if (selfChangeDisplay)
+        process.stdout.write(`wrote ${selfChangeDisplay.rel} (moved file, intra-file imports)\n`)
       process.stdout.write(`renamed ${args.old} -> ${args.new}\n`)
     }
     const suffix = apply ? '' : ' (dry run, pass --apply to write)'

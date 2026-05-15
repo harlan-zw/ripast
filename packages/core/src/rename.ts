@@ -9,7 +9,7 @@ import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
 import { Project, SyntaxKind } from 'ts-morph'
 import { loadAdapter } from './adapter.ts'
-import { isGeneratedNuxtPath, isInsideNuxtAutoImportScope, removeGeneratedNuxtChanges } from './nuxt.ts'
+import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, projectSourceFiles, resolveVerifyMode } from './project.ts'
 import { applyTextEdits, mergeFileChanges, parseFile, parseSourceFile, rgFiles, spliceScript } from './util.ts'
@@ -138,13 +138,13 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
   if (vueAdapter?.autoImportScopes) {
     const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
-    if (declarations.some(decl => isInsideNuxtAutoImportScope(decl.getSourceFile().getFilePath(), scopes))) {
+    if (declarations.some(decl => isInsideAutoImportScope(decl.getSourceFile().getFilePath(), scopes))) {
       removeVueLocalBindingChanges(changes, from)
-      const fallbackChanges = timed(profile, 'nuxt rename fallback', () => applyNuxtBareIdentifierRename(cwd, from, to, changes))
+      const fallbackChanges = timed(profile, 'nuxt rename fallback', () => applyNuxtBareIdentifierRename(vueAdapter, cwd, from, to, changes))
       mergeFileChanges(changes, fallbackChanges)
     }
     if (scopes.size)
-      removeGeneratedNuxtChanges(cwd, changes)
+      vueAdapter.filterGeneratedChanges?.(cwd, changes)
   }
 
   const regressions = baseline ? timed(profile, 'verify regressions', () => findRegressions(baseline, project, verifyFiles)) : []
@@ -157,11 +157,11 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   return { changes, scanned: loadedFiles.length, regressions }
 }
 
-function applyNuxtBareIdentifierRename(cwd: string, from: string, to: string, changes: FileChange[]): FileChange[] {
+function applyNuxtBareIdentifierRename(vueAdapter: { isGeneratedPath?: (cwd: string, path: string) => boolean }, cwd: string, from: string, to: string, changes: FileChange[]): FileChange[] {
   const byPath = new Map(changes.map(change => [change.path, change]))
   const out: FileChange[] = []
   for (const path of rgFiles(from, { cwd })) {
-    if (isGeneratedNuxtPath(cwd, path))
+    if (vueAdapter.isGeneratedPath?.(cwd, path))
       continue
     const file = parseFile(path, cwd)
     const before = byPath.get(path)?.before ?? file.fullSource

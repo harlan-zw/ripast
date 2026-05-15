@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { it } from 'vitest'
-import { isInsideNuxtAutoImportScope } from '../packages/core/src/nuxt.ts'
+import { isInsideAutoImportScope } from '../packages/core/src/nuxt.ts'
 import { applyTextEdits, mergeFileChanges, parseSourceFile, writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
 
@@ -73,11 +73,11 @@ it('parseSourceFile parses in-memory Vue script blocks with source positions', (
   assert.equal(file.isSfc, true)
 })
 
-it('isInsideNuxtAutoImportScope accepts slash and backslash paths', () => {
+it('isInsideAutoImportScope accepts slash and backslash paths', () => {
   const scopes = new Set(['/repo/composables', 'C:\\repo\\utils'])
-  assert.equal(isInsideNuxtAutoImportScope('/repo/composables/useThing.ts', scopes), true)
-  assert.equal(isInsideNuxtAutoImportScope('C:\\repo\\utils\\format.ts', scopes), true)
-  assert.equal(isInsideNuxtAutoImportScope('/repo/components/Button.vue', scopes), false)
+  assert.equal(isInsideAutoImportScope('/repo/composables/useThing.ts', scopes), true)
+  assert.equal(isInsideAutoImportScope('C:\\repo\\utils\\format.ts', scopes), true)
+  assert.equal(isInsideAutoImportScope('/repo/components/Button.vue', scopes), false)
 })
 
 it('applyTextEdits applies sorted replacements and skips overlapping edits', () => {

@@ -1,7 +1,7 @@
 import type { FrameworkAdapter } from '@ripast/core/adapter'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { extractTemplateExpressions } from '@ripast/core/adapter'
+import { extractTemplateExpressions, scan } from '@ripast/core/adapter'
 import { URI } from 'vscode-uri'
 import {
   applyVueImportRewrite,
@@ -10,6 +10,8 @@ import {
   vueRegressions,
 } from './bridge.ts'
 import { finalizeVueFileRename } from './finalize-rename.ts'
+import { addNuxtExplicitImports } from './nuxt-imports.ts'
+import { isGeneratedNuxtPath, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
 import { createVueService, workspaceEditToChanges } from './service.ts'
 
 const adapter: FrameworkAdapter = {
@@ -32,6 +34,9 @@ const adapter: FrameworkAdapter = {
       return new Set()
     return nuxtAutoImportScopes(cwd)
   },
+  isGeneratedPath: isGeneratedNuxtPath,
+  filterGeneratedChanges: removeGeneratedNuxtChanges,
+  addExplicitImports: ctx => addNuxtExplicitImports({ ...ctx, scan }),
   async finalizeFileRename(cwd, oldAbs, newAbs, existingChanges) {
     const scopes = isNuxtProject(cwd) ? nuxtAutoImportScopes(cwd) : new Set<string>()
     return finalizeVueFileRename(cwd, oldAbs, newAbs, existingChanges, scopes)

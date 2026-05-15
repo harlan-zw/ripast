@@ -3,8 +3,12 @@ import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export { isGeneratedNuxtPath, isInsideNuxtAutoImportScope, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt.ts'
 // Adapter SDK entry. @ripast/<framework> packages import from here.
+export { isInsideAutoImportScope } from './nuxt.ts'
+export { scan } from './scan.ts'
+export type { ScanHit, ScanOptions } from './scan.ts'
+
+export type ScanFn = typeof import('./scan.ts').scan
 export { posToLineCol, rgFiles } from './util.ts'
 export type { FileChange } from './util.ts'
 export type { Regression } from './verify.ts'
@@ -21,6 +25,15 @@ export interface RenameSite {
 export interface TemplateExpression {
   code: string
   offsetInSource: number
+}
+
+export interface AddExplicitImportsContext {
+  cwd: string
+  symbols: string[]
+  fromAbs: string
+  toAbs: string
+  existingChanges: FileChange[]
+  noScriptError: (symbol: string) => Error
 }
 
 export interface FrameworkAdapter {
@@ -62,6 +75,19 @@ export interface FrameworkAdapter {
   extractTemplateExpressions?: (source: string) => TemplateExpression[]
 
   autoImportScopes?: (cwd: string) => Set<string>
+
+  /** Whether `filePath` is a framework-generated file (e.g. Nuxt's `.nuxt/`). */
+  isGeneratedPath?: (cwd: string, filePath: string) => boolean
+
+  /** Drop changes targeting framework-generated paths. Mutates `changes` in place. */
+  filterGeneratedChanges?: (cwd: string, changes: FileChange[]) => void
+
+  /**
+   * After a move/rename that takes a symbol or file out of an auto-import scope,
+   * scan consumers and add explicit named imports from `toAbs`. Returns only
+   * net-new file changes; caller merges into the change set.
+   */
+  addExplicitImports?: (ctx: AddExplicitImportsContext) => FileChange[]
 
   /**
    * Hook called after a file rename has produced its baseline consumer edits.

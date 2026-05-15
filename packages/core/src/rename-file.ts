@@ -1,23 +1,33 @@
+import type { SourceFile } from 'ts-morph'
+import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
+import { Project } from 'ts-morph'
 import { loadAdapter } from './adapter.ts'
-import { isGeneratedNuxtPath } from './nuxt.ts'
-import { findTsconfig } from './project.ts'
+import { findTsconfig, resolveVerifyMode } from './project.ts'
 import { mergeFileChanges, rgFiles } from './util.ts'
+import { findRegressions, snapshotDiagnostics } from './verify.ts'
 import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
 export interface RenameFileOptions {
   cwd?: string
   tsconfig?: string
-  verify?: boolean
+  verify?: boolean | VerifyMode
 }
+
+const TS_LIKE_RE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
 
 export interface RenameFileResult {
   changes: FileChange[]
   fileMove: { from: string, to: string }
+  /**
+   * Updated content for the moved file itself (its own relative imports
+   * rewritten for the new path). Apply this to `fileMove.to` after the rename.
+   */
+  selfChange: { before: string, after: string } | null
   scanned: number
   regressions: Regression[]
   warnings: string[]
@@ -53,20 +63,77 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     warnings.push(...finalize.warnings)
   }
 
-  const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !isGeneratedNuxtPath(cwd, c.path))
+  const selfChangeRaw = consumerChanges.find(c => c.path === oldAbs || c.path === newAbs)
+  const selfChange = selfChangeRaw && selfChangeRaw.after !== selfChangeRaw.before
+    ? { before: selfChangeRaw.before, after: selfChangeRaw.after }
+    : null
+  const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !vueAdapter.isGeneratedPath?.(cwd, c.path))
 
-  const verify = opts.verify ?? true
-  const regressions = verify && consumerNoSelf.some(c => c.path.endsWith('.vue'))
-    ? await vueAdapter.regressions(tsconfigPath, cwd, consumerNoSelf)
-    : []
+  const verifyMode = resolveVerifyMode(opts.verify)
+  const regressions: Regression[] = []
+  if (verifyMode !== 'none') {
+    if (consumerNoSelf.some(c => c.path.endsWith('.vue')))
+      regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, consumerNoSelf))
+    regressions.push(...tsVerifyRenameFile(tsconfigPath, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode))
+  }
 
   return {
     changes: consumerNoSelf,
     fileMove: { from: oldAbs, to: newAbs },
+    selfChange,
     scanned: consumerNoSelf.length + 1,
     regressions,
     warnings,
   }
+}
+
+function tsVerifyRenameFile(
+  tsconfigPath: string,
+  oldAbs: string,
+  newAbs: string,
+  consumerChanges: FileChange[],
+  selfChange: { before: string, after: string } | null,
+  verifyMode: VerifyMode,
+): Regression[] {
+  const consumerTsChanges = consumerChanges.filter(c => TS_LIKE_RE.test(c.path))
+  const moveIsTs = TS_LIKE_RE.test(oldAbs) && TS_LIKE_RE.test(newAbs)
+  if (!moveIsTs && !consumerTsChanges.length)
+    return []
+
+  const project = new Project({ tsConfigFilePath: tsconfigPath })
+  const oldSF = project.getSourceFile(oldAbs) ?? project.addSourceFileAtPathIfExists(oldAbs)
+
+  const touched: SourceFile[] = []
+  if (oldSF)
+    touched.push(oldSF)
+  for (const c of consumerTsChanges) {
+    const sf = project.getSourceFile(c.path) ?? project.addSourceFileAtPathIfExists(c.path)
+    if (sf)
+      touched.push(sf)
+  }
+
+  const baselineFiles = verifyMode === 'project' ? project.getSourceFiles() : touched
+  const baseline = snapshotDiagnostics(project, baselineFiles)
+
+  for (const c of consumerTsChanges) {
+    const sf = project.getSourceFile(c.path)
+    if (sf)
+      sf.replaceWithText(c.after)
+  }
+
+  let newSF: SourceFile | null = null
+  if (moveIsTs) {
+    const movedText = selfChange?.after ?? oldSF?.getFullText() ?? readFileSync(oldAbs, 'utf8')
+    if (oldSF)
+      oldSF.delete()
+    newSF = project.createSourceFile(newAbs, movedText, { overwrite: true })
+  }
+
+  const postFiles = verifyMode === 'project'
+    ? project.getSourceFiles()
+    : [...(newSF ? [newSF] : []), ...consumerTsChanges.map(c => project.getSourceFile(c.path)).filter((sf): sf is SourceFile => !!sf)]
+
+  return findRegressions(baseline, project, postFiles)
 }
 
 function applyComponentTemplateRenameFallback(cwd: string, oldAbs: string, newAbs: string, changes: FileChange[]): FileChange[] {
