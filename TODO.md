@@ -62,6 +62,10 @@ Defer until the shipped primitives cover <90% of real refactors. Keep this tier 
 - **Default export move** — currently rejected. Convert `export default` → `export function X` on move and update `import X from './a'` sites to `import { X } from './b'`. Tricky: import-name must match the exported name, which a default doesn't constrain.
 - **Template-aware markup (Svelte)** — symbol refs inside Svelte markup are invisible to the AST. Needs `svelte/compiler`. (Vue `<template>` is now handled by the Volar bridge + `rewriteTemplateReferences` post-pass.)
 
+## Tier 6.5 — Adapter shape
+
+- **Dedicated `@ripast/nuxt` driver.** `loadAdapter('nuxt')` returns `@ripast/vue` tagged `capabilities.nuxt = true`. Nuxt knowledge sits in `core/nuxt.ts` (auto-import scope, generated path filter, tsconfig path-alias loading, layer-aware specifier resolution) and `vue/finalize-rename.ts` (resolveComponent warning, out-of-scope explicit component imports). Split once ≥2 Nuxt-only primitives exist. Candidates: components-dir global-registration scan, server-route rewriting, layer-aware `move --to-layer`, runtime-vs-build classification. The split moves `core/nuxt.ts` into the new package, makes `@ripast/nuxt` depend on `@ripast/vue` for SFC primitives, and composes `finalizeFileRename` (Vue handles SFC concerns, Nuxt wraps with auto-import/layer logic).
+
 ## Tier 7 — Meta / housekeeping
 
 - **Pre-commit hook integration** — optional git hook that runs `ripast scan` over renamed-looking identifiers in changed files to catch incomplete manual renames.

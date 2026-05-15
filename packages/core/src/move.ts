@@ -8,7 +8,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { Project, SyntaxKind } from 'ts-morph'
 import { loadAdapter } from './adapter.ts'
-import { isGeneratedNuxtPath, isInsideNuxtAutoImportScope, removeGeneratedNuxtChanges } from './nuxt.ts'
+import { isGeneratedNuxtPath, isInsideNuxtAutoImportScope, loadNuxtPathAliases, removeGeneratedNuxtChanges, resolveBestImportSpecifier } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, resolveVerifyMode } from './project.ts'
 import { scan } from './scan.ts'
@@ -177,6 +177,7 @@ function addNuxtExplicitImports(cwd: string, symbol: string, toAbs: string, chan
   const byPath = new Map(changes.map(change => [change.path, change]))
   const hits = scan(symbol, { cwd, kinds: ['identifier-reference'] })
   const consumerPaths = new Set(hits.map(hit => resolve(cwd, hit.file)))
+  const aliases = loadNuxtPathAliases(cwd)
   const out: FileChange[] = []
   for (const filePath of consumerPaths) {
     if (isGeneratedNuxtPath(cwd, filePath))
@@ -186,7 +187,7 @@ function addNuxtExplicitImports(cwd: string, symbol: string, toAbs: string, chan
     const current = byPath.get(filePath)?.after ?? readFileSync(filePath, 'utf8')
     if (hasNamedImport(current, symbol))
       continue
-    const specifier = computeSpecifier(filePath, toAbs, './placeholder')
+    const specifier = resolveBestImportSpecifier(filePath, toAbs, aliases, './placeholder')
     const after = filePath.endsWith('.vue')
       ? insertVueScriptImport(current, symbol, specifier, toAbs)
       : insertTopLevelImport(current, symbol, specifier)

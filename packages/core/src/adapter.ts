@@ -3,11 +3,12 @@ import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+export { isGeneratedNuxtPath, isInsideNuxtAutoImportScope, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt.ts'
 // Adapter SDK entry. @ripast/<framework> packages import from here.
 export { posToLineCol, rgFiles } from './util.ts'
 export type { FileChange } from './util.ts'
 export type { Regression } from './verify.ts'
-export { extractTemplateExpressions, rewriteTemplateReferences } from './vue-template.ts'
+export { extractTemplateExpressions, hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
 export type FrameworkName = 'vue' | 'nuxt' | 'svelte'
 
@@ -61,6 +62,18 @@ export interface FrameworkAdapter {
   extractTemplateExpressions?: (source: string) => TemplateExpression[]
 
   autoImportScopes?: (cwd: string) => Set<string>
+
+  /**
+   * Hook called after a file rename has produced its baseline consumer edits.
+   * Returns additional framework-specific edits and human-readable warnings
+   * (e.g. resolveComponent() string references, out-of-auto-import-scope explicit imports).
+   */
+  finalizeFileRename?: (
+    cwd: string,
+    oldAbs: string,
+    newAbs: string,
+    existingChanges: FileChange[],
+  ) => Promise<{ changes: FileChange[], warnings: string[] }>
 }
 
 const cache = new Map<FrameworkName, FrameworkAdapter | null>()

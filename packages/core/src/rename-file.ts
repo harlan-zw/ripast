@@ -20,6 +20,7 @@ export interface RenameFileResult {
   fileMove: { from: string, to: string }
   scanned: number
   regressions: Regression[]
+  warnings: string[]
 }
 
 export async function runRenameFile(oldPath: string, newPath: string, opts: RenameFileOptions = {}): Promise<RenameFileResult> {
@@ -44,6 +45,14 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   const consumerChanges = await vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
   const templateChanges = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, consumerChanges)
   mergeFileChanges(consumerChanges, templateChanges)
+
+  const warnings: string[] = []
+  if (vueAdapter.finalizeFileRename) {
+    const finalize = await vueAdapter.finalizeFileRename(cwd, oldAbs, newAbs, consumerChanges)
+    mergeFileChanges(consumerChanges, finalize.changes)
+    warnings.push(...finalize.warnings)
+  }
+
   const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !isGeneratedNuxtPath(cwd, c.path))
 
   const verify = opts.verify ?? true
@@ -56,6 +65,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     fileMove: { from: oldAbs, to: newAbs },
     scanned: consumerNoSelf.length + 1,
     regressions,
+    warnings,
   }
 }
 

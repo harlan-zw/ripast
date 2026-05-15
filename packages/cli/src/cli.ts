@@ -379,11 +379,14 @@ const renameFileCmd = defineCommand({
         fileMove: r.fileMove,
         changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
         regressions: r.regressions,
+        warnings: r.warnings,
       })}\n`)
       if (blockedByRegression)
         process.exit(1)
       return
     }
+    for (const w of r.warnings)
+      process.stderr.write(`warning: ${w}\n`)
     if (agentProfile) {
       process.stdout.write(`${profileHeader()}\n`)
       process.stdout.write(`rename-file: ${args.old} -> ${args.new}\n`)

@@ -9,6 +9,7 @@ import {
   hasVueFilesContaining,
   vueRegressions,
 } from './bridge.ts'
+import { finalizeVueFileRename } from './finalize-rename.ts'
 import { createVueService, workspaceEditToChanges } from './service.ts'
 
 const adapter: FrameworkAdapter = {
@@ -30,6 +31,10 @@ const adapter: FrameworkAdapter = {
     if (!isNuxtProject(cwd))
       return new Set()
     return nuxtAutoImportScopes(cwd)
+  },
+  async finalizeFileRename(cwd, oldAbs, newAbs, existingChanges) {
+    const scopes = isNuxtProject(cwd) ? nuxtAutoImportScopes(cwd) : new Set<string>()
+    return finalizeVueFileRename(cwd, oldAbs, newAbs, existingChanges, scopes)
   },
 }
 

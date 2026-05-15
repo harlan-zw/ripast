@@ -157,6 +157,11 @@ ripast rename-file src/utils.ts src/lib/helpers.ts --apply
 
 Refuses if the source doesn't exist or the target already exists. Requires a `tsconfig.json`.
 
+Vue/Nuxt-aware behaviours layered on top of the Volar rewrite:
+- **`resolveComponent('Name')` sites.** When a renamed `.vue` is referenced by string via `resolveComponent`, ripast rewrites the literal to the new name and emits a warning. The component still needs to stay globally registered (plugin `app.component(...)` or Nuxt `components/`) for those sites to resolve.
+- **Out-of-auto-import-scope component moves.** Moving a `.vue` from a Nuxt auto-import dir (e.g. `components/`) into a folder outside auto-import scope (e.g. `lib/`) adds an explicit `import Name from '<specifier>'` to every consumer `<script setup>` that uses the tag. Refuses with a clear error if a consumer is template-only (no `<script>` block).
+- **Layer-alias preference.** Explicit imports added by ripast prefer a tsconfig path alias when one cleanly resolves the target file (`.nuxt/tsconfig.json` is consulted first, then the project tsconfig). Within the same alias root (same layer) the import stays relative. The same rule applies to explicit imports added by `move` when a util/composable leaves Nuxt auto-import scope.
+
 ### `ripast css-class-rename <from> <to> | --map <file.json> [--glob g1,g2] [--apply] [--profile auto|agent|full] [--json]`
 
 Rename CSS utility class token(s) (tailwind, UnoCSS, etc.) across the repo. Tokenizes every string literal, Vue template `class` / `:class` attribute, and `@apply` directive body, then rewrites tokens whose non-variant tail matches a map key. Variant prefixes (`hover:`, `dark:md:`), `!` important markers, and arbitrary values (`bg-[url(a:b)]`) are preserved. Colons inside `[...]` are not treated as variant separators.

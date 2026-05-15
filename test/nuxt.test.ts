@@ -182,6 +182,62 @@ describe('nuxt auto-imports', () => {
     finally { fx.cleanup() }
   })
 
+  it('prefers a tsconfig path alias for util explicit imports across layers', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('.nuxt/tsconfig.json', JSON.stringify({
+        compilerOptions: {
+          baseUrl: '..',
+          paths: { '#lib/*': ['lib/*'] },
+        },
+      }))
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verify: false })
+      writeChanges(result.changes)
+      assert.match(fx.read('pages/index.vue'), /import \{ format \} from '#lib\/format'/)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('warns when renaming a component that is referenced via resolveComponent() string', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('pages/dynamic.vue', `<script setup lang="ts">\nconst Comp = resolveComponent('MyButton')\n</script>\n<template><component :is="Comp" /></template>\n`)
+      const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { cwd: fx.dir, verify: false })
+      assert.ok(result.warnings.some(w => /resolveComponent\(\) in 1 file/.test(w) && /pages\/dynamic\.vue/.test(w)))
+      applyRenameFile(result)
+      assert.match(fx.read('pages/dynamic.vue'), /resolveComponent\('PrimaryButton'\)/)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('adds explicit imports to vue consumers when moving a component out of auto-import scope', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      const result = await runRenameFile('components/MyButton.vue', 'lib/MyButton.vue', { cwd: fx.dir, verify: false })
+      applyRenameFile(result)
+      const page = fx.read('pages/index.vue')
+      assert.match(page, /import MyButton from '\.\.\/lib\/MyButton\.vue'/)
+      assert.match(page, /<MyButton :label="label" \/>/)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('prefers a tsconfig path alias over a relative specifier for cross-layer component imports', async () => {
+    const fx = makeNuxtFixture()
+    try {
+      fx.write('.nuxt/tsconfig.json', JSON.stringify({
+        compilerOptions: {
+          baseUrl: '..',
+          paths: { '#lib/*': ['lib/*'] },
+        },
+      }))
+      const result = await runRenameFile('components/MyButton.vue', 'lib/MyButton.vue', { cwd: fx.dir, verify: false })
+      applyRenameFile(result)
+      assert.match(fx.read('pages/index.vue'), /import MyButton from '#lib\/MyButton\.vue'/)
+    }
+    finally { fx.cleanup() }
+  })
+
   it('scans auto-imported Nuxt usages in pages', () => {
     const fx = makeNuxtFixture()
     try {
