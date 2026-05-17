@@ -1,7 +1,7 @@
 {
   "name": "@ripast/vue",
   "type": "module",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Vue (and Nuxt) framework adapter for ripast. Provides Volar/Vue Language Service-backed rename, move, and template rewriting for .vue SFCs.",
   "author": {
     "name": "Harlan Wilton",
