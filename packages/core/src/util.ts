@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { createPatch } from 'diff'
 import { parseSync } from 'oxc-parser'
@@ -133,6 +133,7 @@ export function writeChanges(changes: FileChange[]): void {
   const staged: { tmp: string, target: string }[] = []
   try {
     for (const c of changes) {
+      mkdirSync(dirname(c.path), { recursive: true })
       const tmp = `${c.path}.ripast-tmp-${process.pid}`
       writeFileSync(tmp, c.after)
       staged.push({ tmp, target: c.path })

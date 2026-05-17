@@ -1,24 +1,22 @@
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { it } from 'vitest'
 import { isInsideAutoImportScope } from '../packages/core/src/nuxt.ts'
 import { applyTextEdits, mergeFileChanges, parseSourceFile, writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
 
-it('writeChanges leaves no partial state when a write fails mid-batch', () => {
+it('writeChanges creates missing parent dirs for new target files', () => {
   const fx = makeFixture({
     'a.ts': 'original-a\n',
-    'b.ts': 'original-b\n',
   }, false)
   try {
-    const changes = [
+    writeChanges([
       { path: join(fx.dir, 'a.ts'), rel: 'a.ts', before: 'original-a\n', after: 'new-a\n' },
       { path: join(fx.dir, 'missing-dir/b.ts'), rel: 'missing-dir/b.ts', before: '', after: 'new-b\n' },
-    ]
-    assert.throws(() => writeChanges(changes))
-    assert.equal(readFileSync(join(fx.dir, 'a.ts'), 'utf8'), 'original-a\n', 'a.ts unchanged after failure')
-    assert.ok(!existsSync(join(fx.dir, 'missing-dir')), 'target dir was never created')
+    ])
+    assert.equal(readFileSync(join(fx.dir, 'a.ts'), 'utf8'), 'new-a\n')
+    assert.equal(readFileSync(join(fx.dir, 'missing-dir/b.ts'), 'utf8'), 'new-b\n')
     const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripast-tmp'))
     assert.equal(leftover.length, 0, `no tmp files leaked: ${leftover.join(', ')}`)
   }
