@@ -80,6 +80,25 @@ export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?:
   return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
 }
 
+/**
+ * Batch multiple fixed-string patterns into a single rg invocation via `-e <pat>`.
+ * Returns the union of matching file paths. Empty `patterns` returns `[]` without spawning rg.
+ */
+export function rgFilesMany(patterns: string[], opts: { glob?: string | string[], cwd?: string } = {}): string[] {
+  if (!patterns.length)
+    return []
+  const cwd = opts.cwd ?? process.cwd()
+  const globs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
+  const args: string[] = ['--files-with-matches', '--hidden', '--no-messages', '--fixed-strings']
+  for (const g of globs) args.push('-g', g)
+  for (const p of patterns) args.push('-e', p)
+  args.push('.')
+  const r = spawnSync('rg', args, { cwd, encoding: 'utf8' })
+  if (r.status !== 0 && r.status !== 1)
+    throw new Error(`rg failed: ${r.stderr}`)
+  return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
+}
+
 const SFC_SCRIPT_RE = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi
 const SFC_SRC_ATTR_RE = /\bsrc\s*=/
 

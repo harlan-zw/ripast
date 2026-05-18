@@ -1,3 +1,5 @@
+export { buildComponentDetail, buildComponentInventory, formatAgentInventory, formatDetail, formatInventory } from './components.ts'
+export type { ComponentDetail, ComponentInventory, ComponentsListOptions, DuplicateGroup } from './components.ts'
 export { rewriteClassString, rewriteToken, runCssClassRename } from './css-class-rename.ts'
 export type { CssClassRenameOptions, CssClassRenameResult, RenameMap } from './css-class-rename.ts'
 export { formatAgentFileScanHits, formatAgentScanHits, formatFileScanHits, formatScanHits, runCssClassFileScan, runCssClassScan } from './css-class-scan.ts'

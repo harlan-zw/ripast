@@ -2,7 +2,7 @@ import type { RenameMap } from './css-class-token.ts'
 import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { rewriteClassString, visitClassTokens } from './css-class-token.ts'
-import { applyTextEdits, parseFile, rgFiles } from './util.ts'
+import { applyTextEdits, parseFile, rgFiles, rgFilesMany } from './util.ts'
 
 export interface CssClassSourceOptions {
   cwd?: string
@@ -32,12 +32,7 @@ export function readCssClassSourceFiles(opts: CssClassSourceOptions = {}): CssCl
 export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs()
-  const fileSet = new Set<string>()
-  for (const key of map.keys()) {
-    for (const file of rgFiles(key, { cwd, glob, fixedStrings: true }))
-      fileSet.add(file)
-  }
-  return readSourceFiles([...fileSet], cwd)
+  return readSourceFiles(rgFilesMany([...map.keys()], { cwd, glob }), cwd)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {

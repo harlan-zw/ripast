@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { posToLineCol, rewriteTemplateReferences } from '@ripast/core/adapter'
 import { URI } from 'vscode-uri'
-import { createVueService, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
+import { createVueService, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
 import { hasVueFilesContaining as hasVueFilesContainingInWorkspace, listVueFiles, listVueFilesContaining } from './vue-files.ts'
 
 export function hasVueFilesContaining(cwd: string, pattern: string): boolean {
@@ -118,17 +118,17 @@ export async function vueRegressions(
     return []
   const vue = createVueService(tsconfigPath, cwd)
   try {
-    const baselinePairs = await Promise.all(
+    const baselinePairs = await withFilteredConsoleWarn(() => Promise.all(
       vueFiles.map(async file => [file, await collectDiagKeys(vue, file)] as const),
-    )
+    ))
     const baseline = new Map(baselinePairs)
     for (const c of pendingChanges) {
       vue.setSnapshot(c.path, c.after)
     }
     const checkSet = [...new Set<string>([...vueFiles, ...pendingChanges.filter(c => c.path.endsWith('.vue')).map(c => c.path)])]
-    const postPairs = await Promise.all(
+    const postPairs = await withFilteredConsoleWarn(() => Promise.all(
       checkSet.map(async file => [file, await getDiags(vue, file)] as const),
-    )
+    ))
     const out: Regression[] = []
     for (const [file, post] of postPairs) {
       const before = baseline.get(file) ?? new Set()

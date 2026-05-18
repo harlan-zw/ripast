@@ -3,16 +3,21 @@ import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import {
+  buildComponentDetail,
+  buildComponentInventory,
   buildDeclarationTree,
   buildScanGraph,
   buildUnusedDeclarations,
   formatAgentDeclarationTree,
   formatAgentFileScanHits,
   formatAgentHits,
+  formatAgentInventory,
   formatAgentScanHits,
   formatDeclarationTree,
+  formatDetail,
   formatFileScanHits,
   formatHits,
+  formatInventory,
   formatRegressions,
   formatScanGraph,
   formatScanHits,
@@ -36,7 +41,7 @@ import {
 import { defineCommand, runMain } from 'citty'
 import { agent, isAgent } from 'std-env'
 
-const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
+const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
 const applyArg = { type: 'boolean' as const, default: false, description: 'Write changes. Default prints a unified diff.' }
 const verifyArg = { type: 'boolean' as const, default: true, description: 'Typecheck post-transform; refuse --apply on regression. Disable with --no-verify.' }
 const verifyModeArg = { type: 'string' as const, description: 'Verification mode: touched, project, or none. Defaults to touched; --no-verify maps to none.' }
@@ -654,6 +659,72 @@ const vueTemplateUnwrapCmd = defineCommand({
   },
 })
 
+const componentsCmd = defineCommand({
+  meta: { name: 'components', description: 'Inventory Vue/Nuxt components (manifest-first, glob fallback); flag shadowed entries and duplicate-name groups. Pass a name positional for the focused view.' },
+  args: {
+    name: { type: 'positional', required: false, description: 'Component name. If given, prints file, aliases, usages, and same-name candidates.' },
+    glob: globArg,
+    source: { type: 'string', description: 'Discovery source: auto, manifest, or filesystem. Default: auto.' },
+    dups: { type: 'boolean', default: false, description: 'Print only duplicate-name groups.' },
+    profile: profileArg,
+    json: jsonArg,
+  },
+  async run({ args }) {
+    const { agentProfile } = resolveProfile(args.profile)
+    const opts = {
+      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      source: resolveComponentsSource(args.source),
+    }
+    if (args.name) {
+      const detail = await buildComponentDetail(args.name as string, opts)
+      if (!detail) {
+        process.stderr.write(`ripast components: no component named "${args.name}".\n`)
+        process.exit(1)
+      }
+      if (args.json) {
+        process.stdout.write(`${JSON.stringify(detail, null, 2)}\n`)
+        return
+      }
+      process.stdout.write(`${formatDetail(detail)}\n`)
+      return
+    }
+    const inv = await buildComponentInventory(opts)
+    if (args.json) {
+      process.stdout.write(`${JSON.stringify(args.dups ? inv.duplicates : inv, null, 2)}\n`)
+      return
+    }
+    if (args.dups) {
+      if (!inv.duplicates.length) {
+        process.stdout.write('no duplicate-name groups\n')
+        return
+      }
+      const lines: string[] = []
+      for (const dup of inv.duplicates) {
+        lines.push(dup.name)
+        for (const e of dup.entries)
+          lines.push(`  ${e.rel}${e.shadowed ? ' (shadowed)' : ''}`)
+      }
+      process.stdout.write(`${lines.join('\n')}\n`)
+      return
+    }
+    if (agentProfile) {
+      process.stdout.write(`${profileHeader()}\n${formatAgentInventory(inv)}\n`)
+      return
+    }
+    process.stdout.write(`${formatInventory(inv)}\n`)
+  },
+})
+
+function resolveComponentsSource(raw: unknown): 'auto' | 'manifest' | 'filesystem' | undefined {
+  if (raw == null)
+    return undefined
+  if (raw !== 'auto' && raw !== 'manifest' && raw !== 'filesystem') {
+    process.stderr.write(`ripast components: --source must be "auto", "manifest", or "filesystem".\n`)
+    process.exit(2)
+  }
+  return raw
+}
+
 runMain(defineCommand({
   meta: { name: 'ripast', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
@@ -665,6 +736,7 @@ runMain(defineCommand({
     'rename-file': renameFileCmd,
     'move': moveCmd,
     'delete': deleteCmd,
+    'components': componentsCmd,
     'css-class-rename': cssClassRenameCmd,
     'css-class-scan': cssClassScanCmd,
     'vue-template-wrap': vueTemplateWrapCmd,

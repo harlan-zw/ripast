@@ -35,6 +35,9 @@ export function rewriteTemplateReferences(source: string, oldName: string, newNa
   const isComponentName = /^[A-Z]/.test(oldName)
   const oldKebab = hyphenateVueName(oldName)
   const newKebab = hyphenateVueName(newName)
+  // Skip kebab tag rewrites when oldKebab is a native HTML element (e.g. Button -> button).
+  // Otherwise we'd corrupt every native `<button>` / `<header>` / `<section>` in the project.
+  const kebabConflictsWithNative = HTML_ELEMENT_NAMES.has(oldKebab)
   const edits: Edit[] = []
 
   function rewriteTag(node: any, oldTag: string, newTag: string): void {
@@ -135,7 +138,7 @@ export function rewriteTemplateReferences(source: string, oldName: string, newNa
       if (isComponentName) {
         if (node.tag === oldName)
           rewriteTag(node, oldName, newName)
-        else if (oldKebab !== oldName && node.tag === oldKebab)
+        else if (oldKebab !== oldName && node.tag === oldKebab && !kebabConflictsWithNative)
           rewriteTag(node, oldKebab, newKebab)
       }
 
@@ -235,6 +238,10 @@ function tagMatches(node: any, sel: TemplateSelector): boolean {
     }
   }
   return true
+}
+
+export function parseVueTemplateAst(source: string): any | null {
+  return parseTemplate(source)
 }
 
 function parseTemplate(source: string): any | null {
@@ -447,3 +454,119 @@ function visit(node: any, out: TemplateExpression[], templateOffset: number): vo
   }
   for (const c of node.children ?? []) visit(c, out, templateOffset)
 }
+
+const HTML_ELEMENT_NAMES = new Set([
+  'a',
+  'abbr',
+  'address',
+  'area',
+  'article',
+  'aside',
+  'audio',
+  'b',
+  'base',
+  'bdi',
+  'bdo',
+  'blockquote',
+  'body',
+  'br',
+  'button',
+  'canvas',
+  'caption',
+  'cite',
+  'code',
+  'col',
+  'colgroup',
+  'data',
+  'datalist',
+  'dd',
+  'del',
+  'details',
+  'dfn',
+  'dialog',
+  'div',
+  'dl',
+  'dt',
+  'em',
+  'embed',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'head',
+  'header',
+  'hgroup',
+  'hr',
+  'html',
+  'i',
+  'iframe',
+  'img',
+  'input',
+  'ins',
+  'kbd',
+  'label',
+  'legend',
+  'li',
+  'link',
+  'main',
+  'map',
+  'mark',
+  'menu',
+  'meta',
+  'meter',
+  'nav',
+  'noscript',
+  'object',
+  'ol',
+  'optgroup',
+  'option',
+  'output',
+  'p',
+  'param',
+  'picture',
+  'pre',
+  'progress',
+  'q',
+  'rp',
+  'rt',
+  'ruby',
+  's',
+  'samp',
+  'script',
+  'search',
+  'section',
+  'select',
+  'slot',
+  'small',
+  'source',
+  'span',
+  'strong',
+  'style',
+  'sub',
+  'summary',
+  'sup',
+  'table',
+  'tbody',
+  'td',
+  'template',
+  'textarea',
+  'tfoot',
+  'th',
+  'thead',
+  'time',
+  'title',
+  'tr',
+  'track',
+  'u',
+  'ul',
+  'var',
+  'video',
+  'wbr',
+])

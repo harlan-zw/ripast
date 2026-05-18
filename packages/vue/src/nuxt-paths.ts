@@ -86,6 +86,70 @@ function stripJsonComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
 
+/**
+ * Walk up from a consumer file to its nearest `.nuxt/tsconfig.json` (typically the
+ * generated tsconfig of the Nuxt app the file belongs to). Returns the path-aliases
+ * declared there, with their targets resolved relative to that tsconfig's baseUrl.
+ *
+ * In a multi-app Nuxt workspace, each app re-roots `~/*` to its own srcDir, so the
+ * workspace-level tsconfig's `~/*` mapping is not portable across consumers. This
+ * lets a caller validate whether an alias-prefixed specifier emitted by the TS server
+ * actually resolves to the same file from the consumer's app perspective.
+ */
+export function loadConsumerLocalAliases(consumerFile: string, workspaceCwd: string): PathAlias[] {
+  const workspaceNorm = workspaceCwd.replace(WIN_SEP_RE, '/')
+  let dir = dirname(consumerFile)
+  while (true) {
+    const tsconfig = join(dir, '.nuxt/tsconfig.json')
+    const dirNorm = dir.replace(WIN_SEP_RE, '/')
+    if (dirNorm !== workspaceNorm && existsSync(tsconfig))
+      return readTsconfigPaths(tsconfig)
+    if (dirNorm === workspaceNorm || dirNorm === '/' || dirNorm === '')
+      return []
+    const parent = dirname(dir)
+    if (parent === dir)
+      return []
+    dir = parent
+  }
+}
+
+/**
+ * Returns true if `targetFile` is reachable from `consumerFile` through any alias
+ * defined in `consumerAliases` whose pattern starts with `specifierPrefix` (e.g. `~`).
+ * Used to decide whether an alias prefix emitted into a consumer is portable.
+ */
+export function aliasResolvesToTarget(
+  consumerAliases: PathAlias[],
+  specifier: string,
+  targetFile: string,
+): boolean {
+  const targetNorm = targetFile.replace(WIN_SEP_RE, '/')
+  for (const alias of consumerAliases) {
+    const base = alias.wildcard ? alias.pattern.replace(/\/\*$/, '') : alias.pattern
+    if (!alias.wildcard) {
+      if (specifier !== alias.pattern)
+        continue
+      if (alias.targets.some(t => t.replace(WIN_SEP_RE, '/') === targetNorm))
+        return true
+      continue
+    }
+    if (specifier !== base && !specifier.startsWith(`${base}/`))
+      continue
+    const remainder = specifier === base ? '' : specifier.slice(base.length + 1)
+    for (const target of alias.targets) {
+      const normTarget = target.replace(WIN_SEP_RE, '/')
+      const candidate = remainder ? `${normTarget}/${remainder}` : normTarget
+      if (targetNorm === candidate)
+        return true
+      if (stripModuleExt(targetNorm) === candidate)
+        return true
+      if (targetNorm === `${candidate}/index.ts` || targetNorm === `${candidate}/index.js` || targetNorm === `${candidate}/index.vue`)
+        return true
+    }
+  }
+  return false
+}
+
 export function resolveBestImportSpecifier(
   fromFile: string,
   toFile: string,

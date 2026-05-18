@@ -9,10 +9,10 @@ export { scan } from './scan.ts'
 export type { ScanHit, ScanOptions } from './scan.ts'
 
 export type ScanFn = typeof import('./scan.ts').scan
-export { posToLineCol, rgFiles } from './util.ts'
+export { parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 export type { FileChange } from './util.ts'
 export type { Regression } from './verify.ts'
-export { extractTemplateExpressions, hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
+export { extractTemplateExpressions, hyphenateVueName, parseVueTemplateAst, rewriteTemplateReferences } from './vue-template.ts'
 
 export type FrameworkName = 'vue' | 'nuxt' | 'svelte'
 
@@ -100,6 +100,34 @@ export interface FrameworkAdapter {
     newAbs: string,
     existingChanges: FileChange[],
   ) => Promise<{ changes: FileChange[], warnings: string[] }>
+
+  listComponents?: (cwd: string, opts?: { glob?: string[], source?: 'auto' | 'manifest' | 'filesystem', warn?: (msg: string) => void }) => ComponentInfo[]
+  findComponentUsages?: (names: string[], opts?: { cwd?: string, glob?: string | string[] }) => ComponentUsageInfo[]
+}
+
+export interface ComponentInfo {
+  id: string
+  name: string
+  registeredName: string | null
+  aliases: string[]
+  file: string
+  rel: string
+  kind: 'sfc' | 'define-component'
+  layer?: string
+  scope: 'auto-import' | 'global' | 'explicit'
+  shadowed: boolean
+  shadowedBy?: string
+  source: 'manifest' | 'filesystem'
+}
+
+export interface ComponentUsageInfo {
+  name: string
+  file: string
+  rel: string
+  line: number
+  col: number
+  form: 'tag-pascal' | 'tag-kebab' | 'resolveComponent' | 'dynamic-is-literal' | 'dynamic-is-binding'
+  binding?: string
 }
 
 const cache = new Map<FrameworkName, FrameworkAdapter | null>()

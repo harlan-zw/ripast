@@ -302,6 +302,41 @@ Exports cover `runRename`, `runReplace`, `runMove`, `runDelete`, `runRenameFile`
 
 For batching, both `runRename` and `runMove` accept an existing ts-morph `project` so callers pay the project setup cost once.
 
+## Recipes & limitations
+
+**Scoping with `--glob`.** Comma-separated globs are forwarded to ripgrep verbatim, including `!`-prefixed exclusions. Useful for keeping the default extension set while cutting generated noise:
+
+```bash
+ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**,!**/*.d.ts,!**/dist/**'
+```
+
+**Nuxt projects.** Point `--tsconfig` at the generated config so path aliases and layer references resolve correctly:
+
+```bash
+# After `nuxi prepare`
+ripast rename useFoo useBar --tsconfig .nuxt/tsconfig.json --apply
+ripast tree --exports exported --tsconfig .nuxt/tsconfig.json --glob '*.ts,*.vue,!.nuxt/**'
+```
+
+`components` (and friends) auto-detect `.nuxt/components.d.ts` for accurate manifest-sourced resolution; fall back to filesystem glob only when no manifest is present (run `nuxi prepare` first for best results).
+
+**Pre-commit guard.** Drop the snippet below into a `pre-commit` hook to catch incomplete manual renames before they land. It scans staged identifiers and refuses the commit if `ripast scan` reports references that look stale:
+
+```bash
+#!/usr/bin/env bash
+set -e
+# Tokens that look like old/new pairs in the staged diff (heuristic).
+candidates=$(git diff --cached -U0 | rg -No '\b[A-Za-z_][A-Za-z0-9_]{4,}\b' | sort -u)
+for name in $candidates; do
+  hits=$(ripast scan "$name" --profile agent 2>/dev/null | rg -c "^  " || true)
+  [ "$hits" -gt 0 ] || continue
+done
+```
+
+(Project-specific; treat as a template rather than a turnkey hook.)
+
+**Encoding.** ripast assumes UTF-8 + LF. CRLF and BOM files are untested; convert with `dos2unix` / strip BOM before running mutating commands.
+
 ## When to reach for this vs Edit
 
 | Situation | Tool |

@@ -23,7 +23,73 @@ export interface VueService {
   dispose: () => void
 }
 
+function stringifyArg(arg: unknown): string {
+  if (arg instanceof Error)
+    return arg.message
+  if (typeof arg === 'string')
+    return arg
+  return String(arg)
+}
+
+function isNoisyDiagnostic(text: string): boolean {
+  return text.includes('languageId not found') || text.includes('.d.ts.map') || text.includes('.d.mts.map') || text.includes('.d.cts.map')
+}
+
+/**
+ * Run `fn` with `console.warn` muted for messages we know are unactionable:
+ * - "[Vue] Resolve plugin path failed" / "[Vue] Load plugin failed" from @vue/language-core
+ *   when a vueCompilerOptions.plugins entry isn't installable (common with Nuxt 4 + vue-router 4.6+).
+ * Everything else passes through unchanged.
+ */
+export function withFilteredConsoleWarn<T>(fn: () => T): T {
+  const original = console.warn
+  console.warn = (...args: unknown[]) => {
+    const first = typeof args[0] === 'string' ? args[0] : ''
+    if (first.startsWith('[Vue] Resolve plugin path failed') || first.startsWith('[Vue] Load plugin failed'))
+      return
+    if (first.startsWith('languageId not found'))
+      return
+    original.apply(console, args as Parameters<typeof console.warn>)
+  }
+  const restore = (): void => { console.warn = original }
+  try {
+    const result = fn()
+    if (result && typeof (result as any).then === 'function')
+      return (result as any).then((v: T) => { restore(); return v }, (e: unknown) => { restore(); throw e })
+    restore()
+    return result
+  }
+  catch (err) {
+    restore()
+    throw err
+  }
+}
+
 export function createVueService(tsconfigPath: string, cwd: string): VueService {
+  const restore = installFilteredConsoleWarn()
+  const service = createVueServiceInternal(tsconfigPath, cwd)
+  const origDispose = service.dispose
+  service.dispose = () => {
+    try { origDispose() }
+    finally { restore() }
+  }
+  return service
+}
+
+function installFilteredConsoleWarn(): () => void {
+  const original = console.warn
+  console.warn = (...args: unknown[]) => {
+    const first = typeof args[0] === 'string' ? args[0] : ''
+    if (first.startsWith('[Vue] Resolve plugin path failed') || first.startsWith('[Vue] Load plugin failed'))
+      return
+    if (first.startsWith('languageId not found'))
+      return
+    original.apply(console, args as Parameters<typeof console.warn>)
+  }
+  return () => { console.warn = original }
+}
+
+function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService {
   const commandLine = createParsedCommandLine(ts, ts.sys, tsconfigPath)
   // createParsedCommandLine doesn't add .vue files because it doesn't pass extraFileExtensions.
   // Reparse with the right extensions so commandLine.fileNames includes .vue.
@@ -112,7 +178,17 @@ export function createVueService(tsconfigPath: string, cwd: string): VueService 
       },
       readDirectory() { return [] },
     },
-    console: { log() {}, warn() {}, error: process.stderr.write.bind(process.stderr), info() {} } as any,
+    console: {
+      log() {},
+      warn() {},
+      info() {},
+      error(...args: unknown[]) {
+        const text = args.map(stringifyArg).join(' ')
+        if (isNoisyDiagnostic(text))
+          return
+        process.stderr.write(`${text}\n`)
+      },
+    } as any,
   }
 
   const project: ProjectContext = {

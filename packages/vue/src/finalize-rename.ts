@@ -29,6 +29,11 @@ export async function finalizeVueFileRename(
     const resolveCompEdits = rewriteResolveComponentSites(cwd, oldName, newName, existingChanges, oldAbs, newAbs, warnings)
     mergeIntoChanges(changes, resolveCompEdits)
 
+    if (oldName !== newName) {
+      const isEdits = rewriteIsAttributeSites(cwd, oldName, newName, mergeView(existingChanges, changes), oldAbs, newAbs, warnings)
+      mergeIntoChanges(changes, isEdits)
+    }
+
     if (autoImportScopes.size && isInsideAutoImportScope(oldAbs, autoImportScopes) && !isInsideAutoImportScope(newAbs, autoImportScopes)) {
       const merged = mergeView(existingChanges, changes)
       const explicit = addExplicitComponentImports(cwd, oldName, newName, newAbs, merged, oldAbs)
@@ -180,6 +185,68 @@ function addExplicitComponentImports(
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function rewriteIsAttributeSites(
+  cwd: string,
+  oldName: string,
+  newName: string,
+  changes: FileChange[],
+  oldAbs: string,
+  newAbs: string,
+  warnings: string[],
+): FileChange[] {
+  const oldKebab = hyphenateVueName(oldName)
+  const newKebab = hyphenateVueName(newName)
+  const candidates = new Set([
+    ...rgFiles(oldName, { cwd, glob: '*.vue' }),
+    ...rgFiles(oldKebab, { cwd, glob: '*.vue' }),
+  ])
+  if (!candidates.size)
+    return []
+  const byPath = new Map(changes.map(change => [change.path, change]))
+  const oldRe = `${escapeRe(oldName)}|${escapeRe(oldKebab)}`
+  // :is="'Name'" string-literal binding. Handles both nested-quote shapes.
+  const isStringLiteralRe = new RegExp(
+    `(:is\\s*=\\s*)(?:"\\s*'(${oldRe})'\\s*"|'\\s*"(${oldRe})"\\s*')`,
+    'g',
+  )
+  // is="Name" static attribute (resolves like a tag).
+  const isStaticRe = new RegExp(`(\\bis\\s*=\\s*)(['"])(${oldRe})\\2`, 'g')
+  const dynamicBindingRe = new RegExp(`:is\\s*=\\s*"\\s*([A-Za-z_$][\\w$]*)\\s*"`, 'g')
+  const out: FileChange[] = []
+  const dynamicBindingWarn: string[] = []
+  const mapToken = (token: string): string => token === oldName ? newName : newKebab
+  for (const path of candidates) {
+    if (path === oldAbs || path === newAbs || isGeneratedNuxtPath(cwd, path))
+      continue
+    const before = byPath.get(path)?.before ?? readFileSync(path, 'utf8')
+    let current = byPath.get(path)?.after ?? before
+    current = current.replace(isStringLiteralRe, (_m, prefix, p1, p2) => {
+      const matched = p1 ?? p2
+      return `${prefix}"'${mapToken(matched)}'"`
+    })
+    current = current.replace(isStaticRe, (_m, prefix, quote, name) => `${prefix}${quote}${mapToken(name)}${quote}`)
+    let m: RegExpExecArray | null
+    dynamicBindingRe.lastIndex = 0
+    while ((m = dynamicBindingRe.exec(current))) {
+      if (m[1] === oldName) {
+        dynamicBindingWarn.push(relative(cwd, path))
+        break
+      }
+    }
+    if (current === before)
+      continue
+    out.push({ path, rel: relative(cwd, path), before, after: current })
+  }
+  if (dynamicBindingWarn.length) {
+    warnings.push(
+      `rename-file: "${oldName}" may be referenced via dynamic <component :is="ref"> in `
+      + `${dynamicBindingWarn.length} file(s) [${dynamicBindingWarn.join(', ')}]. These cannot be `
+      + `auto-rewritten; inspect and update manually.`,
+    )
+  }
+  return out
 }
 
 function hasDefaultImportFromVue(source: string, name: string): boolean {

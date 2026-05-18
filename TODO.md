@@ -25,7 +25,7 @@ All shipped. Kept in the log as a pointer to where these live.
 Nothing else matters if the primitives drift on real repos.
 
 - ~~**Plugin-level dogfood**~~ — used `ripast rename scanGraph buildScanGraph --scope scan.ts` inside ripast itself. Worked example captured in `README.md`.
-- **Self-host on skilld** — run each primitive against the skilld repo in CI. Start read-only (scan), then a rename in a throwaway worktree.
+- **Self-host on skilld** — run each primitive against the skilld repo in CI. Start read-only (scan), then a rename in a throwaway worktree. (Out-of-repo CI work; tracked here as a pointer.)
 - ~~**Monorepo fixture**~~ — covered by `monorepo.test.ts`. Note: ts-morph only auto-loads referenced projects when the tsconfig being opened declares the `references:` itself (app → core works; root-with-references + files:[] does not).
 - ~~**Non-TS JS projects**~~ — covered by `js.test.ts` via `makeJsFixture` helper (allowJs tsconfig, no .ts files).
 
@@ -33,10 +33,10 @@ Nothing else matters if the primitives drift on real repos.
 
 - ~~**`--json` for rename/move**~~ — emits `{ applied, dryRun, blockedByRegression, scanned, summary, changes[], regressions[] }`. Applies atomically when `--apply --json` is passed without regressions; exits 1 on blocked regression.
 - ~~**`ripast scan --graph`**~~ — mermaid/DOT dependency graph for a symbol. Uses scan's rg-prefiltered files and draws relative import/export edges between hit files. Tests in `scan.test.ts`.
-- **Negative `--glob` entries.** Scoping by inclusion alone is awkward on real repos: users want to keep the default extension set but exclude `.nuxt/**`, `**/*.d.ts`, fixtures. rg already supports `!`-prefixed globs; forward them through the CLI flag. Surfaced while integrating ripast into nuxt-improve-codebase-architecture: a default `tree --exports exported` on a Nuxt repo emits hundreds of lines of generated/test noise that an exclude pattern would cut at the source.
-- **Nuxt-aware default scope (or a documented recipe).** `--tsconfig .nuxt/tsconfig.json` already gives the right project; question is whether `tree`/`unused` should pick it up automatically when present, or whether docs should just spell out the exact invocation. Probably the latter — an opinionated default belongs in a skill, not the core CLI.
-- **Formatting preservation** — ts-morph's printer forces double quotes and semicolons. Post-write ESLint `--fix` or Prettier pass keeps diffs minimal. Gate behind a flag.
-- **Encoding / line endings** — assume UTF-8 + LF. CRLF / BOM files untested.
+- ~~**Negative `--glob` entries**~~ — already worked at the rg layer; CLI description now documents `!`-prefixed exclusion (`cli.ts` `globArg`). Recipe in `README.md` (`Recipes & limitations`).
+- ~~**Nuxt-aware default scope**~~ — chose the documented-recipe path. `README.md` (`Recipes & limitations`) spells out `--tsconfig .nuxt/tsconfig.json` and an exclude glob; auto-detection deliberately stays out of core.
+- **Formatting preservation** — Deferred. ts-morph's printer forces double quotes and semicolons. Post-write ESLint `--fix` or Prettier pass would help, but the lint/format toolchain varies enough that an opt-in `--format` flag is best owned by callers (CI hook or pre-commit) rather than baked into the core CLI. Revisit if a concrete diff-noise complaint surfaces.
+- **Encoding / line endings** — Documented as a known limitation in `README.md` (UTF-8 + LF assumed; CRLF/BOM untested). Real fix waits for a repro.
 
 ## Tier 5 — Performance
 
@@ -50,12 +50,12 @@ No evidence it's slow on real repos yet, so measure before optimising.
 - ~~**Lazy source-file loading**~~ — `rename` / `move` default to `skipAddingFilesFromTsConfig: true` when Vue and full-project verify are disabled, then load only rg candidates plus required source/target files. Project load dropped from ~75-100ms to ~2-3ms on the 500-file bench.
 - ~~**Verification modes**~~ — `verify` accepts `none`, `touched`, or `project`; CLI exposes `--verify-mode touched|project|none` while keeping `--no-verify`.
 - ~~**Batch/reuse API hook**~~ — `runRename` and `runMove` accept an existing ts-morph `project` for callers that want to batch several operations and pay project setup once.
-- **Text-first import specifier rewrite for move** — raw text mutation through ts-morph's tree proved brittle. Revisit only with a separate text patch layer that updates `FileChange.after` directly, not live `SourceFile` nodes.
-- **Parallel rg prefilter** — for `scan` over many patterns, batch via `rg --regexp ... --regexp ...`. Free win.
+- **Text-first import specifier rewrite for move** — Deferred. Raw text mutation through ts-morph's tree proved brittle; revisit only with a separate text patch layer that updates `FileChange.after` directly, not live `SourceFile` nodes.
+- ~~**Parallel rg prefilter**~~ — `rgFilesMany` in `util.ts` batches fixed-string patterns into a single `rg -e <pat> -e <pat>` call. Adopted by `component-usages.ts` (`candidateFiles`) and `css-class-source.ts` (`readCssClassSourceFilesForMap`), which previously looped one rg per term/key.
 
 ## Tier 6 — Speculative primitives
 
-Defer until the shipped primitives cover <90% of real refactors. Keep this tier to named, structurally safe refactor operations with clear verification. Arbitrary codemods are out of scope.
+Deferred. Defer trigger: shipped primitives cover <90% of real refactors. Keep this tier to named, structurally safe refactor operations with clear verification. Arbitrary codemods are out of scope.
 
 - **`ripast extract`** — pull a block/region into a new file. Overlaps with `move` but for unnamed code. Decide if it's distinct enough to warrant its own command.
 - **`ripast inline`** — inverse of `move`: pull a single-use imported symbol back into its caller's file. Useful for undoing premature extraction.
@@ -64,9 +64,83 @@ Defer until the shipped primitives cover <90% of real refactors. Keep this tier 
 
 ## Tier 6.5 — Adapter shape
 
-- **Dedicated `@ripast/nuxt` driver.** `loadAdapter('nuxt')` returns `@ripast/vue` tagged `capabilities.nuxt = true`. Nuxt knowledge sits in `core/nuxt.ts` (auto-import scope, generated path filter, tsconfig path-alias loading, layer-aware specifier resolution) and `vue/finalize-rename.ts` (resolveComponent warning, out-of-scope explicit component imports). Split once ≥2 Nuxt-only primitives exist. Candidates: components-dir global-registration scan, server-route rewriting, layer-aware `move --to-layer`, runtime-vs-build classification. The split moves `core/nuxt.ts` into the new package, makes `@ripast/nuxt` depend on `@ripast/vue` for SFC primitives, and composes `finalizeFileRename` (Vue handles SFC concerns, Nuxt wraps with auto-import/layer logic).
+Deferred. Split trigger: ≥2 Nuxt-only primitives exist.
+
+- **Dedicated `@ripast/nuxt` driver.** `loadAdapter('nuxt')` returns `@ripast/vue` tagged `capabilities.nuxt = true`. Nuxt knowledge sits in `core/nuxt.ts` (auto-import scope, generated path filter, tsconfig path-alias loading, layer-aware specifier resolution) and `vue/finalize-rename.ts` (resolveComponent warning, out-of-scope explicit component imports). Candidates that unlock the split: components-dir global-registration scan, server-route rewriting, layer-aware `move --to-layer`, runtime-vs-build classification. The split moves `core/nuxt.ts` into the new package, makes `@ripast/nuxt` depend on `@ripast/vue` for SFC primitives, and composes `finalizeFileRename` (Vue handles SFC concerns, Nuxt wraps with auto-import/layer logic).
 
 ## Tier 7 — Meta / housekeeping
 
-- **Pre-commit hook integration** — optional git hook that runs `ripast scan` over renamed-looking identifiers in changed files to catch incomplete manual renames.
-- **`user-invocable` frontmatter** — hyphenated in Anthropic's official docs, underscored in every sibling skill here. If plugin validation ever tightens, rename across all skills in one pass.
+- ~~**Pre-commit hook integration**~~ — Template snippet documented in `README.md` (`Recipes & limitations`). Kept as a template, not a turnkey hook, because the "renamed-looking identifier" heuristic is project-specific.
+- **`user-invocable` frontmatter** — Deferred. Hyphenated in Anthropic's docs, underscored in every sibling skill. No-op until plugin validation tightens; one-pass rename when/if that happens.
+
+## Bugs found during nuxtseo.com audit (2026-05-18)
+
+All addressed. Implementation lives in `packages/vue/src/components.ts` (manifest parsing now carries `registeredName`, `source: 'manifest'`) and `packages/core/src/components.ts` (`groupDuplicates` keys on `registeredName`; `buildComponentDetail` prefers a manifest match by `registeredName`). Volar noise is filtered in `packages/vue/src/service.ts` via `installFilteredConsoleWarn` + `isNoisyDiagnostic` (covers `[Vue] Resolve plugin path failed`, `[Vue] Load plugin failed`, `languageId not found`, and `.d.{ts,mts,cts}.map` sidecars). `formatInventory` surfaces `registered: <name>` alongside the canonical column. Regression coverage in `test/components.test.ts` (`pathPrefix:true manifest` describe block, layered fixture under `test/fixtures/nuxt-layers/`).
+
+### ~~`components --dups` reports false positives under default Nuxt `pathPrefix: true`~~
+
+Repro: two files share a basename but live in different nested dirs under a Nuxt layer:
+```
+layers/admin/app/components/AdminFieldBadge.vue
+layers/admin/app/components/admin-fields/AdminFieldBadge.vue
+```
+
+`components --dups` flags them as duplicates.
+
+Reality: Nuxt's default `pathPrefix: true` registers the nested file as `AdminFieldsAdminFieldBadge`, not `AdminFieldBadge`. They are NOT runtime duplicates. Confirmed via `.nuxt/components.d.ts`:
+```
+export const AdminFieldBadge: typeof import("…/AdminFieldBadge.vue")['default']
+export const AdminFieldsAdminFieldBadge: typeof import("…/admin-fields/AdminFieldBadge.vue")['default']
+```
+
+Fix: group by Nuxt's actual registered name (parse the manifest when available), not by file basename. If basenames collide but registered names don't, label it as a same-basename pair, not a duplicate.
+
+### ~~`components <Name> --json` picks the wrong winner for the same case~~
+
+For the pair above, `components AdminFieldBadge --json` returns the nested file as the canonical `component`. But tag callers (`<AdminFieldBadge>`) resolve to the FLAT file via auto-import; the nested file is dead code at the queried name. So ripast's "canonical" pick is the dead one.
+
+Fix: when the manifest exposes both names, match the queried name against the manifest's exported identifiers, not by stripping path prefixes. Surface both with their actual registered names.
+
+### ~~`source: "filesystem"` reported even when `.nuxt/components.d.ts` is present~~
+
+Manifest existed; ripast still returned `source: "filesystem"` for AdminFieldBadge candidates. Either manifest lookup is silently failing or the field documents something other than what the docs imply ("`[m]` came from the Nuxt manifest").
+
+Fix: honor the manifest when present and label `source: "manifest"`, or document what `filesystem` means under a present manifest.
+
+## Bugs found during nuxtseo.com `shared/` → `layers/core` migration (2026-05-18)
+
+### ~~`rename-file` rewrites cross-app imports with `~/` (app-local alias) instead of relative~~
+
+Fixed in `packages/vue/src/index.ts` (`rewriteUnportableAliasSpecifiers`) + `packages/vue/src/nuxt-paths.ts` (`loadConsumerLocalAliases`, `aliasResolvesToTarget`). After Volar emits consumer edits, we walk up from each consumer to its nearest `.nuxt/tsconfig.json`. If an alias-prefixed specifier in the new text doesn't resolve to the rename target through that consumer's local aliases, we rewrite it to a relative specifier. Regression coverage: `rewrites ~/ to relative when consumer lives under an app with its own .nuxt/tsconfig.json (cross-root)` in `test/rename-file.test.ts`.
+
+### `rename-file` misses barrel imports — unable to reproduce (2026-05-18)
+
+Tried a minimal multi-specifier fixture (`./shared/logging`, `./shared/logging/index.ts`, `~~/shared/logging`, `~~/shared/logging/index`) under bundler module resolution; Volar's `getFileRenameEdits` correctly rewrites all four forms. The reported "1/2 consumers" outcome in nuxtseo.com was probably caused by the missed importers not being part of the project the chosen `--tsconfig .nuxt/tsconfig.json` defined (excluded by `include`/`exclude`, or living in an app whose tsconfig wasn't the one opened). Need a minimal repro from the original repo before adding speculative rg-fallback logic.
+
+### ~~`rename-file --verify` crashes on Nuxt 4 repos with vue-router 4.6+~~
+
+Running `rename-file ... --verify` (the default) crashes inside `vueRegressions` with:
+```
+[Vue] Resolve plugin path failed: vue-router/volar/sfc-route-blocks
+Error: Cannot find module 'vue-router/volar/sfc-route-blocks'
+  at ... @vue/language-core/lib/compilerOptions.js:122:59
+```
+
+ripast bundles `@vue/language-core@3.2.8`. The nuxtseo.com repo uses `vue-router` (Nuxt-managed); the volar SFC route-blocks plugin path it expects isn't there. Until fixed, every `rename-file` invocation here has to pass `--no-verify` and rely on `nuxi prepare` after the batch.
+
+Fix: catch `MODULE_NOT_FOUND` from `addConfig` for vue-router volar plugins specifically and degrade to no-vue-router verify, rather than failing the whole `--verify` pass.
+
+### ~~Noise: hundreds of `languageId not found` lines per invocation~~
+
+Every `rename-file` call dumps ~100 lines like:
+```
+languageId not found for file:///…/node_modules/.pnpm/@sentry+nuxt@…/build/types/index.types.d.ts.map
+```
+
+Source-map sidecars (`.d.ts.map`, `.d.mts.map`) from sentry, reka-ui, evlog, etc. Volar/TS scans them and complains. They're harmless but they bury the actual rename output (the useful "files: ...", "consumers: x/y" lines are at the very bottom).
+
+Fix: filter `.map` sidecars from the Volar/TS source set, OR silence the `languageId not found` warning when the file is `*.map`.
+
+### ~~Suggested addition: `--registered-as` column~~
+
+For Nuxt projects with non-trivial `pathPrefix`/nested-dir setups, the single most useful column is the actual exported name in `.nuxt/components.d.ts`. Surfaces real collisions and dead-code dirs in one pass without manually cross-referencing the manifest.

@@ -168,4 +168,84 @@ describe('rename-file', () => {
     }
     finally { fx.cleanup() }
   })
+
+  it('rewrites ~/ to relative when consumer lives under an app with its own .nuxt/tsconfig.json (cross-root)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ripast-renamefile-multiapp-'))
+    const write = (rel: string, content: string) => {
+      const abs = join(dir, rel)
+      mkdirSync(dirname(abs), { recursive: true })
+      writeFileSync(abs, content)
+    }
+    // Workspace tsconfig used by ripast: ~/* maps to workspace root.
+    write('tsconfig.json', JSON.stringify({
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        strict: true,
+        baseUrl: '.',
+        paths: { '~/*': ['./*'] },
+        allowImportingTsExtensions: true,
+        noEmit: true,
+      },
+      include: ['apps/**/*.ts', 'shared/**/*.ts', 'layers/**/*.ts'],
+    }, null, 2))
+    // Per-app .nuxt/tsconfig.json: ~/* re-rooted to the app's own srcDir.
+    write('apps/site/.nuxt/tsconfig.json', JSON.stringify({
+      compilerOptions: { baseUrl: '..', paths: { '~/*': ['./*'] } },
+    }, null, 2))
+    write('apps/site/nuxt.config.ts', 'export default {}\n')
+    write('apps/pro/.nuxt/tsconfig.json', JSON.stringify({
+      compilerOptions: { baseUrl: '..', paths: { '~/*': ['./*'] } },
+    }, null, 2))
+    write('apps/pro/nuxt.config.ts', 'export default {}\n')
+
+    write('shared/server/logger.ts', 'export const logger = { warn: (m: string) => m }\n')
+    write('apps/site/server/foo.ts', 'import { logger } from \'~/shared/server/logger\'\nexport const r = logger.warn(\'x\')\n')
+    write('apps/pro/server/foo.ts', 'import { logger } from \'~/shared/server/logger\'\nexport const r = logger.warn(\'x\')\n')
+    try {
+      const r = await runRenameFile('shared/server/logger.ts', 'layers/core/server/utils/logger.ts', { cwd: dir, verify: false })
+      writeChanges(r.changes)
+      mkdirSync(dirname(r.fileMove.to), { recursive: true })
+      renameSync(r.fileMove.from, r.fileMove.to)
+      if (r.selfChange)
+        writeFileSync(r.fileMove.to, r.selfChange.after)
+      const site = readFileSync(join(dir, 'apps/site/server/foo.ts'), 'utf8')
+      const pro = readFileSync(join(dir, 'apps/pro/server/foo.ts'), 'utf8')
+      assert.doesNotMatch(site, /from ['"]~\//, 'site consumer not rewritten to ~/ (app-local alias)')
+      assert.doesNotMatch(pro, /from ['"]~\//, 'pro consumer not rewritten to ~/ (app-local alias)')
+      assert.match(site, /from ['"]\.\.\/\.\.\/\.\.\/layers\/core\/server\/utils\/logger['"]/)
+      assert.match(pro, /from ['"]\.\.\/\.\.\/\.\.\/layers\/core\/server\/utils\/logger['"]/)
+    }
+    finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('rewrites template tags (PascalCase + kebab) and :is literals when a .vue file is renamed', async () => {
+    const fx = makeFx({
+      'components/Button.vue': `<template><button><slot /></button></template>\n`,
+      'pages/index.vue': `<template>
+  <Button label="A" />
+  <button-x />
+  <button label="B" />
+  <component :is="'Button'" />
+  <component is="Button" />
+</template>
+`,
+    })
+    try {
+      const r = await runRenameFile('components/Button.vue', 'components/BaseButton.vue', { cwd: fx.dir, verify: 'none' })
+      writeChanges(r.changes)
+      renameSync(r.fileMove.from, r.fileMove.to)
+
+      const after = fx.read('pages/index.vue')
+      assert.match(after, /<BaseButton label="A" \/>/, 'PascalCase tag rewritten')
+      assert.match(after, /:is="'BaseButton'"/, ':is literal rewritten')
+      assert.match(after, /\bis="BaseButton"/, 'static is= attribute rewritten')
+      assert.doesNotMatch(after, /<Button\s/, 'old PascalCase tag removed')
+      // Native <button> and unrelated <button-x> must remain untouched.
+      assert.match(after, /<button label="B" \/>/, 'native button tag preserved')
+      assert.match(after, /<button-x \/>/, 'unrelated kebab tag preserved')
+    }
+    finally { fx.cleanup() }
+  })
 })
