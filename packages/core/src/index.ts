@@ -5,6 +5,8 @@ export type { CssClassRenameOptions, CssClassRenameResult, RenameMap } from './c
 export { formatAgentFileScanHits, formatAgentScanHits, formatFileScanHits, formatScanHits, runCssClassFileScan, runCssClassScan } from './css-class-scan.ts'
 export { runDelete } from './delete.ts'
 export type { DeleteOptions, DeleteReference, DeleteResult } from './delete.ts'
+export { buildDoctorFixes, formatAgentDoctorReport, formatDoctorReport, getChangedFiles, runDoctor } from './doctor.ts'
+export type { ChangedFilesOptions, DoctorCheck, DoctorFinding, DoctorFixResult, DoctorOptions, DoctorReport, FixableCheck } from './doctor.ts'
 export { runMove } from './move.ts'
 export type { MoveOptions, MoveResult } from './move.ts'
 export type { ProfileEvent, ProfileSink } from './profile.ts'

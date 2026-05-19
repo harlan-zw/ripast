@@ -51,11 +51,20 @@ export function withFilteredConsoleWarn<T>(fn: () => T): T {
       return
     original.apply(console, args as Parameters<typeof console.warn>)
   }
-  const restore = (): void => { console.warn = original }
+  const restore = (): void => {
+    console.warn = original
+  }
   try {
     const result = fn()
-    if (result && typeof (result as any).then === 'function')
-      return (result as any).then((v: T) => { restore(); return v }, (e: unknown) => { restore(); throw e })
+    if (result && typeof (result as any).then === 'function') {
+      return (result as any).then((v: T) => {
+        restore()
+        return v
+      }, (e: unknown) => {
+        restore()
+        throw e
+      })
+    }
     restore()
     return result
   }
@@ -70,8 +79,12 @@ export function createVueService(tsconfigPath: string, cwd: string): VueService 
   const service = createVueServiceInternal(tsconfigPath, cwd)
   const origDispose = service.dispose
   service.dispose = () => {
-    try { origDispose() }
-    finally { restore() }
+    try {
+      origDispose()
+    }
+    finally {
+      restore()
+    }
   }
   return service
 }
@@ -86,7 +99,9 @@ function installFilteredConsoleWarn(): () => void {
       return
     original.apply(console, args as Parameters<typeof console.warn>)
   }
-  return () => { console.warn = original }
+  return () => {
+    console.warn = original
+  }
 }
 
 function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService {

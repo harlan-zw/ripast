@@ -12,6 +12,7 @@ import {
 import { parseComponent, parseComponentSource } from './component-parse.ts'
 import { findComponentUsage, findComponentUsages } from './component-usages.ts'
 import { listComponents } from './components.ts'
+import { doctor } from './doctor.ts'
 import { finalizeVueFileRename } from './finalize-rename.ts'
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
 import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
@@ -54,6 +55,7 @@ const adapter: FrameworkAdapter = {
   },
   listComponents,
   findComponentUsages,
+  doctor,
 }
 
 void parseComponent
@@ -120,7 +122,7 @@ function stripGlob(dir: string): string {
 
 const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs|vue)$/
 const ALIAS_PREFIX_RE = /^[~@#]/
-const IMPORT_FROM_RE = /\b(?:import|export)\b[^;\n]*?\bfrom\s*(['"`])([^'"`]+)\1/g
+const IMPORT_FROM_RE = /\b(?:import|export)\b[^;\n]+from\s*(['"`])([^'"`]+)\1/g
 const DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*(['"`])([^'"`]+)\1\s*\)/g
 
 /**
@@ -165,10 +167,10 @@ function rewriteUnportableAliasSpecifiers(cwd: string, changes: FileChange[], ne
 function collectSpecifiers(source: string): Set<string> {
   const out = new Set<string>()
   IMPORT_FROM_RE.lastIndex = 0
-  let m: RegExpExecArray | null
-  while ((m = IMPORT_FROM_RE.exec(source))) out.add(m[2])
-  DYNAMIC_IMPORT_RE.lastIndex = 0
-  while ((m = DYNAMIC_IMPORT_RE.exec(source))) out.add(m[2])
+  for (const m of source.matchAll(IMPORT_FROM_RE))
+    out.add(m[2])
+  for (const m of source.matchAll(DYNAMIC_IMPORT_RE))
+    out.add(m[2])
   return out
 }
 

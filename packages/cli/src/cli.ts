@@ -6,15 +6,18 @@ import {
   buildComponentDetail,
   buildComponentInventory,
   buildDeclarationTree,
+  buildDoctorFixes,
   buildScanGraph,
   buildUnusedDeclarations,
   formatAgentDeclarationTree,
+  formatAgentDoctorReport,
   formatAgentFileScanHits,
   formatAgentHits,
   formatAgentInventory,
   formatAgentScanHits,
   formatDeclarationTree,
   formatDetail,
+  formatDoctorReport,
   formatFileScanHits,
   formatHits,
   formatInventory,
@@ -22,12 +25,14 @@ import {
   formatScanGraph,
   formatScanHits,
   formatUnusedDeclarations,
+  getChangedFiles,
   printDiffs,
   resolveVerifyMode,
   runCssClassFileScan,
   runCssClassRename,
   runCssClassScan,
   runDelete,
+  runDoctor,
   runMove,
   runRename,
   runRenameFile,
@@ -725,12 +730,89 @@ function resolveComponentsSource(raw: unknown): 'auto' | 'manifest' | 'filesyste
   return raw
 }
 
+const doctorCmd = defineCommand({
+  meta: { name: 'doctor', description: 'Health checks over the AST graph. Suppress per-file with `// ripast-doctor-ignore-file[: c1,c2]` or per-line with `// ripast-doctor-ignore-next-line[: c1,c2]`.' },
+  args: {
+    glob: globArg,
+    checks: { type: 'string', description: 'Comma-separated subset: dangling-reexport, stale-reexport, stale-import, duplicate-export, orphan-file, orphan-test, inconsistent-import-path, circular-dep. Default: all.' },
+    entry: { type: 'string', description: 'Comma-separated entry files exempt from orphan check (relative to cwd).' },
+    fix: { type: 'boolean', default: false, description: 'Compute safe fixes for inconsistent-import-path and dangling-reexport findings.' },
+    apply: applyArg,
+    changed: { type: 'string', description: 'Report only findings on files changed vs git. No value = dirty working tree (staged+unstaged+untracked). With value (e.g. main, HEAD~1) = diff against that ref. Full project is still scanned so cross-file checks stay accurate.' },
+    profile: profileArg,
+    json: jsonArg,
+  },
+  async run({ args }) {
+    const { agentProfile } = resolveProfile(args.profile)
+    const checks = args.checks ? (args.checks as string).split(',') as any : undefined
+    const entry = args.entry ? (args.entry as string).split(',') : undefined
+    let changedFiles: string[] | undefined
+    if (args.changed != null) {
+      const ref = typeof args.changed === 'string' && args.changed !== '' && args.changed !== 'true' ? args.changed : undefined
+      changedFiles = getChangedFiles({ cwd: process.cwd(), ref })
+      if (!changedFiles.length) {
+        process.stderr.write(`ripast doctor: --changed${ref ? ` ${ref}` : ''} matched no files; nothing to report.\n`)
+        return
+      }
+    }
+    const report = await runDoctor({
+      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      checks,
+      entry,
+      changedFiles,
+    })
+    if (args.fix) {
+      const fix = buildDoctorFixes(report, process.cwd())
+      if (args.json) {
+        process.stdout.write(`${JSON.stringify({
+          findings: report.findings,
+          filesScanned: report.filesScanned,
+          fix: {
+            applied: !!args.apply,
+            files: fix.changes.length,
+            fixed: fix.fixed,
+            skipped: fix.skipped.length,
+          },
+          changes: args.apply ? undefined : fix.changes.map(c => ({ path: c.rel, before: c.before, after: c.after })),
+        })}\n`)
+        if (args.apply && fix.changes.length)
+          writeChanges(fix.changes)
+        if (fix.skipped.length)
+          process.exit(1)
+        return
+      }
+      const s = summarize(fix.changes)
+      process.stdout.write(`doctor --fix: ${fix.fixed.length} fixable / ${fix.skipped.length} non-fixable findings\n`)
+      process.stdout.write(`${fix.changes.length} file${fix.changes.length === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
+      if (!args.apply) {
+        printDiffs(fix.changes)
+        process.stdout.write(`\n(dry run, pass --apply to write)\n`)
+      }
+      else {
+        writeChanges(fix.changes)
+        for (const c of fix.changes) process.stdout.write(`wrote ${c.rel}\n`)
+      }
+      if (fix.skipped.length)
+        process.exit(1)
+      return
+    }
+    if (agentProfile && !args.json) {
+      process.stdout.write(`${profileHeader()}\n${formatAgentDoctorReport(report)}\n`)
+      return
+    }
+    process.stdout.write(formatDoctorReport(report, !!args.json))
+    if (report.findings.length)
+      process.exit(1)
+  },
+})
+
 runMain(defineCommand({
   meta: { name: 'ripast', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
     'scan': scanCmd,
     'tree': treeCmd,
     'unused': unusedCmd,
+    'doctor': doctorCmd,
     'rename': renameCmd,
     'replace': replaceCmd,
     'rename-file': renameFileCmd,

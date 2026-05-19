@@ -196,8 +196,12 @@ function filesystemOverlay(cwd: string, glob: string[], manifestComponents: VueC
 }
 
 function realOrSelf(file: string): string {
-  try { return realpathSync(file) }
-  catch { return file }
+  try {
+    return realpathSync(file)
+  }
+  catch {
+    return file
+  }
 }
 
 function filesystemOnly(cwd: string, glob: string[]): VueComponent[] {

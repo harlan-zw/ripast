@@ -213,7 +213,7 @@ function rewriteIsAttributeSites(
   )
   // is="Name" static attribute (resolves like a tag).
   const isStaticRe = new RegExp(`(\\bis\\s*=\\s*)(['"])(${oldRe})\\2`, 'g')
-  const dynamicBindingRe = new RegExp(`:is\\s*=\\s*"\\s*([A-Za-z_$][\\w$]*)\\s*"`, 'g')
+  const dynamicBindingRe = /:is\s*=\s*"\s*([A-Za-z_$][\w$]*)\s*"/g
   const out: FileChange[] = []
   const dynamicBindingWarn: string[] = []
   const mapToken = (token: string): string => token === oldName ? newName : newKebab
@@ -227,9 +227,7 @@ function rewriteIsAttributeSites(
       return `${prefix}"'${mapToken(matched)}'"`
     })
     current = current.replace(isStaticRe, (_m, prefix, quote, name) => `${prefix}${quote}${mapToken(name)}${quote}`)
-    let m: RegExpExecArray | null
-    dynamicBindingRe.lastIndex = 0
-    while ((m = dynamicBindingRe.exec(current))) {
+    for (const m of current.matchAll(dynamicBindingRe)) {
       if (m[1] === oldName) {
         dynamicBindingWarn.push(relative(cwd, path))
         break

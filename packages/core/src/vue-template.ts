@@ -198,9 +198,8 @@ export function parseTemplateSelector(input: string): TemplateSelector {
   const rest = trimmed.slice(tag.length)
   const attrs: { name: string, value?: string }[] = []
   const attrRe = /\[([A-Z_:][\w:-]*)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]+)))?\]/gi
-  let m: RegExpExecArray | null
   let consumed = 0
-  while ((m = attrRe.exec(rest))) {
+  for (const m of rest.matchAll(attrRe)) {
     if (m.index !== consumed)
       throw new Error(`ripast: invalid selector "${input}" near "${rest.slice(consumed)}"`)
     consumed = m.index + m[0].length

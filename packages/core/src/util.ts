@@ -57,9 +57,16 @@ export function applyTextEdits(source: string, edits: TextEdit[]): string {
 
 const EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
 
+// Meta-project directories that aren't real source even when not in .gitignore.
+// `.git` is already excluded by ripgrep's built-in rules; the rest are workflow
+// caches that frequently leak into open-ended scans (claude worktrees, skilld
+// snapshots, etc.).
+const DEFAULT_EXCLUDES = ['!.claude/worktrees/**', '!**/.claude/worktrees/**']
+
 export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {
   const cwd = opts.cwd ?? process.cwd()
-  const globs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
+  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
+  const globs = [...userGlobs, ...DEFAULT_EXCLUDES]
   const args: string[] = []
   if (opts.listAll) {
     args.push('--files', '--hidden', '--no-messages')

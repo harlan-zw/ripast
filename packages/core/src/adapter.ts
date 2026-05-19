@@ -1,5 +1,6 @@
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
+import type { TemplateExpression } from './vue-template.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -13,6 +14,7 @@ export { parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from '
 export type { FileChange } from './util.ts'
 export type { Regression } from './verify.ts'
 export { extractTemplateExpressions, hyphenateVueName, parseVueTemplateAst, rewriteTemplateReferences } from './vue-template.ts'
+export type { TemplateExpression } from './vue-template.ts'
 
 export type FrameworkName = 'vue' | 'nuxt' | 'svelte'
 
@@ -20,11 +22,6 @@ export interface RenameSite {
   filePath: string
   source: string
   pos: number
-}
-
-export interface TemplateExpression {
-  code: string
-  offsetInSource: number
 }
 
 export interface AddExplicitImportsContext {
@@ -103,6 +100,48 @@ export interface FrameworkAdapter {
 
   listComponents?: (cwd: string, opts?: { glob?: string[], source?: 'auto' | 'manifest' | 'filesystem', warn?: (msg: string) => void }) => ComponentInfo[]
   findComponentUsages?: (names: string[], opts?: { cwd?: string, glob?: string | string[] }) => ComponentUsageInfo[]
+
+  /**
+   * Doctor augmentation. Lets the framework adapter:
+   *  - declare additional entry files (exempt from orphan-file)
+   *  - reject false-positive findings (e.g. Nuxt server route default exports)
+   *  - emit framework-specific findings
+   */
+  doctor?: DoctorAdapter
+}
+
+export interface DoctorFinding {
+  check: string
+  file: string
+  message: string
+  /** 1-based line, if the finding has a positional source (import/export/decl). */
+  line?: number
+  detail?: Record<string, unknown>
+}
+
+export interface DoctorContext {
+  /** Each file's imports/exports/re-exports. Cheap shared parse from core. */
+  index: DoctorContextIndex
+}
+
+export interface DoctorContextIndex {
+  files: DoctorContextFile[]
+}
+
+export interface DoctorContextFile {
+  file: string
+  imports: { imported: string, local: string, source: string, typeOnly: boolean, line: number }[]
+  namedReexports: { imported: string, exported: string, source: string, typeOnly: boolean, line: number }[]
+  exportedNames: Set<string>
+}
+
+export interface DoctorAdapter {
+  /** Files the framework treats as entries (won't be flagged as orphans). Paths relative to cwd. */
+  entryFiles?: (cwd: string) => string[]
+  /** Return true to drop a finding (false-positive filter). */
+  filterFinding?: (cwd: string, finding: DoctorFinding) => boolean
+  /** Framework-specific checks. Receives a shared parse context to avoid re-reading files. */
+  extraFindings?: (cwd: string, ctx?: DoctorContext) => DoctorFinding[]
 }
 
 export interface ComponentInfo {

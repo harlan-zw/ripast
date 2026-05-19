@@ -1,20 +1,12 @@
-import type { FileChange, Regression } from '@ripast/core/adapter'
+import type { FileChange, Regression, RenameSite } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { posToLineCol, rewriteTemplateReferences } from '@ripast/core/adapter'
 import { URI } from 'vscode-uri'
 import { createVueService, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
-import { hasVueFilesContaining as hasVueFilesContainingInWorkspace, listVueFiles, listVueFilesContaining } from './vue-files.ts'
+import { hasVueFilesContaining, listVueFiles, listVueFilesContaining } from './vue-files.ts'
 
-export function hasVueFilesContaining(cwd: string, pattern: string): boolean {
-  return hasVueFilesContainingInWorkspace(cwd, pattern)
-}
-
-export interface RenameSite {
-  filePath: string
-  source: string
-  pos: number
-}
+export { hasVueFilesContaining }
 
 export async function applyVueRename(
   tsconfigPath: string,

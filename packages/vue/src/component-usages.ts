@@ -80,8 +80,12 @@ function candidateFiles(cwd: string, alias: AliasIndex, glob?: string | string[]
 }
 
 function readOrEmpty(abs: string): string {
-  try { return readFileSync(abs, 'utf8') }
-  catch { return '' }
+  try {
+    return readFileSync(abs, 'utf8')
+  }
+  catch {
+    return ''
+  }
 }
 
 function collectFromSfc(abs: string, source: string, cwd: string, alias: AliasIndex, out: ComponentUsage[]): void {
