@@ -54,30 +54,41 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     throw new Error('ripast rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
   const vueAdapter = await loadAdapter('vue')
-  if (!vueAdapter)
-    throw new Error('ripast rename-file: requires the Vue adapter (install @ripast/vue or run via npx ripast)')
-
-  const consumerChanges = await vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
-  const templateChanges = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, consumerChanges)
-  mergeFileChanges(consumerChanges, templateChanges)
-
   const warnings: string[] = []
-  if (vueAdapter.finalizeFileRename) {
-    const finalize = await vueAdapter.finalizeFileRename(cwd, oldAbs, newAbs, consumerChanges)
-    mergeFileChanges(consumerChanges, finalize.changes)
-    warnings.push(...finalize.warnings)
+  let consumerChanges: FileChange[]
+
+  if (vueAdapter) {
+    consumerChanges = await vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
+    const templateChanges = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, consumerChanges)
+    mergeFileChanges(consumerChanges, templateChanges)
+    if (vueAdapter.finalizeFileRename) {
+      const finalize = await vueAdapter.finalizeFileRename(cwd, oldAbs, newAbs, consumerChanges)
+      mergeFileChanges(consumerChanges, finalize.changes)
+      warnings.push(...finalize.warnings)
+    }
+  }
+  else {
+    // No Vue adapter available (e.g. `npx @ripast/cli` without @ripast/vue
+    // installed). A pure-TS file rename does not need it: ts-morph rewrites
+    // every importing TS file on its own.
+    if (oldAbs.endsWith('.vue') || newAbs.endsWith('.vue'))
+      throw new Error('ripast rename-file: renaming .vue files requires the Vue adapter (install @ripast/vue)')
+    consumerChanges = tsOnlyFileRename(tsconfigPath, cwd, oldAbs, newAbs)
+    const vueConsumers = rgFiles(basename(oldAbs, extname(oldAbs)), { cwd, glob: '*.vue' })
+    if (vueConsumers.length)
+      warnings.push(`${vueConsumers.length} .vue file(s) reference this name and were not checked; install @ripast/vue to rewrite .vue import sites`)
   }
 
   const selfChangeRaw = consumerChanges.find(c => c.path === oldAbs || c.path === newAbs)
   const selfChange = selfChangeRaw && selfChangeRaw.after !== selfChangeRaw.before
     ? { before: selfChangeRaw.before, after: selfChangeRaw.after }
     : null
-  const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !vueAdapter.isGeneratedPath?.(cwd, c.path))
+  const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !vueAdapter?.isGeneratedPath?.(cwd, c.path))
 
   const verifyMode = resolveVerifyMode(opts.verify)
   const regressions: Regression[] = []
   if (verifyMode !== 'none') {
-    if (consumerNoSelf.some(c => c.path.endsWith('.vue')))
+    if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue')))
       regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, consumerNoSelf))
     regressions.push(...tsVerifyRenameFile(tsconfigPath, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode))
   }
@@ -90,6 +101,29 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     regressions,
     warnings,
   }
+}
+
+// Pure-TS file rename used when no framework adapter is loaded. ts-morph's
+// SourceFile.move rewrites the moved file's own relative imports and every
+// importing file's module specifier. Returns the moved file's change too
+// (path === newAbs) so the caller's self-change detection still works.
+function tsOnlyFileRename(tsconfigPath: string, cwd: string, oldAbs: string, newAbs: string): FileChange[] {
+  const project = new Project({ tsConfigFilePath: tsconfigPath })
+  const oldSF = project.getSourceFile(oldAbs) ?? project.addSourceFileAtPath(oldAbs)
+  const originals = new Map<string, string>()
+  for (const sf of project.getSourceFiles())
+    originals.set(sf.getFilePath(), sf.getFullText())
+  oldSF.move(newAbs)
+  const out: FileChange[] = []
+  for (const sf of project.getSourceFiles()) {
+    const path = sf.getFilePath()
+    const before = originals.get(path === newAbs ? oldAbs : path)
+    const after = sf.getFullText()
+    if (before == null || before === after)
+      continue
+    out.push({ path, rel: relative(cwd, path), before, after })
+  }
+  return out
 }
 
 function tsVerifyRenameFile(

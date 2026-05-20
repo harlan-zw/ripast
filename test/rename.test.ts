@@ -51,3 +51,32 @@ it('rename preserves aliased imports correctly', async () => {
   }
   finally { fx.cleanup() }
 })
+
+it('warns when the renamed symbol is still imported by a file it did not rewrite', async () => {
+  const fx = makeFixture({
+    'a.ts': 'export function oldFn() { return 1 }\n',
+    // Imports via an unresolvable package specifier: ts-morph cannot follow it
+    // back to the declaration, so this consumer is left stale.
+    'consumer.ts': 'import { oldFn } from \'my-pkg\'\nexport const r = oldFn()\n',
+  })
+  try {
+    const result = await runRename('oldFn', 'newFn', { cwd: fx.dir })
+    writeChanges(result.changes)
+    assert.equal(result.warnings.length, 1, 'one stale-consumer warning')
+    assert.match(result.warnings[0]!, /oldFn/)
+    assert.match(result.warnings[0]!, /consumer\.ts/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('emits no stale-consumer warning when every import site is rewritten', async () => {
+  const fx = makeFixture({
+    'a.ts': 'export function oldFn() { return 1 }\n',
+    'b.ts': 'import { oldFn } from \'./a.ts\'\nexport const r = oldFn()\n',
+  })
+  try {
+    const result = await runRename('oldFn', 'newFn', { cwd: fx.dir })
+    assert.deepEqual(result.warnings, [])
+  }
+  finally { fx.cleanup() }
+})

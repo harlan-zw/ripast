@@ -3,6 +3,7 @@ import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
+import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parseSync } from 'oxc-parser'
@@ -33,6 +34,7 @@ export interface RenameResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
+  warnings: string[]
 }
 
 const DECLARATION_KINDS = new Set<SyntaxKind>([
@@ -154,7 +156,41 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     regressions.push(...vueRegs)
   }
 
-  return { changes, scanned: loadedFiles.length, regressions }
+  const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob))
+
+  return { changes, scanned: loadedFiles.length, regressions, warnings }
+}
+
+const IMPORT_LINE_RE = /^\s*(?:import|export)\b.+\bfrom\b/
+
+// After a rename, the project's file set is bounded by the tsconfig (and any
+// rg candidates). A symbol re-exported through a package barrel and consumed
+// from a file outside that set (sibling test dirs, other packages) keeps the
+// old name and ts-morph never sees it. Re-scan with rg and flag any file that
+// still imports the old name but was not rewritten.
+function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined): string[] {
+  const rewritten = new Set(changes.map(c => c.path))
+  const stale: string[] = []
+  for (const path of rgFiles(from, { cwd, glob })) {
+    if (rewritten.has(path))
+      continue
+    let text: string
+    try {
+      text = readFileSync(path, 'utf8')
+    }
+    catch {
+      continue
+    }
+    const named = new RegExp(`\\b${from}\\b`)
+    const importsName = text.split('\n').some(line => IMPORT_LINE_RE.test(line) && named.test(line))
+    if (importsName)
+      stale.push(relative(cwd, path))
+  }
+  if (!stale.length)
+    return []
+  const shown = stale.slice(0, 10)
+  const more = stale.length > 10 ? ` (+${stale.length - 10} more)` : ''
+  return [`"${from}" is still imported by ${stale.length} file(s) not rewritten (likely consumed via a package re-export, outside this tsconfig's file set): ${shown.join(', ')}${more}. Rename those imports manually or widen --tsconfig/--glob.`]
 }
 
 function applyNuxtBareIdentifierRename(vueAdapter: { isGeneratedPath?: (cwd: string, path: string) => boolean }, cwd: string, from: string, to: string, changes: FileChange[]): FileChange[] {

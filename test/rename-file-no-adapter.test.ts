@@ -1,0 +1,63 @@
+import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { describe, it, vi } from 'vitest'
+
+// Simulate `npx @ripast/cli` with no @ripast/vue installed: no framework
+// adapter resolves. A pure-TS rename-file must still work.
+vi.mock('../packages/core/src/adapter.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../packages/core/src/adapter.ts')>()
+  return { ...actual, loadAdapter: async () => null }
+})
+
+const { runRenameFile } = await import('../packages/core/src/rename-file.ts')
+const { writeChanges } = await import('../packages/core/src/util.ts')
+
+const TSCONFIG = JSON.stringify({
+  compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', strict: true, noEmit: true },
+  include: ['**/*.ts'],
+}, null, 2)
+
+function makeFx(files: Record<string, string>) {
+  const dir = mkdtempSync(join(tmpdir(), 'ripast-rf-noadapter-'))
+  const write = (rel: string, content: string) => {
+    const abs = join(dir, rel)
+    mkdirSync(dirname(abs), { recursive: true })
+    writeFileSync(abs, content)
+  }
+  write('tsconfig.json', TSCONFIG)
+  for (const [r, c] of Object.entries(files)) write(r, c)
+  return {
+    dir,
+    read: (r: string) => readFileSync(join(dir, r), 'utf8'),
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  }
+}
+
+describe('rename-file without a framework adapter', () => {
+  it('renames a .ts file and rewrites consumer imports', async () => {
+    const fx = makeFx({
+      'src/a.ts': `export const foo = 1\n`,
+      'src/b.ts': `import { foo } from './a.ts'\nexport const bar = foo + 1\n`,
+    })
+    try {
+      const r = await runRenameFile('src/a.ts', 'src/aa.ts', { cwd: fx.dir, verify: 'none' })
+      writeChanges(r.changes)
+      renameSync(r.fileMove.from, r.fileMove.to)
+      assert.match(fx.read('src/b.ts'), /from '\.\/aa(?:\.ts)?'/, 'consumer import rewritten')
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('refuses to rename a .vue file without the Vue adapter', async () => {
+    const fx = makeFx({ 'src/A.vue': `<template><div /></template>\n` })
+    try {
+      await assert.rejects(
+        runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verify: 'none' }),
+        /requires the Vue adapter/,
+      )
+    }
+    finally { fx.cleanup() }
+  })
+})

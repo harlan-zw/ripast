@@ -242,12 +242,12 @@ const unusedCmd = defineCommand({
   meta: { name: 'unused', description: 'Find unreferenced top-level declarations.' },
   args: {
     glob: globArg,
-    exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to local.' },
+    exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to exported (unused local declarations are already caught by tsc noUnusedLocals).' },
     tsconfig: { type: 'string' },
     json: jsonArg,
   },
   run({ args }) {
-    const exportFilter = args.exports == null ? 'local' : resolveExportFilter(args.exports)
+    const exportFilter = args.exports == null ? 'exported' : resolveExportFilter(args.exports)
     const unused = buildUnusedDeclarations({
       glob: args.glob ? (args.glob as string).split(',') : undefined,
       exports: exportFilter,
@@ -308,10 +308,12 @@ interface MutatingResult {
   changes: { path: string, rel: string, before: string, after: string }[]
   scanned: number
   regressions: { file: string, line: number, col: number, code: number, message: string }[]
+  warnings?: string[]
 }
 
 function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, json: boolean = false, agentProfile: boolean = false): void {
   const s = summarize(r.changes)
+  const warnings = r.warnings ?? []
   if (json) {
     const blockedByRegression = verify && apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
@@ -325,12 +327,15 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
       summary: s,
       changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
       regressions: r.regressions,
+      warnings,
     }
     process.stdout.write(`${JSON.stringify(payload)}\n`)
     if (blockedByRegression)
       process.exit(1)
     return
   }
+  for (const w of warnings)
+    process.stderr.write(`warning: ${w}\n`)
   if (agentProfile) {
     const blockedByRegression = verify && apply && r.regressions.length > 0
     process.stdout.write(`${profileHeader()}\n`)
