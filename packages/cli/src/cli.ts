@@ -734,7 +734,7 @@ const doctorCmd = defineCommand({
   meta: { name: 'doctor', description: 'Health checks over the AST graph. Suppress per-file with `// ripast-doctor-ignore-file[: c1,c2]` or per-line with `// ripast-doctor-ignore-next-line[: c1,c2]`.' },
   args: {
     glob: globArg,
-    checks: { type: 'string', description: 'Comma-separated subset: dangling-reexport, stale-reexport, stale-import, duplicate-export, orphan-file, orphan-test, inconsistent-import-path, circular-dep. Default: all.' },
+    checks: { type: 'string', description: 'Comma-separated subset: dangling-reexport, stale-reexport, stale-import, duplicate-export, orphan-file, orphan-test, inconsistent-import-path, circular-dep, phantom-component, shadowed-component, cross-realm-import, stale-nuxt-config-ref. Default: all (adapter checks run when their framework is detected).' },
     entry: { type: 'string', description: 'Comma-separated entry files exempt from orphan check (relative to cwd).' },
     fix: { type: 'boolean', default: false, description: 'Compute safe fixes for inconsistent-import-path and dangling-reexport findings.' },
     apply: applyArg,

@@ -1,7 +1,7 @@
 import type { DoctorAdapter, DoctorContext, DoctorFinding } from '@ripast/core/adapter'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { hyphenateVueName, parseVueTemplateAst, posToLineCol, rgFilesMany } from '@ripast/core/adapter'
+import { hyphenateVueName, parseVueTemplateAst, posToLineCol, rgFiles } from '@ripast/core/adapter'
 import { listComponents } from './components.ts'
 
 const NUXT_ENTRY_PATTERNS = [
@@ -282,28 +282,72 @@ const NUXT_BUILTINS = new Set([
 const PASCAL = /^[A-Z][A-Z0-9a-z]*$/
 const NODE_ELEMENT = 1
 
-function extractTemplateBlock(source: string): { content: string, start: number } | undefined {
-  const openStart = source.indexOf('<template')
-  if (openStart === -1)
-    return undefined
-  const contentStart = source.indexOf('>', openStart)
-  if (contentStart === -1)
-    return undefined
-  const start = contentStart + 1
-  const end = source.indexOf('</template>', start)
-  if (end === -1)
-    return undefined
-  return { content: source.slice(start, end), start }
+function listAppRoots(cwd: string): string[] {
+  // Per-app roots: each apps/* is its own Nuxt scope (own .nuxt, own
+  // components.dirs, own extends). Resolving auto-import scope at the
+  // monorepo root would falsely mark a component as known when it's only
+  // registered in a sibling app, masking real broken refs.
+  //
+  // layers/* are excluded: they don't run standalone (no .nuxt/), so their
+  // files are validated against the union of all app scopes that may consume
+  // them — falling back to filesystem-only would lose `@nuxt/ui` and other
+  // module-provided components and produce noise.
+  const roots: string[] = []
+  const parent = join(cwd, 'apps')
+  if (!existsSync(parent))
+    return roots
+  for (const name of readdirSync(parent)) {
+    const abs = join(parent, name)
+    try {
+      if (statSync(abs).isDirectory() && existsSync(join(abs, '.nuxt', 'components.d.ts')))
+        roots.push(abs)
+    }
+    catch {}
+  }
+  return roots
 }
 
-function findPhantomComponents(cwd: string): DoctorFinding[] {
-  const files = rgFilesMany(['*.vue'], { cwd })
+function scopeForFile(abs: string, roots: string[], cwd: string): string {
+  let best = cwd
+  let bestLen = -1
+  for (const root of roots) {
+    if ((abs === root || abs.startsWith(`${root}/`)) && root.length > bestLen) {
+      best = root
+      bestLen = root.length
+    }
+  }
+  return best
+}
+
+function buildKnownSet(root: string): Set<string> {
   const known = new Set<string>([...VUE_BUILTINS, ...NUXT_BUILTINS])
-  for (const c of listComponents(cwd, { source: 'auto' })) {
+  for (const c of listComponents(root, { source: 'auto', warn: () => {} })) {
     known.add(c.name)
     for (const alias of c.aliases ?? [])
       known.add(alias)
   }
+  return known
+}
+
+function buildUnionKnownSet(roots: string[], cwd: string): Set<string> {
+  const known = new Set<string>([...VUE_BUILTINS, ...NUXT_BUILTINS])
+  const sources = roots.length ? roots : [cwd]
+  for (const root of sources) {
+    for (const c of listComponents(root, { source: 'auto', warn: () => {} })) {
+      known.add(c.name)
+      for (const alias of c.aliases ?? [])
+        known.add(alias)
+    }
+  }
+  return known
+}
+
+function findPhantomComponents(cwd: string): DoctorFinding[] {
+  const files = rgFiles('', { cwd, glob: ['*.vue'], listAll: true })
+  const appRoots = listAppRoots(cwd)
+  const knownByRoot = new Map<string, Set<string>>()
+  if (appRoots.length)
+    knownByRoot.set(cwd, buildUnionKnownSet(appRoots, cwd))
   const out: DoctorFinding[] = []
   for (const abs of files) {
     let source: string
@@ -313,13 +357,15 @@ function findPhantomComponents(cwd: string): DoctorFinding[] {
     catch {
       continue
     }
-    const template = extractTemplateBlock(source)
-    if (!template)
-      continue
-    const templateStart = template.start
-    const ast = parseVueTemplateAst(template.content)
+    const ast = parseVueTemplateAst(source)
     if (!ast)
       continue
+    const root = scopeForFile(abs, appRoots, cwd)
+    let known = knownByRoot.get(root)
+    if (!known) {
+      known = buildKnownSet(root)
+      knownByRoot.set(root, known)
+    }
     const localImports = collectLocalImports(source)
     const seen = new Set<string>()
     walkTpl(ast, (node) => {
@@ -330,7 +376,7 @@ function findPhantomComponents(cwd: string): DoctorFinding[] {
         return
       if (!PASCAL.test(tag))
         return
-      if (known.has(tag) || known.has(hyphenateVueName(tag)))
+      if (known!.has(tag) || known!.has(hyphenateVueName(tag)))
         return
       if (localImports.has(tag))
         return
@@ -338,14 +384,14 @@ function findPhantomComponents(cwd: string): DoctorFinding[] {
       if (seen.has(key))
         return
       seen.add(key)
-      const offset = templateStart + (node.loc?.start?.offset ?? 0)
+      const offset = node.loc?.start?.offset ?? 0
       const { line, col } = posToLineCol(source, offset)
       out.push({
         check: 'phantom-component',
         file: relative(cwd, abs),
         line,
         message: `<${tag}> is not a known component (auto-import scope, local import, or built-in)`,
-        detail: { name: tag, col },
+        detail: { name: tag, col, scope: relative(cwd, root) || '.' },
       })
     })
   }
