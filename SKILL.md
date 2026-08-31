@@ -44,7 +44,7 @@ The CLI auto-installs the matching framework adapter (e.g. `@ripast/vue` for Vue
 npx -y -p @ripast/cli -p @ripast/vue ripast rename useStore useAppStore --apply
 ```
 
-Requires `rg` (ripgrep) on PATH and Node 20.11+.
+Requires `rg` (ripgrep) on PATH and Node 22.13+.
 
 All mutating commands default to **dry-run** (print a unified diff with a `N files, +A -R lines` header). Pass `--apply` to write. `--verify` (on by default for rename/replace/move/delete) runs a ts-morph post-transform typecheck and refuses `--apply` if new diagnostics appear; pass `--no-verify` to skip. Use `--verify-mode touched|project|none` to choose scoped, full-project, or no diagnostics. Pass `--json` on rename/replace/move/delete for machine-readable output (`{ applied, dryRun, blockedByRegression, scanned, summary, changes[], regressions[] }`).
 

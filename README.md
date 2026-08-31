@@ -236,7 +236,7 @@ npm i @ripast/core @ripast/vue
 > npx skilld add ripast
 > ```
 
-Requires `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) on `PATH` and Node 20.11+.
+Requires `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) on `PATH` and Node 22.13+.
 
 ## Usage
 

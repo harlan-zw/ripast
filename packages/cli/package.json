@@ -42,7 +42,7 @@
     "dist"
   ],
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "obuild",

@@ -18,7 +18,7 @@
     "url": "https://github.com/harlan-zw/ripast/issues"
   },
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "pnpm -r --filter './packages/*' run build",

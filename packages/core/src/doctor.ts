@@ -136,11 +136,19 @@ function loadAliasMap(cwd: string): AliasMap {
     if (!existsSync(abs))
       continue
     let raw: string
-    try { raw = readFileSync(abs, 'utf8') }
-    catch { continue }
+    try {
+      raw = readFileSync(abs, 'utf8')
+    }
+    catch {
+      continue
+    }
     let parsed: any
-    try { parsed = JSON.parse(stripJsonComments(raw)) }
-    catch { continue }
+    try {
+      parsed = JSON.parse(stripJsonComments(raw))
+    }
+    catch {
+      continue
+    }
     const co = parsed?.compilerOptions ?? {}
     const paths = co.paths
     if (!paths || typeof paths !== 'object')
