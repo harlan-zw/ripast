@@ -22,8 +22,8 @@ jobs:
       - name: Install ripgrep
         run: |
           mkdir -p "$HOME/.local/bin"
-          curl -sSL https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz | tar xz -C /tmp
-          mv /tmp/ripgrep-14.1.1-x86_64-unknown-linux-musl/rg "$HOME/.local/bin/rg"
+          curl -sSL https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz | tar xz -C "$RUNNER_TEMP"
+          mv "$RUNNER_TEMP/ripgrep-14.1.1-x86_64-unknown-linux-musl/rg" "$HOME/.local/bin/rg"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
