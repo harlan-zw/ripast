@@ -1,4 +1,3 @@
-import type { Diagnostic, Project, SourceFile } from 'ts-morph'
 import type { LspDiagnostic, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import { relative } from 'node:path'
@@ -11,87 +10,22 @@ export interface Regression {
   message: string
 }
 
-export interface DiagnosticSnapshot {
-  counts: Map<string, number>
-}
-
-export function snapshotDiagnostics(project: Project, sourceFiles?: SourceFile[]): DiagnosticSnapshot {
-  const counts = new Map<string, number>()
-  for (const d of getDiagnostics(project, sourceFiles)) {
-    const k = diagnosticKey(d)
-    counts.set(k, (counts.get(k) ?? 0) + 1)
-  }
-  return { counts }
-}
-
-export function findRegressions(before: DiagnosticSnapshot, project: Project, sourceFiles?: SourceFile[]): Regression[] {
-  const current = getDiagnostics(project, sourceFiles)
-  const seen = new Map<string, number>()
-  const out: Regression[] = []
-  for (const d of current) {
-    const k = diagnosticKey(d)
-    const beforeN = before.counts.get(k) ?? 0
-    const curN = (seen.get(k) ?? 0) + 1
-    seen.set(k, curN)
-    if (curN <= beforeN)
-      continue
-    const sf = d.getSourceFile()
-    if (!sf)
-      continue
-    const { line, column } = sf.getLineAndColumnAtPos(d.getStart() ?? 0)
-    out.push({
-      file: sf.getFilePath(),
-      line,
-      col: column,
-      code: d.getCode(),
-      message: flattenMessage(d.getMessageText()),
-    })
-  }
-  return out
-}
-
-function getDiagnostics(project: Project, sourceFiles?: SourceFile[]): Diagnostic[] {
-  if (!sourceFiles?.length)
-    return project.getPreEmitDiagnostics()
-  return sourceFiles.flatMap(sf => sf.getPreEmitDiagnostics())
-}
-
-function diagnosticKey(d: Diagnostic): string {
-  const sf = d.getSourceFile()
-  const file = sf ? sf.getFilePath() : '<no-file>'
-  return `${file}::${d.getCode()}::${flattenMessage(d.getMessageText())}`
-}
-
-function flattenMessage(msg: any): string {
-  if (typeof msg === 'string')
-    return msg
-  if (msg == null)
-    return ''
-  const chain = typeof msg.getMessageText === 'function' ? msg : null
-  if (chain) {
-    const parts: string[] = [chain.getMessageText()]
-    const next = chain.getNext?.() ?? []
-    for (const c of Array.isArray(next) ? next : [next]) {
-      parts.push(flattenMessage(c))
-    }
-    return parts.filter(Boolean).join(' | ')
-  }
-  return String(msg)
-}
-
 /**
  * Diagnostics-based regression check against the native TypeScript server.
- * Pulls errors for `files` with on-disk content, pushes each change's `after`
- * text as an in-memory overlay, pulls again, and reports diagnostics whose
- * count went up. Nothing touches disk.
+ * Opens every change with its `before` text (so files that do not exist on
+ * disk yet are visible), pulls errors for `files`, pushes each change's
+ * `after` text as an in-memory overlay, pulls again, and reports diagnostics
+ * whose count went up. Nothing touches disk.
  */
-export async function findRegressionsWithServer(server: TsServer, changes: FileChange[], files: string[]): Promise<Regression[]> {
+export async function findRegressions(server: TsServer, changes: FileChange[], files: string[]): Promise<Regression[]> {
   const scope = [...new Set([...files, ...changes.map(c => c.path)])]
+  for (const change of changes)
+    server.open(change.path, change.before)
   const before = await server.diagnostics(scope)
   const baseline = new Map<string, number>()
   for (const [path, items] of before) {
     for (const d of items) {
-      const key = lspDiagnosticKey(path, d)
+      const key = diagnosticKey(path, d)
       baseline.set(key, (baseline.get(key) ?? 0) + 1)
     }
   }
@@ -104,7 +38,7 @@ export async function findRegressionsWithServer(server: TsServer, changes: FileC
   const out: Regression[] = []
   for (const [path, items] of after) {
     for (const d of items) {
-      const key = lspDiagnosticKey(path, d)
+      const key = diagnosticKey(path, d)
       const count = (seen.get(key) ?? 0) + 1
       seen.set(key, count)
       if (count <= (baseline.get(key) ?? 0))
@@ -121,7 +55,7 @@ export async function findRegressionsWithServer(server: TsServer, changes: FileC
   return out
 }
 
-function lspDiagnosticKey(path: string, d: LspDiagnostic): string {
+function diagnosticKey(path: string, d: LspDiagnostic): string {
   return `${path}::${d.code ?? ''}::${d.message}`
 }
 

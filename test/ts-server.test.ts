@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { it } from 'vitest'
 import { startTsServer } from '../packages/core/src/ts-server.ts'
-import { findRegressionsWithServer } from '../packages/core/src/verify.ts'
+import { findRegressions } from '../packages/core/src/verify.ts'
 import { makeFixture } from './helpers.ts'
 
-it('findRegressionsWithServer reports errors introduced by in-memory changes only', async () => {
+it('findRegressions reports errors introduced by in-memory changes only', async () => {
   const fx = makeFixture({
     'a.ts': 'export function add(n: number): number { return n + 1 }\n',
     'b.ts': 'import { add } from \'./a.ts\'\nexport const r: number = add(2)\n',
@@ -20,7 +20,7 @@ it('findRegressionsWithServer reports errors introduced by in-memory changes onl
       before: fx.read('a.ts'),
       after: 'export function add(n: number): string { return String(n) }\n',
     }]
-    const regressions = await findRegressionsWithServer(server, breaking, [a, b])
+    const regressions = await findRegressions(server, breaking, [a, b])
     assert.equal(regressions.length, 1, `expected one regression, got ${JSON.stringify(regressions)}`)
     assert.equal(regressions[0]!.file, b)
     assert.equal(regressions[0]!.code, 2322)
@@ -32,7 +32,7 @@ it('findRegressionsWithServer reports errors introduced by in-memory changes onl
   }
 })
 
-it('findRegressionsWithServer keeps the pushed overlay across repeated pulls', async () => {
+it('findRegressions keeps the pushed overlay across repeated pulls', async () => {
   const fx = makeFixture({
     'a.ts': 'export function add(n: number): number { return n + 1 }\n',
     'b.ts': 'import { add } from \'./a.ts\'\nexport const r: number = add(2)\n',
@@ -42,7 +42,7 @@ it('findRegressionsWithServer keeps the pushed overlay across repeated pulls', a
     const a = join(fx.dir, 'a.ts')
     const b = join(fx.dir, 'b.ts')
     const breaking = [{ path: a, rel: 'a.ts', before: fx.read('a.ts'), after: 'export function add(n: number): string { return String(n) }\n' }]
-    await findRegressionsWithServer(server, breaking, [a, b])
+    await findRegressions(server, breaking, [a, b])
     const again = await server.diagnostics([b])
     assert.equal(again.get(b)?.length, 1, 'a second pull must still see the overlay, not the on-disk text')
   }

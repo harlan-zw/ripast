@@ -37,7 +37,7 @@ Surgical text edits are slow and miss things: shadowed identifiers, type-only im
 
 | Stack | Status | Notes |
 | --- | --- | --- |
-| TypeScript / JavaScript | ✅ Full | Native TypeScript 7 language server for `rename`; ts-morph for `move`, `replace`, `delete`. Type-only imports, namespace imports, re-exports, decorators. |
+| TypeScript / JavaScript | ✅ Full | Native TypeScript 7 language server for semantics, oxc for edits. Type-only imports, namespace imports, re-exports, decorators. |
 | React (JSX / TSX) | ✅ Full | JSX component refs, hooks, type props all rename together. |
 | Solid (JSX / TSX) | ✅ Full | Same JSX engine path as React. |
 | Vue 3 SFC | ✅ Full | `<script setup>` + `<template>` (interpolations, `v-if`, `v-for`, `:prop`) + component tag PascalCase ↔ kebab-case. |
@@ -300,7 +300,7 @@ const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cw
 
 Exports cover `runRename`, `runReplace`, `runMove`, `runDelete`, `runRenameFile`, `runCssClassRename`, `runCssClassScan`, `scan`, `buildScanGraph`, `buildDeclarationTree`, `buildUnusedDeclarations`, plus formatters and the `writeChanges` helper.
 
-For batching, `runMove` accepts an existing ts-morph `project` so callers pay the project setup cost once. `runRename` starts the native TypeScript server per call; it is cheap enough that batching is not needed.
+Each call starts the native TypeScript server. Startup takes a few milliseconds, so there is no batching API.
 
 ## Recipes & limitations
 
@@ -354,8 +354,7 @@ done
 
 ## Credits
 
-- [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind `rename` and its `--verify`.
-- [ts-morph](https://github.com/dsherret/ts-morph): semantic engine for `move`, `replace`, and `delete`.
+- [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind rename, references, file renames, and `--verify`.
 - [Volar](https://github.com/volarjs/volar.js) + [@vue/language-tools](https://github.com/vuejs/language-tools): cross-`.vue` rename and diagnostics.
 - [oxc](https://github.com/oxc-project/oxc): fast parser for template-expression classification.
 - [ripgrep](https://github.com/BurntSushi/ripgrep): the candidate-file oracle.

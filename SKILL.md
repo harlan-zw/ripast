@@ -238,7 +238,7 @@ Coverage spans: kind classification, scan dependency graph output, Vue SFC scrip
 - **Svelte** — not supported.
 - **`move` auto-splits multi-declarators** — `export const a = 1, b = 2` with `move a` splits the statement first. The leftover `b` stays put.
 - **`move` refuses on local non-exported deps** — if the moved symbol depends on a non-exported helper in the same file, `move` aborts with an actionable error. Export the helper first, or move both.
-- **Large monorepos** — `rename` runs on the native TypeScript server and starts in milliseconds. `move`, `replace`, and `delete` still load the full TS project through ts-morph; expect 2-3 s startup. `--no-verify` halves the time.
+- **Large monorepos** — every command runs on the native TypeScript server and starts in milliseconds. `--verify-mode project` pulls diagnostics for every file and scales with repo size; the default `touched` mode stays fast.
 - **Always commit before `--apply`** — rollback is `git checkout .`.
 
 ## What this skill is NOT for

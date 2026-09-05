@@ -9,8 +9,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { posToLineCol } from './util.ts'
 
 // Client for the native TypeScript language server (TypeScript 7+, `tsc --lsp`).
-// Semantics (rename, references, diagnostics) come from the server. ripast owns
-// candidate discovery, text edits, diffing, and verification policy.
+// Semantics (rename, references, definitions, diagnostics, file renames) come
+// from the server. ripast owns candidate discovery, text edits, diffing, and
+// verification policy.
 
 export interface LspPosition {
   line: number
@@ -39,15 +40,32 @@ export interface LspLocation {
   range: LspRange
 }
 
+/** A location resolved to a file path and character offsets in that file's current text. */
+export interface SourceSite {
+  path: string
+  start: number
+  end: number
+  /** 1-based */
+  line: number
+  /** 1-based */
+  col: number
+}
+
 export interface TsServer {
   /** Rename the symbol at `offset` in `path`. Returns absolute path -> edits against the current document text. */
   rename: (path: string, offset: number, newName: string) => Promise<Map<string, LspTextEdit[]>>
   /** Every reference to the symbol at `offset` in `path`, declaration included. */
-  references: (path: string, offset: number) => Promise<LspLocation[]>
+  references: (path: string, offset: number) => Promise<SourceSite[]>
+  /** Declaration sites of the symbol at `offset` in `path`. */
+  definition: (path: string, offset: number) => Promise<SourceSite[]>
+  /** Import rewrites the server would apply if `oldPath` moved to `newPath`. Keyed by absolute path. */
+  willRenameFile: (oldPath: string, newPath: string) => Promise<Map<string, LspTextEdit[]>>
   /** Pull error diagnostics for `paths`. Files not yet open are opened with their on-disk text. */
   diagnostics: (paths: string[]) => Promise<Map<string, LspDiagnostic[]>>
   /** Open `path` with `text` (defaults to disk). Re-opening with new text updates the document. */
   open: (path: string, text?: string) => void
+  /** Current text the server sees for `path`: the overlay if open, else disk. */
+  textOf: (path: string) => string
   dispose: () => void
 }
 
@@ -114,6 +132,8 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     proc.stdin.write(body)
   }
 
+  const stderrHint = (): string => stderrTail.length ? `: ${stderrTail.join(' ').trim()}` : ''
+
   const request = (method: string, params: unknown): Promise<any> => {
     if (exited)
       return Promise.reject(new Error(`ripast: TypeScript server exited before ${method}${stderrHint()}`))
@@ -127,8 +147,6 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
   const notify = (method: string, params: unknown): void => {
     write({ jsonrpc: '2.0', method, params })
   }
-
-  const stderrHint = (): string => stderrTail.length ? `: ${stderrTail.join(' ').trim()}` : ''
 
   const onMessage = (message: any): void => {
     if (message.id !== undefined && message.method) {
@@ -194,7 +212,11 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     workspaceFolders: [{ uri: pathToFileURL(cwd).href, name: 'ripast' }],
     initializationOptions: PREFERENCES,
     capabilities: {
-      workspace: { workspaceEdit: { documentChanges: true }, configuration: true },
+      workspace: {
+        workspaceEdit: { documentChanges: true },
+        configuration: true,
+        fileOperations: { willRename: true },
+      },
       textDocument: {
         rename: { prepareSupport: false },
         diagnostic: { dynamicRegistration: false },
@@ -204,6 +226,8 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
   notify('initialized', {})
   // The server pulls preferences through workspace/configuration while handling
   // `initialized`, and processes messages in order, so later requests see them.
+
+  const textOf = (path: string): string => documents.get(path)?.text ?? readFileSync(path, 'utf8')
 
   const open = (path: string, text?: string): void => {
     const existing = documents.get(path)
@@ -228,9 +252,36 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
   }
 
   const positionOf = (path: string, offset: number): LspPosition => {
-    const text = documents.get(path)?.text ?? readFileSync(path, 'utf8')
-    const { line, col } = posToLineCol(text, offset)
+    const { line, col } = posToLineCol(textOf(path), offset)
     return { line: line - 1, character: col - 1 }
+  }
+
+  const toSites = (locations: LspLocation[] | null | undefined): SourceSite[] => {
+    const texts = new Map<string, string>()
+    const out: SourceSite[] = []
+    for (const location of locations ?? []) {
+      if (!location.uri.startsWith('file:'))
+        continue
+      const path = pathOf(location.uri)
+      let text = texts.get(path)
+      if (text === undefined) {
+        try {
+          text = textOf(path)
+        }
+        catch {
+          continue
+        }
+        texts.set(path, text)
+      }
+      out.push({
+        path,
+        start: offsetOfPosition(text, location.range.start),
+        end: offsetOfPosition(text, location.range.end),
+        line: location.range.start.line + 1,
+        col: location.range.start.character + 1,
+      })
+    }
+    return out
   }
 
   return {
@@ -250,7 +301,25 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
         position: positionOf(path, offset),
         context: { includeDeclaration: true },
       })
-      return (locations ?? []) as LspLocation[]
+      return toSites(locations)
+    },
+    async definition(path, offset) {
+      open(path)
+      const result = await request('textDocument/definition', {
+        textDocument: { uri: uriOf(path) },
+        position: positionOf(path, offset),
+      })
+      const locations: LspLocation[] = Array.isArray(result)
+        ? result.map((r: any) => r.targetUri ? { uri: r.targetUri, range: r.targetSelectionRange ?? r.targetRange } : r)
+        : result ? [result] : []
+      return toSites(locations)
+    },
+    async willRenameFile(oldPath, newPath) {
+      open(oldPath)
+      const edit = await request('workspace/willRenameFiles', {
+        files: [{ oldUri: uriOf(oldPath), newUri: uriOf(newPath) }],
+      })
+      return workspaceEditByPath(edit)
     },
     async diagnostics(paths) {
       const out = new Map<string, LspDiagnostic[]>()
@@ -263,6 +332,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       return out
     },
     open,
+    textOf,
     dispose() {
       if (exited)
         return
@@ -305,15 +375,26 @@ function workspaceEditByPath(edit: any): Map<string, LspTextEdit[]> {
   return byPath
 }
 
-/** Apply LSP edits (UTF-16 line/character ranges) to `text`. */
-export function applyLspEdits(text: string, edits: LspTextEdit[]): string {
-  if (!edits.length)
-    return text
+function lineStartsOf(text: string): number[] {
   const lineStarts: number[] = [0]
   for (let i = 0; i < text.length; i++) {
     if (text.charCodeAt(i) === 10)
       lineStarts.push(i + 1)
   }
+  return lineStarts
+}
+
+/** Character offset of an LSP (UTF-16 line/character) position in `text`. */
+export function offsetOfPosition(text: string, position: LspPosition): number {
+  const lineStarts = lineStartsOf(text)
+  return (lineStarts[position.line] ?? text.length) + position.character
+}
+
+/** Apply LSP edits (UTF-16 line/character ranges) to `text`. */
+export function applyLspEdits(text: string, edits: LspTextEdit[]): string {
+  if (!edits.length)
+    return text
+  const lineStarts = lineStartsOf(text)
   const offsetOf = (pos: LspPosition): number => (lineStarts[pos.line] ?? text.length) + pos.character
   const sorted = [...edits].sort((a, b) => offsetOf(b.range.start) - offsetOf(a.range.start))
   let out = text

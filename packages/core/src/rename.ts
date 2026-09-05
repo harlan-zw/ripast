@@ -9,12 +9,13 @@ import process from 'node:process'
 import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
+import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource } from './declarations.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, resolveVerifyMode } from './project.ts'
+import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { applyLspEdits, startTsServer } from './ts-server.ts'
 import { applyTextEdits, mergeFileChanges, parseFile, parseSourceFile, rgFiles, spliceScript } from './util.ts'
-import { findRegressionsWithServer } from './verify.ts'
+import { findRegressions } from './verify.ts'
 import { rewriteTemplateReferences } from './vue-template.ts'
 
 export interface RenameOptions {
@@ -42,14 +43,6 @@ interface Declaration {
   pos: number
 }
 
-const NAMED_DECLARATION_TYPES = new Set([
-  'FunctionDeclaration',
-  'ClassDeclaration',
-  'TSInterfaceDeclaration',
-  'TSTypeAliasDeclaration',
-  'TSEnumDeclaration',
-])
-
 export async function runRename(from: string, to: string, opts: RenameOptions = {}): Promise<RenameResult> {
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
@@ -59,7 +52,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   const candidatePaths = timed(profile, 'rg candidates', () => rgFiles(from, { cwd, glob: opts.glob }))
   const scriptCandidates = candidatePaths.filter(path => !isVue(path))
 
-  const allDeclarations = timed(profile, 'find declarations', () => findDeclarations(scriptCandidates, from, cwd))
+  const allDeclarations = timed(profile, 'find declarations', () => findDeclarations(scriptCandidates, from))
   const declarations = opts.scope
     ? allDeclarations.filter(d => d.filePath === resolve(cwd, opts.scope!))
     : allDeclarations
@@ -122,10 +115,8 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     const regressions: Regression[] = []
     if (verifyMode !== 'none') {
       const scriptChanges = changes.filter(c => !isVue(c.path))
-      const verifyFiles = verifyMode === 'project'
-        ? rgFiles('', { cwd, glob: opts.glob, listAll: true }).filter(path => !isVue(path))
-        : [...new Set([...scriptCandidates, ...scriptChanges.map(c => c.path)])]
-      regressions.push(...await timedAsync(profile, 'verify', () => findRegressionsWithServer(server, scriptChanges, verifyFiles)))
+      const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path), opts.glob)
+      regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, verifyFiles)))
     }
 
     if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
@@ -142,9 +133,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   }
 }
 
-function isVue(path: string): boolean {
-  return path.endsWith('.vue')
-}
+const isVue = isVuePath
 
 const IMPORT_LINE_RE = /^\s*(?:import|export)\b.+\bfrom\b/
 
@@ -304,27 +293,14 @@ function rewriteScriptIdentifiers(source: string, from: string, to: string): str
 }
 
 /** Top-level declarations named `name`, found syntactically with oxc. */
-function findDeclarations(paths: string[], name: string, cwd: string): Declaration[] {
+function findDeclarations(paths: string[], name: string): Declaration[] {
   const out: Declaration[] = []
   for (const path of paths) {
-    const file = parseFile(path, cwd)
-    if (!file.program)
-      continue
-    for (const statement of file.program.body ?? []) {
-      const decl = statement.type === 'ExportNamedDeclaration' || statement.type === 'ExportDefaultDeclaration'
-        ? statement.declaration
-        : statement
-      if (!decl)
-        continue
-      if (decl.type === 'VariableDeclaration') {
-        for (const declarator of decl.declarations ?? []) {
-          if (declarator.id?.type === 'Identifier' && declarator.id.name === name)
-            out.push({ filePath: path, source: file.fullSource, pos: declarator.id.start })
-        }
-        continue
-      }
-      if (NAMED_DECLARATION_TYPES.has(decl.type) && decl.id?.type === 'Identifier' && decl.id.name === name)
-        out.push({ filePath: path, source: file.fullSource, pos: decl.id.start })
+    const source = readFileSync(path, 'utf8')
+    const { program } = parseSource(path, source)
+    for (const decl of listTopLevelDeclarations(program)) {
+      if (decl.name === name)
+        out.push({ filePath: path, source, pos: decl.nameStart })
     }
   }
   return out

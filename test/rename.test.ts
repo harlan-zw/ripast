@@ -55,7 +55,7 @@ it('rename preserves aliased imports correctly', async () => {
 it('warns when the renamed symbol is still imported by a file it did not rewrite', async () => {
   const fx = makeFixture({
     'a.ts': 'export function oldFn() { return 1 }\n',
-    // Imports via an unresolvable package specifier: ts-morph cannot follow it
+    // Imports via an unresolvable package specifier: the TypeScript server cannot follow it
     // back to the declaration, so this consumer is left stale.
     'consumer.ts': 'import { oldFn } from \'my-pkg\'\nexport const r = oldFn()\n',
   })

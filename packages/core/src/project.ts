@@ -1,6 +1,6 @@
-import type { Project } from 'ts-morph'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { rgFiles } from './util.ts'
 
 export type VerifyMode = 'none' | 'touched' | 'project'
 
@@ -12,22 +12,6 @@ export function resolveVerifyMode(verify: boolean | VerifyMode | undefined): Ver
   return 'touched'
 }
 
-export function projectSourceFiles(project: Project, candidates: string[], mode: 'lazy' | 'full') {
-  if (mode === 'full')
-    return project.getSourceFiles()
-
-  const out = []
-  const seen = new Set<string>()
-  for (const path of candidates) {
-    const sf = project.getSourceFile(path) ?? project.addSourceFileAtPathIfExists(path)
-    if (!sf || seen.has(sf.getFilePath()))
-      continue
-    seen.add(sf.getFilePath())
-    out.push(sf)
-  }
-  return out
-}
-
 export function findTsconfig(cwd: string): string | null {
   const tries = ['tsconfig.json', 'tsconfig.build.json']
   for (const file of tries) {
@@ -36,4 +20,22 @@ export function findTsconfig(cwd: string): string | null {
       return path
   }
   return null
+}
+
+export function isVuePath(path: string): boolean {
+  return path.endsWith('.vue')
+}
+
+/** Every script file under `cwd` (respecting ignores), for project-wide verification. */
+export function projectScriptFiles(cwd: string, glob?: string | string[]): string[] {
+  return rgFiles('', { cwd, glob, listAll: true }).filter(path => !isVuePath(path))
+}
+
+/** Files to verify for a change set: the candidates plus every changed script file. */
+export function verifyScope(mode: VerifyMode, cwd: string, candidates: string[], changedPaths: string[], glob?: string | string[]): string[] {
+  if (mode === 'none')
+    return []
+  if (mode === 'project')
+    return projectScriptFiles(cwd, glob)
+  return [...new Set([...candidates, ...changedPaths])].filter(path => !isVuePath(path))
 }

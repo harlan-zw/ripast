@@ -1,25 +1,29 @@
-import type { ImportDeclaration, Node, SourceFile } from 'ts-morph'
+import type { TopLevelDeclaration } from './declarations.ts'
+import type { ImportInfo, ImportSpec } from './imports.ts'
 import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
+import type { TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { Project, SyntaxKind } from 'ts-morph'
+import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
+import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, localBindingNames, parseSource, removeDeclaration } from './declarations.ts'
+import { addOrMergeImport, appendStatement, computeSpecifier, isImportEmpty, listImports, parseProgram, pruneUnusedImports, renderImport, rewriteImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, resolveVerifyMode } from './project.ts'
+import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
+import { startTsServer } from './ts-server.ts'
 import { mergeFileChanges, rgFiles } from './util.ts'
-import { findRegressions, snapshotDiagnostics } from './verify.ts'
+import { findRegressions } from './verify.ts'
 
 export interface MoveOptions {
   cwd?: string
+  /** tsconfig for the Vue adapter. The TypeScript server discovers its own project from the workspace. */
   tsconfig?: string
   verify?: boolean | VerifyMode
-  lazy?: boolean
-  project?: Project
   vue?: boolean
   profile?: ProfileSink
 }
@@ -30,13 +34,7 @@ export interface MoveResult {
   regressions: Regression[]
 }
 
-const MOVABLE_KINDS = new Set<SyntaxKind>([
-  SyntaxKind.FunctionDeclaration,
-  SyntaxKind.ClassDeclaration,
-  SyntaxKind.InterfaceDeclaration,
-  SyntaxKind.TypeAliasDeclaration,
-  SyntaxKind.EnumDeclaration,
-])
+const IMPORT_SPECIFIER_PARENTS = new Set(['ImportSpecifier', 'ImportDefaultSpecifier', 'ImportNamespaceSpecifier'])
 
 export async function runMove(symbol: string, fromPath: string, toPath: string, opts: MoveOptions = {}): Promise<MoveResult> {
   const cwd = opts.cwd ?? process.cwd()
@@ -44,35 +42,20 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   const verifyMode = resolveVerifyMode(opts.verify)
   const vueEnabled = opts.vue ?? true
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
-  const lazy = opts.lazy ?? true
-  const projectMode = !opts.project && lazy && !vueEnabled && tsconfigPath && verifyMode !== 'project' ? 'lazy' : 'full'
-  const project = timed(profile, 'project load', () => opts.project ?? (tsconfigPath
-    ? new Project({ tsConfigFilePath: tsconfigPath, skipAddingFilesFromTsConfig: projectMode === 'lazy' })
-    : new Project({ compilerOptions: { allowJs: true } })))
 
   const fromAbs = resolve(cwd, fromPath)
   const toAbs = resolve(cwd, toPath)
   const candidatePaths = timed(profile, 'rg candidates', () => rgFiles(symbol, { cwd }))
 
-  let fromSF = project.getSourceFile(fromAbs) ?? project.addSourceFileAtPathIfExists(fromAbs)
-  if (!fromSF)
-    fromSF = project.addSourceFileAtPath(fromAbs)
+  const fromOriginal = readFileSync(fromAbs, 'utf8')
+  const fromSplit = timed(profile, 'split declarators', () => splitMultiDeclaratorIfNeeded(fromOriginal, fromAbs, symbol))
+  const parsed = parseSource(fromAbs, fromSplit)
 
-  let toSF = project.getSourceFile(toAbs) ?? project.addSourceFileAtPathIfExists(toAbs)
-  if (!toSF)
-    toSF = project.createSourceFile(toAbs, '', { overwrite: false })
-
-  if (projectMode === 'lazy') {
-    for (const f of candidatePaths) project.addSourceFileAtPathIfExists(f)
-  }
-
-  timed(profile, 'split declarators', () => splitMultiDeclaratorIfNeeded(fromSF, symbol))
-
-  const decl = timed(profile, 'find export', () => findNamedExport(fromSF, symbol))
+  const decl = timed(profile, 'find export', () => findMovableExport(parsed.program, symbol))
   if (!decl)
     throw new Error(`ripast move: no top-level export named "${symbol}" in ${fromPath} (supported: function, class, interface, type, enum, const with single declarator)`)
 
-  const localDeps = timed(profile, 'find local deps', () => findLocalSiblingDeps(decl, fromSF, symbol))
+  const localDeps = timed(profile, 'find local deps', () => findLocalSiblingDeps(parsed.program, decl, symbol))
   if (localDeps.nonExported.length) {
     throw new Error(
       `ripast move: "${symbol}" depends on local non-exported symbol(s) [${localDeps.nonExported.join(', ')}] in ${fromPath}. `
@@ -80,398 +63,116 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     )
   }
 
-  const candidateFiles = timed(profile, 'map candidates', () => sourceFilesMatching(project, candidatePaths, [fromSF, toSF]))
-  const originals = timed(profile, 'snapshot originals', () => {
-    const out = new Map<string, string>()
-    for (const sf of candidateFiles) out.set(sf.getFilePath(), sf.getFullText())
-    return out
-  })
+  const usedImports = timed(profile, 'collect used imports', () => collectUsedImports(fromSplit, fromAbs, parsed.program, decl, symbol))
+  const declText = timed(profile, 'copy declaration', () => declarationText(fromSplit, parsed.comments, decl))
+  const remainingReferences = timed(profile, 'count remaining refs', () => countReferencesOutside(parsed.program, decl, symbol))
 
-  const verifyFiles = verifyMode === 'none'
-    ? []
-    : verifyMode === 'project'
-      ? project.getSourceFiles()
-      : timed(profile, 'collect verify files', () => collectMoveVerifyFiles(candidateFiles, fromSF, toSF))
-  const baseline = verifyMode !== 'none' ? timed(profile, 'verify baseline', () => snapshotDiagnostics(project, verifyFiles)) : null
-
-  const usedImports = timed(profile, 'collect used imports', () => collectUsedImports(decl, fromSF, symbol))
-  const declText = timed(profile, 'copy declaration', () => getDeclarationFullText(decl))
-  const remainingReferences = timed(profile, 'count remaining refs', () => countReferencesOutside(fromSF, symbol, decl))
-
-  for (const { moduleSpecifier, namedImports, defaultImport, namespaceImport } of usedImports) {
-    addOrMergeImport(toSF, moduleSpecifier, { namedImports, defaultImport, namespaceImport })
+  const toOriginal = existsSync(toAbs) ? readFileSync(toAbs, 'utf8') : ''
+  let toAfter = toOriginal
+  for (const used of usedImports) {
+    // An import of the target file itself: those names are declared there.
+    if (relativeImportTarget(fromAbs, used.specifier) === toAbs)
+      continue
+    toAfter = addOrMergeImport(toAfter, toAbs, rebaseSpecifier(used.specifier, fromAbs, toAbs), used.spec)
   }
+  if (localDeps.exported.length)
+    toAfter = addOrMergeImport(toAfter, toAbs, computeSpecifier(toAbs, fromAbs, './placeholder.ts'), { namedImports: localDeps.exported.map(name => ({ name })) })
+  toAfter = appendStatement(toAfter, declText)
 
-  if (localDeps.exported.length) {
-    const spec = computeSpecifier(toAbs, fromAbs, './placeholder.ts')
-    addOrMergeImport(toSF, spec, { namedImports: localDeps.exported.map(name => ({ name })) })
-  }
+  let fromAfter = removeDeclaration(fromSplit, parsed.comments, decl)
+  fromAfter = pruneUnusedImports(fromAfter, fromAbs)
+  if (remainingReferences > 0)
+    fromAfter = addOrMergeImport(fromAfter, fromAbs, computeSpecifier(fromAbs, toAbs, './placeholder.ts'), { namedImports: [{ name: symbol }] })
 
-  toSF.insertStatements(toSF.getStatements().length, declText.trim())
+  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd))
+  try {
+    const changes: FileChange[] = []
+    if (fromAfter !== fromOriginal)
+      changes.push({ path: fromAbs, rel: relative(cwd, fromAbs), before: fromOriginal, after: fromAfter })
+    if (toAfter !== toOriginal)
+      changes.push({ path: toAbs, rel: relative(cwd, toAbs), before: toOriginal, after: toAfter })
 
-  timed(profile, 'rewrite import sites', () => {
-    for (const sf of candidateFiles) {
-      if (sf === fromSF || sf === toSF)
-        continue
-      rewriteImportSites(sf, fromAbs, toAbs, symbol)
-    }
-  })
-
-  ;(decl as any).remove?.()
-  pruneUnusedImports(fromSF)
-
-  if (remainingReferences > 0) {
-    const newSpec = computeSpecifier(fromSF.getFilePath(), toAbs, './placeholder.ts')
-    addOrMergeImport(fromSF, newSpec, { namedImports: [{ name: symbol }] })
-  }
-
-  const changes: FileChange[] = timed(profile, 'collect changes', () => {
-    const out: FileChange[] = []
-    for (const sf of candidateFiles) {
-      const before = originals.get(sf.getFilePath()) ?? ''
-      const after = sf.getFullText()
-      if (after !== before) {
-        out.push({
-          path: sf.getFilePath(),
-          rel: relative(cwd, sf.getFilePath()),
-          before,
-          after,
-        })
+    await timedAsync(profile, 'rewrite import sites', async () => {
+      for (const path of candidatePaths) {
+        if (path === fromAbs || path === toAbs || isVuePath(path))
+          continue
+        const before = readFileSync(path, 'utf8')
+        const after = await rewriteImportSites(server, path, before, fromAbs, toAbs, symbol)
+        if (after !== before)
+          changes.push({ path, rel: relative(cwd, path), before, after })
       }
-    }
-    return out
-  })
-
-  const fromBasename = fromPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
-  const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
-  if (vueAdapter && tsconfigPath && fromBasename && timed(profile, 'vue prefilter', () => vueAdapter.hasFilesContaining(cwd, fromBasename))) {
-    const vueChanges = await timedAsync(profile, 'vue import rewrite', () => vueAdapter.applyImportRewrite(tsconfigPath, cwd, fromAbs, toAbs))
-    for (const vc of vueChanges) {
-      if (!changes.some(c => c.path === vc.path))
-        changes.push(vc)
-    }
-  }
-
-  if (vueAdapter?.autoImportScopes) {
-    const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
-    if (isInsideAutoImportScope(fromAbs, scopes) && !isInsideAutoImportScope(toAbs, scopes) && vueAdapter.addExplicitImports) {
-      const autoImportChanges = timed(profile, 'nuxt auto-import consumers', () => vueAdapter.addExplicitImports!({
-        cwd,
-        symbols: [symbol],
-        toAbs,
-        fromAbs,
-        existingChanges: changes,
-        noScriptError: name => new Error(
-          `ripast move: "${name}" is auto-imported in Nuxt; moving to ${toAbs}`
-          + ` removes it from auto-import scope. Either keep it in`
-          + ` composables/utils/components, or add explicit imports first.`,
-        ),
-      }))
-      mergeFileChanges(changes, autoImportChanges)
-    }
-    if (scopes.size)
-      vueAdapter.filterGeneratedChanges?.(cwd, changes)
-  }
-
-  const regressions = baseline ? timed(profile, 'verify regressions', () => findRegressions(baseline, project, verifyFiles)) : []
-
-  if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => c.path.endsWith('.vue'))) {
-    const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes)
-    regressions.push(...vueRegs)
-  }
-
-  return { changes, scanned: projectMode === 'full' ? project.getSourceFiles().length : candidateFiles.length, regressions }
-}
-
-function findNamedExport(sf: SourceFile, symbol: string): Node | null {
-  for (const stmt of sf.getStatements()) {
-    const kind = stmt.getKind()
-    if (kind === SyntaxKind.VariableStatement) {
-      const vs = stmt.asKindOrThrow(SyntaxKind.VariableStatement)
-      if (!vs.hasExportKeyword())
-        continue
-      const decls = vs.getDeclarationList().getDeclarations()
-      if (decls.length !== 1)
-        continue
-      if (decls[0].getName() === symbol)
-        return vs
-      continue
-    }
-    if (!MOVABLE_KINDS.has(kind))
-      continue
-    const named = stmt as Node & { hasExportKeyword?: () => boolean, hasDefaultKeyword?: () => boolean, getName?: () => string | undefined }
-    if (!named.hasExportKeyword?.())
-      continue
-    if (named.hasDefaultKeyword?.())
-      continue
-    if (named.getName?.() === symbol)
-      return stmt
-  }
-  return null
-}
-
-function getDeclarationFullText(decl: Node): string {
-  const leading = decl.getLeadingCommentRanges()
-  if (!leading.length)
-    return decl.getText()
-  const start = leading[0].getPos()
-  return decl.getSourceFile().getFullText().slice(start, decl.getEnd())
-}
-
-function countReferencesOutside(sf: SourceFile, symbol: string, decl: Node): number {
-  const declStart = decl.getStart(true)
-  const declEnd = decl.getEnd()
-  let count = 0
-  sf.forEachDescendant((n) => {
-    if (n.getKind() !== SyntaxKind.Identifier)
-      return
-    if (n.getText() !== symbol)
-      return
-    const p = n.getParent()
-    if (p?.getKind() === SyntaxKind.ImportSpecifier || p?.getKind() === SyntaxKind.ImportClause)
-      return
-    const pos = n.getStart()
-    if (pos >= declStart && pos < declEnd)
-      return
-    count++
-  })
-  return count
-}
-
-interface CollectedImport {
-  moduleSpecifier: string
-  namedImports: ImportName[]
-  defaultImport?: string
-  namespaceImport?: string
-  isTypeOnly?: boolean
-}
-
-interface ImportName {
-  name: string
-  alias?: string
-  isTypeOnly?: boolean
-}
-
-function collectUsedImports(decl: Node, fromSF: SourceFile, selfName: string): CollectedImport[] {
-  const referenced = new Set<string>()
-  decl.forEachDescendant((n) => {
-    if (n.getKind() === SyntaxKind.Identifier) {
-      const name = n.getText()
-      if (name !== selfName)
-        referenced.add(name)
-    }
-  })
-
-  const result: CollectedImport[] = []
-  for (const imp of fromSF.getImportDeclarations()) {
-    const names: ImportName[] = []
-    const importIsTypeOnly = imp.isTypeOnly()
-    for (const ni of imp.getNamedImports()) {
-      const local = ni.getAliasNode()?.getText() ?? ni.getName()
-      if (referenced.has(local))
-        names.push({ name: ni.getName(), alias: ni.getAliasNode()?.getText(), isTypeOnly: importIsTypeOnly || ni.isTypeOnly() })
-    }
-    const defaultImport = imp.getDefaultImport()
-    const defaultName = defaultImport && referenced.has(defaultImport.getText()) ? defaultImport.getText() : undefined
-    const ns = imp.getNamespaceImport()
-    const nsName = ns && referenced.has(ns.getText()) ? ns.getText() : undefined
-    if (names.length || defaultName || nsName) {
-      result.push({ moduleSpecifier: imp.getModuleSpecifierValue(), namedImports: names, defaultImport: defaultName, namespaceImport: nsName, isTypeOnly: importIsTypeOnly })
-    }
-  }
-  return result
-}
-
-function addOrMergeImport(sf: SourceFile, moduleSpecifier: string, spec: { namedImports: ImportName[], defaultImport?: string, namespaceImport?: string, isTypeOnly?: boolean }) {
-  const existing = sf.getImportDeclarations().find(i => i.getModuleSpecifierValue() === moduleSpecifier && i.isTypeOnly() === !!spec.isTypeOnly)
-  if (existing) {
-    const have = new Set(existing.getNamedImports().map(ni => ni.getName()))
-    for (const ni of spec.namedImports) {
-      if (!have.has(ni.name))
-        existing.addNamedImport({ name: ni.name, alias: ni.alias, isTypeOnly: !existing.isTypeOnly() && ni.isTypeOnly })
-    }
-    if (spec.defaultImport && !existing.getDefaultImport())
-      existing.setDefaultImport(spec.defaultImport)
-    if (spec.namespaceImport && !existing.getNamespaceImport())
-      existing.setNamespaceImport(spec.namespaceImport)
-    return
-  }
-  sf.addImportDeclaration({
-    moduleSpecifier,
-    isTypeOnly: spec.isTypeOnly,
-    namedImports: spec.namedImports.map(ni => ({ name: ni.name, alias: ni.alias, isTypeOnly: !spec.isTypeOnly && ni.isTypeOnly })),
-    defaultImport: spec.defaultImport,
-    namespaceImport: spec.namespaceImport,
-  })
-}
-
-function pruneUnusedImports(sf: SourceFile): void {
-  const used = new Set<string>()
-  sf.forEachDescendant((n) => {
-    if (n.getKind() === SyntaxKind.Identifier) {
-      const p = n.getParent()
-      const pk = p?.getKind()
-      if (pk === SyntaxKind.ImportSpecifier || pk === SyntaxKind.ImportClause || pk === SyntaxKind.NamespaceImport)
-        return
-      used.add(n.getText())
-    }
-  })
-  for (const imp of sf.getImportDeclarations()) {
-    for (const ni of imp.getNamedImports()) {
-      const local = ni.getAliasNode()?.getText() ?? ni.getName()
-      if (!used.has(local))
-        ni.remove()
-    }
-    const def = imp.getDefaultImport()
-    if (def && !used.has(def.getText()))
-      imp.removeDefaultImport()
-    const ns = imp.getNamespaceImport()
-    if (ns && !used.has(ns.getText()))
-      imp.removeNamespaceImport()
-    if (imp.getNamedImports().length === 0 && !imp.getDefaultImport() && !imp.getNamespaceImport())
-      imp.remove()
-  }
-}
-
-function rewriteImportSites(sf: SourceFile, fromAbs: string, toAbs: string, symbol: string): void {
-  const imports: ImportDeclaration[] = sf.getImportDeclarations()
-  for (const imp of imports) {
-    if (!importResolvesTo(imp, fromAbs))
-      continue
-    const namedImports = imp.getNamedImports()
-    const match = namedImports.find(ni => ni.getName() === symbol)
-    const def = imp.getDefaultImport()
-    if (!match && def?.getText() !== symbol)
-      continue
-    const alias = match?.getAliasNode()?.getText()
-    const isTypeOnly = imp.isTypeOnly() || !!match?.isTypeOnly()
-    const oldSpec = imp.getModuleSpecifierValue()
-    const newSpec = computeSpecifier(sf.getFilePath(), toAbs, oldSpec)
-    const existing = sf.getImportDeclarations().find(i => i.getModuleSpecifierValue() === newSpec && i !== imp)
-    if (!existing && isSimpleSoleNamedImport(imp, symbol)) {
-      imp.setModuleSpecifier(newSpec)
-      continue
-    }
-    if (match)
-      match.remove()
-    if (!match && def?.getText() === symbol)
-      imp.removeDefaultImport()
-    if (existing) {
-      existing.addNamedImport({ name: symbol, alias, isTypeOnly: !existing.isTypeOnly() && isTypeOnly })
-    }
-    else {
-      sf.addImportDeclaration({ moduleSpecifier: newSpec, isTypeOnly, namedImports: [{ name: symbol, alias }] })
-    }
-    if (imp.getNamedImports().length === 0 && !imp.getDefaultImport() && !imp.getNamespaceImport())
-      imp.remove()
-  }
-}
-
-function isSimpleSoleNamedImport(imp: ImportDeclaration, symbol: string): boolean {
-  if (imp.getDefaultImport() || imp.getNamespaceImport())
-    return false
-  const named = imp.getNamedImports()
-  if (named.length !== 1)
-    return false
-  const only = named[0]
-  return only?.getName() === symbol && !only.getAliasNode()
-}
-
-const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
-
-function importResolvesTo(imp: ImportDeclaration, targetAbs: string): boolean {
-  const specifier = imp.getModuleSpecifierValue()
-  if (specifier.startsWith('.')) {
-    const base = resolve(dirname(imp.getSourceFile().getFilePath()), specifier)
-    for (const ext of RESOLVE_EXTS) {
-      const candidate = `${base}${ext}`
-      if (candidate === targetAbs && (ext === '' || existsSync(candidate)))
-        return true
-    }
-    for (const ext of RESOLVE_EXTS.slice(1)) {
-      const candidate = join(base, `index${ext}`)
-      if (candidate === targetAbs && existsSync(candidate))
-        return true
-    }
-    return false
-  }
-  return imp.getModuleSpecifierSourceFile()?.getFilePath() === targetAbs
-}
-
-function sourceFilesMatching(project: Project, paths: string[], extra: SourceFile[] = []): SourceFile[] {
-  const out: SourceFile[] = []
-  const seen = new Set<string>()
-  const add = (sf: SourceFile | undefined) => {
-    if (!sf || seen.has(sf.getFilePath()))
-      return
-    seen.add(sf.getFilePath())
-    out.push(sf)
-  }
-  for (const path of paths) add(project.getSourceFile(path))
-  for (const sf of extra) add(sf)
-  return out
-}
-
-function collectMoveVerifyFiles(sourceFiles: SourceFile[], fromSF: SourceFile, toSF: SourceFile): SourceFile[] {
-  const out: SourceFile[] = []
-  const seen = new Set<string>()
-  const add = (sf: SourceFile) => {
-    if (seen.has(sf.getFilePath()))
-      return
-    seen.add(sf.getFilePath())
-    out.push(sf)
-  }
-  add(fromSF)
-  add(toSF)
-  for (const sf of sourceFiles) {
-    if (sf === fromSF || sf === toSF)
-      continue
-    for (const imp of sf.getImportDeclarations()) {
-      if (importResolvesTo(imp, fromSF.getFilePath()) || importResolvesTo(imp, toSF.getFilePath())) {
-        add(sf)
-        break
-      }
-    }
-  }
-  return out
-}
-
-const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
-const WIN_SEP_RE = /\\/g
-
-function computeSpecifier(fromFilePath: string, toFilePath: string, oldSpec: string): string {
-  const hasExt = MODULE_EXT_RE.test(oldSpec)
-  let rel = relative(dirname(fromFilePath), toFilePath).replace(WIN_SEP_RE, '/')
-  if (!hasExt)
-    rel = rel.replace(MODULE_EXT_RE, '')
-  if (!rel.startsWith('.'))
-    rel = `./${rel}`
-  return rel
-}
-
-function splitMultiDeclaratorIfNeeded(sf: SourceFile, symbol: string): void {
-  for (const vs of sf.getVariableStatements()) {
-    if (!vs.hasExportKeyword())
-      continue
-    const decls = vs.getDeclarationList().getDeclarations()
-    if (decls.length < 2)
-      continue
-    if (!decls.some(d => d.getName() === symbol))
-      continue
-    const kind = vs.getDeclarationList().getDeclarationKind()
-    const lines = decls.map((d) => {
-      const name = d.getName()
-      const typeNode = d.getTypeNode()?.getText()
-      const initializer = d.getInitializer()?.getText()
-      const typeAnno = typeNode ? `: ${typeNode}` : ''
-      const init = initializer !== undefined ? ` = ${initializer}` : ''
-      return `export ${kind} ${name}${typeAnno}${init}`
     })
-    const idx = vs.getChildIndex()
-    vs.remove()
-    sf.insertStatements(idx, lines)
-    return
+
+    const fromBasename = fromPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+    const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
+    if (vueAdapter && tsconfigPath && fromBasename && timed(profile, 'vue prefilter', () => vueAdapter.hasFilesContaining(cwd, fromBasename))) {
+      const vueChanges = await timedAsync(profile, 'vue import rewrite', () => vueAdapter.applyImportRewrite(tsconfigPath, cwd, fromAbs, toAbs))
+      for (const vc of vueChanges) {
+        if (!changes.some(c => c.path === vc.path))
+          changes.push(vc)
+      }
+    }
+
+    if (vueAdapter?.autoImportScopes) {
+      const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
+      if (isInsideAutoImportScope(fromAbs, scopes) && !isInsideAutoImportScope(toAbs, scopes) && vueAdapter.addExplicitImports) {
+        const autoImportChanges = timed(profile, 'nuxt auto-import consumers', () => vueAdapter.addExplicitImports!({
+          cwd,
+          symbols: [symbol],
+          toAbs,
+          fromAbs,
+          existingChanges: changes,
+          noScriptError: name => new Error(
+            `ripast move: "${name}" is auto-imported in Nuxt; moving to ${toAbs}`
+            + ` removes it from auto-import scope. Either keep it in`
+            + ` composables/utils/components, or add explicit imports first.`,
+          ),
+        }))
+        mergeFileChanges(changes, autoImportChanges)
+      }
+      if (scopes.size)
+        vueAdapter.filterGeneratedChanges?.(cwd, changes)
+    }
+
+    const regressions: Regression[] = []
+    if (verifyMode !== 'none') {
+      const scriptChanges = changes.filter(c => !isVuePath(c.path))
+      const files = verifyScope(verifyMode, cwd, [fromAbs, toAbs, ...candidatePaths], scriptChanges.map(c => c.path))
+      regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, files)))
+    }
+
+    if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {
+      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes)
+      regressions.push(...vueRegs)
+    }
+
+    return { changes, scanned: new Set([...candidatePaths, fromAbs, toAbs]).size, regressions }
   }
+  finally {
+    server.dispose()
+  }
+}
+
+function findMovableExport(program: any, symbol: string): TopLevelDeclaration | null {
+  return listTopLevelDeclarations(program).find(d =>
+    d.name === symbol && d.exported && !d.isDefault && (d.kind !== 'variable' || d.declaratorCount === 1),
+  ) ?? null
+}
+
+function splitMultiDeclaratorIfNeeded(source: string, path: string, symbol: string): string {
+  const { program } = parseSource(path, source)
+  const target = listTopLevelDeclarations(program).find(d =>
+    d.kind === 'variable' && d.exported && !d.isDefault && d.declaratorCount > 1 && d.name === symbol,
+  )
+  if (!target)
+    return source
+  const lines = (target.node.declarations as any[]).map((declarator) => {
+    const id = declarator.id
+    const typeAnnotation = id.typeAnnotation ? source.slice(id.typeAnnotation.start, id.typeAnnotation.end) : ''
+    const init = declarator.init ? ` = ${source.slice(declarator.init.start, declarator.init.end)}` : ''
+    return `export ${target.variableKind} ${id.name}${typeAnnotation}${init}`
+  })
+  return source.slice(0, target.start) + lines.join('\n') + source.slice(target.end)
 }
 
 interface LocalSiblingDeps {
@@ -479,100 +180,193 @@ interface LocalSiblingDeps {
   exported: string[]
 }
 
-function findLocalSiblingDeps(decl: Node, fromSF: SourceFile, selfName: string): LocalSiblingDeps {
+function findLocalSiblingDeps(program: any, decl: TopLevelDeclaration, selfName: string): LocalSiblingDeps {
+  const siblings = new Map<string, 'exported' | 'local'>()
+  for (const other of listTopLevelDeclarations(program)) {
+    if (other.nameStart === decl.nameStart)
+      continue
+    siblings.set(other.name, other.exported ? 'exported' : 'local')
+  }
+  const locals = localBindingNames(decl.node)
   const nonExported: string[] = []
   const exported: string[] = []
-  const siblings = collectTopLevelSiblingNames(fromSF, decl)
-  const localBindings = collectLocalBindingNames(decl)
   const seen = new Set<string>()
-  decl.forEachDescendant((n) => {
-    if (n.getKind() !== SyntaxKind.Identifier)
-      return
-    const name = n.getText()
-    if (name === selfName || seen.has(name))
-      return
-    if (localBindings.has(name))
-      return
-    const parent = n.getParent()
-    if (!parent)
-      return
-    const pk = parent.getKind()
-    if (pk === SyntaxKind.ImportSpecifier || pk === SyntaxKind.ImportClause || pk === SyntaxKind.NamespaceImport)
-      return
-    if (pk === SyntaxKind.PropertyAssignment || pk === SyntaxKind.ShorthandPropertyAssignment || pk === SyntaxKind.PropertyDeclaration || pk === SyntaxKind.MethodDeclaration || pk === SyntaxKind.MethodSignature || pk === SyntaxKind.PropertySignature)
-      return
-    if (pk === SyntaxKind.PropertyAccessExpression) {
-      const pa = parent as any
-      if (pa.getNameNode?.() === n)
+  walk(decl.node, {
+    enter(node: any, parent: any) {
+      if (node.type !== 'Identifier')
         return
-    }
-    if (pk === SyntaxKind.QualifiedName) {
-      const qn = parent as any
-      if (qn.getRight?.() === n)
+      const name = node.name
+      if (name === selfName || seen.has(name) || locals.has(name))
         return
-    }
-    const sibling = siblings.get(name)
-    if (!sibling)
-      return
-    if (sibling === 'local') {
+      if (isPropertyNamePosition(node, parent))
+        return
+      const sibling = siblings.get(name)
+      if (!sibling)
+        return
       seen.add(name)
-      nonExported.push(name)
-    }
-    else {
-      seen.add(name)
-      exported.push(name)
-    }
+      if (sibling === 'local')
+        nonExported.push(name)
+      else
+        exported.push(name)
+    },
   })
   return { nonExported, exported }
 }
 
-function collectTopLevelSiblingNames(fromSF: SourceFile, movedDecl: Node): Map<string, 'exported' | 'local'> {
-  const out = new Map<string, 'exported' | 'local'>()
-  for (const stmt of fromSF.getStatements()) {
-    if (stmt === movedDecl)
+interface UsedImport {
+  specifier: string
+  spec: ImportSpec
+}
+
+function collectUsedImports(source: string, path: string, program: any, decl: TopLevelDeclaration, selfName: string): UsedImport[] {
+  const referenced = new Set<string>()
+  walk(decl.node, {
+    enter(node: any) {
+      if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') && node.name !== selfName)
+        referenced.add(node.name)
+    },
+  })
+  const out: UsedImport[] = []
+  for (const imp of listImports(source, path, program)) {
+    if (imp.sideEffectOnly)
       continue
-    const exported = (stmt as any).hasExportKeyword?.() ? 'exported' : 'local'
-    if (stmt.getKind() === SyntaxKind.VariableStatement) {
-      const vs = stmt.asKindOrThrow(SyntaxKind.VariableStatement)
-      for (const decl of vs.getDeclarationList().getDeclarations())
-        out.set(decl.getName(), exported)
-      continue
-    }
-    const name = (stmt as any).getName?.()
-    if (typeof name === 'string' && name)
-      out.set(name, exported)
+    const named = imp.named
+      .filter(n => referenced.has(n.alias ?? n.name))
+      .map(n => ({ name: n.name, alias: n.alias, isTypeOnly: imp.isTypeOnly || n.isTypeOnly }))
+    const defaultImport = imp.defaultImport && referenced.has(imp.defaultImport.name) ? imp.defaultImport.name : undefined
+    const namespaceImport = imp.namespaceImport && referenced.has(imp.namespaceImport.name) ? imp.namespaceImport.name : undefined
+    if (named.length || defaultImport || namespaceImport)
+      out.push({ specifier: imp.specifier, spec: { namedImports: named, defaultImport, namespaceImport, isTypeOnly: imp.isTypeOnly } })
   }
   return out
 }
 
-function collectLocalBindingNames(decl: Node): Set<string> {
-  const out = new Set<string>()
-  decl.forEachDescendant((n) => {
-    const parent = n.getParent()
-    if (!parent)
-      return
-    if (parent === decl)
-      return
-    const pk = parent.getKind()
-    if (pk === SyntaxKind.VariableDeclaration || pk === SyntaxKind.Parameter || pk === SyntaxKind.TypeParameter) {
-      const name = (parent as any).getName?.()
-      if (typeof name === 'string')
-        out.add(name)
-      return
-    }
-    if (
-      pk === SyntaxKind.FunctionDeclaration
-      || pk === SyntaxKind.FunctionExpression
-      || pk === SyntaxKind.ClassDeclaration
-      || pk === SyntaxKind.ClassExpression
-      || pk === SyntaxKind.InterfaceDeclaration
-      || pk === SyntaxKind.TypeAliasDeclaration
-      || pk === SyntaxKind.EnumDeclaration
-    ) {
-      const nameNode = (parent as any).getNameNode?.()
-      if (nameNode === n)
-        out.add(n.getText())
-    }
+/** A relative specifier written from `fromAbs`, rewritten so it resolves the same target from `toAbs`. */
+function rebaseSpecifier(specifier: string, fromAbs: string, toAbs: string): string {
+  if (!specifier.startsWith('.'))
+    return specifier
+  const target = resolve(dirname(fromAbs), specifier)
+  return computeSpecifier(toAbs, target, specifier)
+}
+
+function countReferencesOutside(program: any, decl: TopLevelDeclaration, symbol: string): number {
+  let count = 0
+  walk(program, {
+    enter(node: any, parent: any) {
+      if (node.type !== 'Identifier' || node.name !== symbol)
+        return
+      if (parent && IMPORT_SPECIFIER_PARENTS.has(parent.type))
+        return
+      if (node.start >= decl.start && node.start < decl.end)
+        return
+      count++
+    },
   })
-  return out
+  return count
+}
+
+async function rewriteImportSites(server: TsServer, path: string, source: string, fromAbs: string, toAbs: string, symbol: string): Promise<string> {
+  const program = parseProgram(path, source)
+  const imports = listImports(source, path, program)
+  if (!imports.length)
+    return source
+  const working = new Map<ImportInfo, ImportInfo>()
+  const copyOf = (imp: ImportInfo): ImportInfo => {
+    let copy = working.get(imp)
+    if (!copy) {
+      copy = { ...imp, named: [...imp.named] }
+      working.set(imp, copy)
+    }
+    return copy
+  }
+  const inserts: string[] = []
+  for (const imp of imports) {
+    if (imp.sideEffectOnly || !(await importResolvesTo(server, path, imp, fromAbs)))
+      continue
+    const current = copyOf(imp)
+    const match = current.named.find(n => n.name === symbol)
+    const isDefault = current.defaultImport?.name === symbol
+    if (!match && !isDefault)
+      continue
+    const alias = match?.alias
+    const isTypeOnly = current.isTypeOnly || !!match?.isTypeOnly
+    const newSpec = computeSpecifier(path, toAbs, current.specifier)
+    // A value binding must not land in an `import type` statement; a type
+    // binding can join either kind (inline `type` on a value import).
+    const existing = imports.find(i => i.specifier === newSpec && i !== imp && !i.sideEffectOnly && (isTypeOnly || !i.isTypeOnly))
+    if (!existing && isSimpleSoleNamedImport(current, symbol)) {
+      current.specifier = newSpec
+      continue
+    }
+    if (match)
+      current.named = current.named.filter(n => n !== match)
+    if (isDefault)
+      current.defaultImport = undefined
+    if (existing) {
+      const target = copyOf(existing)
+      if (!target.named.some(n => n.name === symbol))
+        target.named.push({ name: symbol, alias, isTypeOnly: !target.isTypeOnly && isTypeOnly, localStart: -1 })
+    }
+    else {
+      inserts.push(renderImport({
+        specifier: newSpec,
+        quote: current.quote,
+        semicolon: current.semicolon,
+        isTypeOnly,
+        named: [{ name: symbol, alias, isTypeOnly: false, localStart: -1 }],
+        sideEffectOnly: false,
+      }))
+    }
+  }
+  const replacements = new Map<ImportInfo, string | null>()
+  for (const [imp, current] of working) {
+    if (isImportEmpty(current)) {
+      replacements.set(imp, null)
+      continue
+    }
+    const text = renderImport(current)
+    if (text !== source.slice(imp.start, imp.end))
+      replacements.set(imp, text)
+  }
+  if (!replacements.size && !inserts.length)
+    return source
+  return rewriteImports(source, imports, replacements, inserts)
+}
+
+function isSimpleSoleNamedImport(imp: ImportInfo, symbol: string): boolean {
+  if (imp.defaultImport || imp.namespaceImport || imp.named.length !== 1)
+    return false
+  const only = imp.named[0]
+  return only.name === symbol && !only.alias
+}
+
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
+
+/** Absolute file a relative specifier points at from `fromFile`, probing extensions and index files. */
+function relativeImportTarget(fromFile: string, specifier: string): string | null {
+  if (!specifier.startsWith('.'))
+    return null
+  const base = resolve(dirname(fromFile), specifier)
+  for (const ext of RESOLVE_EXTS) {
+    const candidate = `${base}${ext}`
+    if (existsSync(candidate))
+      return candidate
+  }
+  for (const ext of RESOLVE_EXTS.slice(1)) {
+    const candidate = join(base, `index${ext}`)
+    if (existsSync(candidate))
+      return candidate
+  }
+  return base
+}
+
+async function importResolvesTo(server: TsServer, path: string, imp: ImportInfo, targetAbs: string): Promise<boolean> {
+  if (imp.specifier.startsWith('.'))
+    return relativeImportTarget(path, imp.specifier) === targetAbs
+  // Path aliases and packages: ask the server where the binding is declared.
+  const offset = imp.named[0]?.localStart ?? imp.defaultImport?.start ?? imp.namespaceImport?.start
+  if (offset === undefined)
+    return false
+  const definitions = await server.definition(path, offset)
+  return definitions.some(d => d.path === targetAbs)
 }

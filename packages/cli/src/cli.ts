@@ -191,7 +191,6 @@ const replaceCmd = defineCommand({
   args: {
     'from': { type: 'positional', required: true },
     'to': { type: 'positional', required: true },
-    'tsconfig': { type: 'string' },
     'glob': globArg,
     'target-scope': { type: 'string', description: 'Restrict target symbol resolution to a single file when multiple files export the same name.' },
     'apply': applyArg,
@@ -203,7 +202,6 @@ const replaceCmd = defineCommand({
   async run({ args }) {
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
     const r = await runReplace(args.from as string, args.to as string, {
-      tsconfig: args.tsconfig as string | undefined,
       glob: args.glob ? (args.glob as string).split(',') : undefined,
       verify: verifyMode,
       targetScope: args['target-scope'] as string | undefined,
@@ -243,15 +241,13 @@ const unusedCmd = defineCommand({
   args: {
     glob: globArg,
     exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to exported (unused local declarations are already caught by tsc noUnusedLocals).' },
-    tsconfig: { type: 'string' },
     json: jsonArg,
   },
-  run({ args }) {
+  async run({ args }) {
     const exportFilter = args.exports == null ? 'exported' : resolveExportFilter(args.exports)
-    const unused = buildUnusedDeclarations({
+    const unused = await buildUnusedDeclarations({
       glob: args.glob ? (args.glob as string).split(',') : undefined,
       exports: exportFilter,
-      tsconfig: args.tsconfig as string | undefined,
     })
     process.stdout.write(`${formatUnusedDeclarations(unused, !!args.json)}\n`)
   },
@@ -287,7 +283,6 @@ const deleteCmd = defineCommand({
   args: {
     symbol: { type: 'positional', required: true },
     from: { type: 'string', required: true, description: 'Source file path.' },
-    tsconfig: { type: 'string' },
     apply: applyArg,
     verify: verifyArg,
     verifyMode: verifyModeArg,
@@ -297,7 +292,6 @@ const deleteCmd = defineCommand({
   async run({ args }) {
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
     const r = await runDelete(args.symbol as string, args.from as string, {
-      tsconfig: args.tsconfig as string | undefined,
       verify: verifyMode,
     })
     emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
