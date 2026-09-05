@@ -46,7 +46,7 @@ npx -y -p @ripast/cli -p @ripast/vue ripast rename useStore useAppStore --apply
 
 Requires `rg` (ripgrep) on PATH and Node 22.13+.
 
-All mutating commands default to **dry-run** (print a unified diff with a `N files, +A -R lines` header). Pass `--apply` to write. `--verify` (on by default for rename/replace/move/delete) runs a ts-morph post-transform typecheck and refuses `--apply` if new diagnostics appear; pass `--no-verify` to skip. Use `--verify-mode touched|project|none` to choose scoped, full-project, or no diagnostics. Pass `--json` on rename/replace/move/delete for machine-readable output (`{ applied, dryRun, blockedByRegression, scanned, summary, changes[], regressions[] }`).
+All mutating commands default to **dry-run** (print a unified diff with a `N files, +A -R lines` header). Pass `--apply` to write. `--verify` (on by default for rename/replace/move/delete) runs a post-transform typecheck and refuses `--apply` if new diagnostics appear; pass `--no-verify` to skip. Use `--verify-mode touched|project|none` to choose scoped, full-project, or no diagnostics. Pass `--json` on rename/replace/move/delete for machine-readable output (`{ applied, dryRun, blockedByRegression, scanned, summary, changes[], regressions[] }`).
 
 All commands accept `--profile auto|agent|full`. `auto` uses `std-env`'s `isAgent`; detected agents get compact, low-token summaries by default. Use `--profile full` when you need full scan rows or dry-run diffs, and `--json` when another tool will parse the result.
 
@@ -96,7 +96,7 @@ ripast unused --exports all --json
 
 ### `ripast rename <from> <to> [--scope file] [--all] [--tsconfig path] [--apply] [--no-verify] [--verify-mode touched|project|none] [--profile auto|agent|full] [--json]`
 
-Scope-aware rename via ts-morph. Finds the declaration, TypeScript propagates to every reference (imports, JSX, type positions, aliased imports). Object property keys with the same spelling are NOT touched unless they genuinely reference the same symbol.
+Scope-aware rename via the native TypeScript 7 language server. Finds the declaration, TypeScript propagates to every reference (imports, JSX, type positions, aliased imports). Object property keys with the same spelling are NOT touched unless they genuinely reference the same symbol.
 
 ```bash
 ripast rename useStore useAppStore --apply
@@ -234,11 +234,11 @@ Coverage spans: kind classification, scan dependency graph output, Vue SFC scrip
 
 ## Gotchas
 
-- **Vue SFC** — `scan` covers script + template (interpolations, `v-if`/`v-for`/`:prop` expressions). `rename` and `move` propagate into `<script>` blocks via Volar, then a template-AST post-pass sweeps remaining template references: component tag usage (`<MyButton>` and `<my-button>`, casing preserved) and pure-template-only identifier refs (used in `` or `:prop` but never in script). The post-pass respects `v-for` shadowing and skips string literals, member-access keys, and object-property keys. `<style>` references are out of scope. Pass `--no-vue` to force pure ts-morph behavior if Volar misbehaves.
+- **Vue SFC** — `scan` covers script + template (interpolations, `v-if`/`v-for`/`:prop` expressions). `rename` and `move` propagate into `<script>` blocks via Volar, then a template-AST post-pass sweeps remaining template references: component tag usage (`<MyButton>` and `<my-button>`, casing preserved) and pure-template-only identifier refs (used in `` or `:prop` but never in script). The post-pass respects `v-for` shadowing and skips string literals, member-access keys, and object-property keys. `<style>` references are out of scope. Pass `--no-vue` to skip the Volar pass if it misbehaves.
 - **Svelte** — not supported.
 - **`move` auto-splits multi-declarators** — `export const a = 1, b = 2` with `move a` splits the statement first. The leftover `b` stays put.
 - **`move` refuses on local non-exported deps** — if the moved symbol depends on a non-exported helper in the same file, `move` aborts with an actionable error. Export the helper first, or move both.
-- **ts-morph on large monorepos** — loads the full TS project; expect 2-3 s startup for `rename`/`move`. `--no-verify` halves the time.
+- **Large monorepos** — `rename` runs on the native TypeScript server and starts in milliseconds. `move`, `replace`, and `delete` still load the full TS project through ts-morph; expect 2-3 s startup. `--no-verify` halves the time.
 - **Always commit before `--apply`** — rollback is `git checkout .`.
 
 ## What this skill is NOT for

@@ -43,9 +43,11 @@ export type {
   UnusedDeclarationFile,
   UnusedDeclarations,
 } from './scan.ts'
+export { applyLspEdits, resolveNativeTsc, startTsServer } from './ts-server.ts'
+export type { LspDiagnostic, LspLocation, LspTextEdit, TsServer, TsServerOptions } from './ts-server.ts'
 export { printDiffs, summarize, writeChanges } from './util.ts'
 export type { FileChange } from './util.ts'
-export { findRegressions, formatRegressions, snapshotDiagnostics } from './verify.ts'
+export { findRegressions, findRegressionsWithServer, formatRegressions, snapshotDiagnostics } from './verify.ts'
 export type { DiagnosticSnapshot, Regression } from './verify.ts'
 export { runVueTemplateUnwrap, runVueTemplateWrap } from './vue-template-wrap.ts'
 export type { VueTemplateWrapOptions, VueTemplateWrapResult } from './vue-template-wrap.ts'

@@ -1,4 +1,6 @@
 import type { Diagnostic, Project, SourceFile } from 'ts-morph'
+import type { LspDiagnostic, TsServer } from './ts-server.ts'
+import type { FileChange } from './util.ts'
 import { relative } from 'node:path'
 
 export interface Regression {
@@ -75,6 +77,52 @@ function flattenMessage(msg: any): string {
     return parts.filter(Boolean).join(' | ')
   }
   return String(msg)
+}
+
+/**
+ * Diagnostics-based regression check against the native TypeScript server.
+ * Pulls errors for `files` with on-disk content, pushes each change's `after`
+ * text as an in-memory overlay, pulls again, and reports diagnostics whose
+ * count went up. Nothing touches disk.
+ */
+export async function findRegressionsWithServer(server: TsServer, changes: FileChange[], files: string[]): Promise<Regression[]> {
+  const scope = [...new Set([...files, ...changes.map(c => c.path)])]
+  const before = await server.diagnostics(scope)
+  const baseline = new Map<string, number>()
+  for (const [path, items] of before) {
+    for (const d of items) {
+      const key = lspDiagnosticKey(path, d)
+      baseline.set(key, (baseline.get(key) ?? 0) + 1)
+    }
+  }
+
+  for (const change of changes)
+    server.open(change.path, change.after)
+
+  const after = await server.diagnostics(scope)
+  const seen = new Map<string, number>()
+  const out: Regression[] = []
+  for (const [path, items] of after) {
+    for (const d of items) {
+      const key = lspDiagnosticKey(path, d)
+      const count = (seen.get(key) ?? 0) + 1
+      seen.set(key, count)
+      if (count <= (baseline.get(key) ?? 0))
+        continue
+      out.push({
+        file: path,
+        line: d.range.start.line + 1,
+        col: d.range.start.character + 1,
+        code: typeof d.code === 'number' ? d.code : Number(d.code) || 0,
+        message: d.message,
+      })
+    }
+  }
+  return out
+}
+
+function lspDiagnosticKey(path: string, d: LspDiagnostic): string {
+  return `${path}::${d.code ?? ''}::${d.message}`
 }
 
 export function formatRegressions(regressions: Regression[], cwd: string): string {

@@ -50,7 +50,7 @@ const globArg = { type: 'string' as const, description: 'File glob(s), comma-sep
 const applyArg = { type: 'boolean' as const, default: false, description: 'Write changes. Default prints a unified diff.' }
 const verifyArg = { type: 'boolean' as const, default: true, description: 'Typecheck post-transform; refuse --apply on regression. Disable with --no-verify.' }
 const verifyModeArg = { type: 'string' as const, description: 'Verification mode: touched, project, or none. Defaults to touched; --no-verify maps to none.' }
-const vueArg = { type: 'boolean' as const, default: true, description: 'Enable Volar pass for .vue files. Disable with --no-vue to force pure ts-morph behavior.' }
+const vueArg = { type: 'boolean' as const, default: true, description: 'Enable Volar pass for .vue files. Disable with --no-vue to skip the Volar pass.' }
 const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit machine-readable JSON (suppresses diff/summary text).' }
 const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto uses std-env isAgent.' }
 
@@ -157,7 +157,7 @@ const scanCmd = defineCommand({
 })
 
 const renameCmd = defineCommand({
-  meta: { name: 'rename', description: 'Scope-aware symbol rename via ts-morph (handles type-only imports, shadowing, JSX).' },
+  meta: { name: 'rename', description: 'Scope-aware symbol rename via the native TypeScript server (handles type-only imports, shadowing, JSX).' },
   args: {
     from: { type: 'positional', required: true },
     to: { type: 'positional', required: true },

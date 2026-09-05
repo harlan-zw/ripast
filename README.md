@@ -19,11 +19,11 @@
 ## Features
 
 - 🤖 **Built for agents**: Compact summaries, `--json` output, `--profile agent` auto-detect via `std-env`. Stop burning tokens reading 50 files to rename one symbol.
-- 🧠 **Semantic, not textual**: ts-morph drives renames so shadowed identifiers, type-only imports, JSX/TSX refs, re-exports, and aliased imports all resolve correctly. No more partial renames.
+- 🧠 **Semantic, not textual**: the native TypeScript 7 language server drives renames so shadowed identifiers, type-only imports, JSX/TSX refs, re-exports, and aliased imports all resolve correctly. No more partial renames.
 - 🎯 **JS Frameworks**: First-class TypeScript / JavaScript, React + Solid (JSX/TSX), and Vue + Nuxt SFCs. Volar bridge propagates renames into `<script>` blocks; template-AST post-pass rewrites `<MyButton>` / `<my-button>` tags and `v-if` / `:prop` expressions. Svelte on the roadmap.
 - 🛡️ **Dry-run by default**: Every mutating command prints a unified diff with a `N files, +A -R lines` header. Pass `--apply` to write.
 - ✅ **--verify catches regressions**: Post-transform typecheck refuses `--apply` if new diagnostics appear. Scoped to touched files for speed.
-- ⚡ **ripgrep-prefiltered**: Only files containing the token are loaded into ts-morph. Median `move` on a 500-file fixture runs in ~37ms.
+- ⚡ **ripgrep-prefiltered**: Only files containing the token are parsed. On a 500-file fixture, median `rename` with verify runs in ~95ms and `move` in ~37ms.
 
 ## What is ripast?
 
@@ -37,12 +37,12 @@ Surgical text edits are slow and miss things: shadowed identifiers, type-only im
 
 | Stack | Status | Notes |
 | --- | --- | --- |
-| TypeScript / JavaScript | ✅ Full | ts-morph engine. Type-only imports, namespace imports, re-exports, decorators. |
+| TypeScript / JavaScript | ✅ Full | Native TypeScript 7 language server for `rename`; ts-morph for `move`, `replace`, `delete`. Type-only imports, namespace imports, re-exports, decorators. |
 | React (JSX / TSX) | ✅ Full | JSX component refs, hooks, type props all rename together. |
 | Solid (JSX / TSX) | ✅ Full | Same JSX engine path as React. |
 | Vue 3 SFC | ✅ Full | `<script setup>` + `<template>` (interpolations, `v-if`, `v-for`, `:prop`) + component tag PascalCase ↔ kebab-case. |
 | Nuxt | ✅ Full | Vue SFCs plus auto-imported `composables/`, `utils/`, and `components/`. Moving a symbol out of Nuxt auto-import scope inserts explicit imports in consumers, or refuses when a Vue file has no script block to receive one. |
-| Svelte | 🚧 Roadmap | Script-block rename works via ts-morph; markup rewrites need `svelte/compiler` integration. |
+| Svelte | 🚧 Roadmap | Script-block rename works via the TypeScript server; markup rewrites need `svelte/compiler` integration. |
 
 ### Why not just...
 
@@ -73,7 +73,7 @@ ripast scan useStore --graph mermaid
 <details>
 <summary><b>✏️ Rename a symbol across the repo</b></summary>
 
-Scope-aware rename via ts-morph. TypeScript propagates to every reference (imports, JSX, type positions, aliased imports). Object property keys with the same spelling are NOT touched unless they reference the same symbol.
+Scope-aware rename via the native TypeScript 7 language server. TypeScript propagates to every reference (imports, JSX, type positions, aliased imports). Object property keys with the same spelling are NOT touched unless they reference the same symbol.
 
 ```bash
 # Dry-run (default) — prints diff + summary
@@ -277,7 +277,7 @@ ripast css-class-rename --map tokens.json --apply
 | `ripast scan <pattern>` | Classify every occurrence (identifier vs string vs property vs JSX). Optional `--graph mermaid\|dot`. |
 | `ripast tree` | Print a project declaration tree, grouped by file. |
 | `ripast unused` | Find unreferenced top-level declarations. |
-| `ripast rename <from> <to>` | Scope-aware symbol rename via ts-morph. |
+| `ripast rename <from> <to>` | Scope-aware symbol rename via the native TypeScript server. |
 | `ripast replace <from> <to>` | Replace an imported symbol with another project export; rewrites imports and references. |
 | `ripast move <symbol> --from <a> --to <b>` | Move a top-level export and rewrite every import site. |
 | `ripast delete <symbol> --from <file>` | Delete an unused top-level declaration; refuses if references remain. |
@@ -300,7 +300,7 @@ const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cw
 
 Exports cover `runRename`, `runReplace`, `runMove`, `runDelete`, `runRenameFile`, `runCssClassRename`, `runCssClassScan`, `scan`, `buildScanGraph`, `buildDeclarationTree`, `buildUnusedDeclarations`, plus formatters and the `writeChanges` helper.
 
-For batching, both `runRename` and `runMove` accept an existing ts-morph `project` so callers pay the project setup cost once.
+For batching, `runMove` accepts an existing ts-morph `project` so callers pay the project setup cost once. `runRename` starts the native TypeScript server per call; it is cheap enough that batching is not needed.
 
 ## Recipes & limitations
 
@@ -354,7 +354,8 @@ done
 
 ## Credits
 
-- [ts-morph](https://github.com/dsherret/ts-morph): semantic engine for the TypeScript projects.
+- [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind `rename` and its `--verify`.
+- [ts-morph](https://github.com/dsherret/ts-morph): semantic engine for `move`, `replace`, and `delete`.
 - [Volar](https://github.com/volarjs/volar.js) + [@vue/language-tools](https://github.com/vuejs/language-tools): cross-`.vue` rename and diagnostics.
 - [oxc](https://github.com/oxc-project/oxc): fast parser for template-expression classification.
 - [ripgrep](https://github.com/BurntSushi/ripgrep): the candidate-file oracle.
