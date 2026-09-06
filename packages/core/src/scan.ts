@@ -3,8 +3,9 @@ import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
-import { Project, SyntaxKind } from 'ts-morph'
-import { findTsconfig } from './project.ts'
+import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifierRanges, parseSource } from './declarations.ts'
+import { listImports } from './imports.ts'
+import { startTsServer } from './ts-server.ts'
 import { parseFile, posToLineCol, rgFiles } from './util.ts'
 import { extractTemplateExpressions } from './vue-template.ts'
 
@@ -195,7 +196,7 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
   return { files: out }
 }
 
-export function buildUnusedDeclarations(opts: ScanOptions & { exports?: ExportFilter, tsconfig?: string, project?: Project } = {}): UnusedDeclarations {
+export async function buildUnusedDeclarations(opts: ScanOptions & { exports?: ExportFilter } = {}): Promise<UnusedDeclarations> {
   const cwd = opts.cwd ?? process.cwd()
   const exportFilter = opts.exports ?? 'local'
   const candidates = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
@@ -203,56 +204,47 @@ export function buildUnusedDeclarations(opts: ScanOptions & { exports?: ExportFi
   const tree = buildDeclarationTreeForPaths(cwd, candidates, exportFilter)
   const treeByFile = new Map(tree.files.map(file => [resolve(cwd, file.file), file]))
   const potentialReferenceNames = buildPotentialReferenceNames(candidates, cwd)
-  const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
-  const project = opts.project ?? (tsconfigPath
-    ? new Project({ tsConfigFilePath: tsconfigPath, skipAddingFilesFromTsConfig: true, compilerOptions: { allowJs: true, checkJs: true } })
-    : new Project({ compilerOptions: { allowJs: true, checkJs: true } }))
+  const importedNames = buildImportedNames(candidates)
 
-  for (const path of candidates) {
-    if (!project.getSourceFile(path))
-      project.addSourceFileAtPathIfExists(path)
-  }
-
-  const sourceFiles = candidates.flatMap((path) => {
-    const sourceFile = project.getSourceFile(path)
-    return sourceFile ? [sourceFile] : []
-  })
-  const symbolDeclarations = new Map<string, TopLevelSymbolDeclaration[]>()
-  const candidateKeys = new Set<string>()
-  const candidateNames = new Set<string>()
-  for (const path of candidates) {
-    const sourceFile = project.getSourceFile(path)
-    const treeFile = treeByFile.get(path)
-    if (!sourceFile || !treeFile)
-      continue
-    for (const decl of collectTopLevelSymbolDeclarations(sourceFile)) {
-      if (exportFilter === 'exported' && !decl.exported)
-        continue
-      if (exportFilter === 'local' && decl.exported)
-        continue
-      const declarations = symbolDeclarations.get(path) ?? []
-      declarations.push(decl)
-      symbolDeclarations.set(path, declarations)
-      if (potentialReferenceNames.has(decl.name)) {
-        for (const key of decl.keys)
-          candidateKeys.add(key)
-        candidateNames.add(decl.name)
-      }
-    }
-  }
-
-  const referencedKeys = buildReferencedTopLevelSymbolKeys(sourceFiles, candidateKeys, candidateNames)
   const unusedByFile = new Map<string, Set<string>>()
-  for (const [path, declarations] of symbolDeclarations) {
-    for (const decl of declarations) {
-      if (!potentialReferenceNames.has(decl.name)) {
-        addUnusedName(unusedByFile, path, decl.name)
+  const server = await startTsServer(cwd)
+  try {
+    for (const path of candidates) {
+      if (!treeByFile.has(path))
         continue
+      const { program } = parseSource(path, readFileSync(path, 'utf8'))
+      const declaredExports = localExportSpecifierNames(program)
+      const exportRanges = localExportSpecifierRanges(program)
+      for (const decl of listTopLevelDeclarations(program)) {
+        const exported = decl.exported || declaredExports.has(decl.name)
+        if (exportFilter === 'exported' && !exported)
+          continue
+        if (exportFilter === 'local' && exported)
+          continue
+        if (!potentialReferenceNames.has(decl.name)) {
+          addUnusedName(unusedByFile, path, decl.name)
+          continue
+        }
+        // An explicit import of the name from this file is a reference, even
+        // when the importer sits outside the server's project (e.g. .js files
+        // without allowJs).
+        if (importedNames.get(path)?.has(decl.name))
+          continue
+        const references = await server.references(path, decl.nameStart)
+        const referenced = references.some((ref) => {
+          if (ref.path !== path)
+            return true
+          if (ref.start >= decl.start && ref.start < decl.end)
+            return false
+          return !exportRanges.some(range => ref.start >= range.start && ref.start < range.end)
+        })
+        if (!referenced)
+          addUnusedName(unusedByFile, path, decl.name)
       }
-      if (decl.keys.some(key => referencedKeys.has(key)))
-        continue
-      addUnusedName(unusedByFile, path, decl.name)
     }
+  }
+  finally {
+    server.dispose()
   }
 
   const files: UnusedDeclarationFile[] = []
@@ -271,6 +263,43 @@ function addUnusedName(unusedByFile: Map<string, Set<string>>, path: string, nam
   const names = unusedByFile.get(path) ?? new Set<string>()
   names.add(name)
   unusedByFile.set(path, names)
+}
+
+/** Names each file exports that some other candidate imports or re-exports from it through a relative specifier. */
+function buildImportedNames(paths: string[]): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  const add = (target: string, name: string): void => {
+    const names = out.get(target) ?? new Set<string>()
+    names.add(name)
+    out.set(target, names)
+  }
+  for (const path of paths) {
+    const source = readFileSync(path, 'utf8')
+    let program: any
+    try {
+      program = parseSync(path, source).program
+    }
+    catch {
+      continue
+    }
+    for (const imp of listImports(source, path, program)) {
+      const target = resolveModuleSpecifier(path, imp.specifier)
+      if (!target)
+        continue
+      for (const n of imp.named) add(target, n.name)
+      if (imp.defaultImport)
+        add(target, 'default')
+    }
+    for (const statement of program.body ?? []) {
+      if (statement.type !== 'ExportNamedDeclaration' || !statement.source)
+        continue
+      const target = resolveModuleSpecifier(path, statement.source.value)
+      if (!target)
+        continue
+      for (const spec of statement.specifiers ?? []) add(target, spec.local?.name ?? spec.local?.value)
+    }
+  }
+  return out
 }
 
 function scanTemplate(
@@ -506,14 +535,6 @@ export function formatAgentDeclarationTree(tree: DeclarationTree, exportFilter: 
   return lines.join('\n')
 }
 
-interface TopLevelSymbolDeclaration {
-  name: string
-  nameNode: any
-  node: any
-  keys: string[]
-  exported: boolean
-}
-
 interface SourceRange {
   start: number
   end: number
@@ -592,137 +613,6 @@ function pushBindingNameRange(ranges: SourceRange[], node: any, offset: number):
     return
   }
   pushNodeRange(ranges, node, offset)
-}
-
-function collectTopLevelSymbolDeclarations(sourceFile: any): TopLevelSymbolDeclaration[] {
-  const declaredExports = tsMorphNamedExportSpecifiers(sourceFile)
-  const out: TopLevelSymbolDeclaration[] = []
-  for (const statement of sourceFile.getStatements()) {
-    const kind = statement.getKind()
-    if (kind === SyntaxKind.FunctionDeclaration
-      || kind === SyntaxKind.ClassDeclaration
-      || kind === SyntaxKind.InterfaceDeclaration
-      || kind === SyntaxKind.TypeAliasDeclaration
-      || kind === SyntaxKind.EnumDeclaration) {
-      const nameNode = statement.getNameNode?.()
-      const name = nameNode?.getText?.()
-      if (name)
-        out.push({ name, nameNode, node: statement, keys: topLevelSymbolKeys(statement, nameNode), exported: !!statement.isExported?.() || declaredExports.has(name) })
-      continue
-    }
-    if (kind === SyntaxKind.VariableStatement) {
-      const exported = !!statement.isExported?.()
-      for (const decl of statement.getDeclarationList().getDeclarations()) {
-        const nameNode = decl.getNameNode()
-        if (nameNode.getKind() !== SyntaxKind.Identifier)
-          continue
-        const name = nameNode.getText()
-        out.push({ name, nameNode, node: decl, keys: topLevelSymbolKeys(decl, nameNode), exported: exported || declaredExports.has(name) })
-      }
-    }
-  }
-  return out
-}
-
-function topLevelSymbolKeys(node: any, nameNode: any): string[] {
-  const keys = new Set<string>([nodeKey(node), nodeKey(nameNode)])
-  for (const key of symbolDeclarationKeys(nameNode))
-    keys.add(key)
-  return [...keys]
-}
-
-function buildReferencedTopLevelSymbolKeys(sourceFiles: any[], candidateKeys: Set<string>, candidateNames: Set<string>): Set<string> {
-  const out = new Set<string>()
-  if (!candidateKeys.size)
-    return out
-  for (const sourceFile of sourceFiles) {
-    sourceFile.forEachDescendant((node: any) => {
-      if (node.getKind?.() !== SyntaxKind.Identifier)
-        return
-      if (!candidateNames.has(node.getText?.()))
-        return
-      if (isTopLevelDeclarationNameNode(node) || isLocalExportSpecifierNameNode(node))
-        return
-      for (const key of symbolDeclarationKeys(node)) {
-        if (candidateKeys.has(key))
-          out.add(key)
-      }
-    })
-  }
-  return out
-}
-
-function symbolDeclarationKeys(node: any): Set<string> {
-  const out = new Set<string>()
-  addSymbolDeclarationKeys(out, node.getSymbol?.())
-  const parent = node.getParent?.()
-  if (parent?.getKind?.() === SyntaxKind.ShorthandPropertyAssignment)
-    addSymbolDeclarationKeys(out, parent.getValueSymbol?.())
-  try {
-    addSymbolDeclarationKeys(out, node.getSymbol?.()?.getAliasedSymbol?.())
-  }
-  catch {}
-  return out
-}
-
-function addSymbolDeclarationKeys(out: Set<string>, symbol: any): void {
-  for (const declaration of symbol?.getDeclarations?.() ?? [])
-    out.add(nodeKey(declaration))
-}
-
-function nodeKey(node: any): string {
-  return `${node.getSourceFile().getFilePath()}:${node.getStart()}`
-}
-
-function isTopLevelDeclarationNameNode(node: any): boolean {
-  const parent = node.getParent?.()
-  if (!parent)
-    return false
-  const parentKind = parent.getKind?.()
-  if (parentKind === SyntaxKind.VariableDeclaration)
-    return parent.getNameNode?.() === node && parent.getParent?.()?.getParent?.()?.getParent?.()?.getKind?.() === SyntaxKind.SourceFile
-  if (
-    parentKind === SyntaxKind.FunctionDeclaration
-    || parentKind === SyntaxKind.ClassDeclaration
-    || parentKind === SyntaxKind.InterfaceDeclaration
-    || parentKind === SyntaxKind.TypeAliasDeclaration
-    || parentKind === SyntaxKind.EnumDeclaration
-  ) {
-    return parent.getNameNode?.() === node && isTopLevelStatement(parent)
-  }
-  return false
-}
-
-function isTopLevelStatement(node: any): boolean {
-  const parent = node.getParent?.()
-  if (!parent)
-    return false
-  if (parent.getKind?.() === SyntaxKind.SourceFile)
-    return true
-  return parent.getKind?.() === SyntaxKind.ExportDeclaration && parent.getParent?.()?.getKind?.() === SyntaxKind.SourceFile
-}
-
-function isLocalExportSpecifierNameNode(node: any): boolean {
-  const parent = node.getParent?.()
-  if (!parent || parent.getKind?.() !== SyntaxKind.ExportSpecifier)
-    return false
-  const exportDeclaration = parent.getParent?.()?.getParent?.()
-  return exportDeclaration?.getKind?.() === SyntaxKind.ExportDeclaration
-    && !exportDeclaration.getModuleSpecifierValue?.()
-}
-
-function tsMorphNamedExportSpecifiers(sourceFile: any): Set<string> {
-  const out = new Set<string>()
-  for (const statement of sourceFile.getStatements()) {
-    if (statement.getKind() !== SyntaxKind.ExportDeclaration || statement.getModuleSpecifierValue?.())
-      continue
-    for (const spec of statement.getNamedExports?.() ?? []) {
-      const local = spec.getNameNode?.()?.getText?.()
-      if (local)
-        out.add(local)
-    }
-  }
-  return out
 }
 
 function importSpecifiers(program: any): string[] {

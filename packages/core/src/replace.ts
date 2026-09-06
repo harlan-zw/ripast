@@ -1,21 +1,22 @@
-import type { Node, SourceFile } from 'ts-morph'
+import type { ImportInfo } from './imports.ts'
 import type { VerifyMode } from './project.ts'
-import type { FileChange } from './util.ts'
+import type { TsServer } from './ts-server.ts'
+import type { FileChange, TextEdit } from './util.ts'
 import type { Regression } from './verify.ts'
-import { dirname, relative, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { Project, SyntaxKind } from 'ts-morph'
-import { findTsconfig, projectSourceFiles, resolveVerifyMode } from './project.ts'
-import { rgFiles } from './util.ts'
-import { findRegressions, snapshotDiagnostics } from './verify.ts'
+import { listTopLevelDeclarations, parseSource } from './declarations.ts'
+import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport } from './imports.ts'
+import { isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
+import { startTsServer } from './ts-server.ts'
+import { applyTextEdits, rgFiles } from './util.ts'
+import { findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
   cwd?: string
-  tsconfig?: string
   glob?: string | string[]
   verify?: boolean | VerifyMode
-  lazy?: boolean
-  project?: Project
   targetScope?: string
 }
 
@@ -25,89 +26,47 @@ export interface ReplaceResult {
   regressions: Regression[]
 }
 
-interface ImportName {
-  name: string
-  alias?: string
-  isTypeOnly?: boolean
-}
-
 interface ReplacementTarget {
   filePath: string
   importName: string
   isTypeOnly: boolean
 }
 
-const REPLACEABLE_KINDS = new Set<SyntaxKind>([
-  SyntaxKind.FunctionDeclaration,
-  SyntaxKind.ClassDeclaration,
-  SyntaxKind.InterfaceDeclaration,
-  SyntaxKind.TypeAliasDeclaration,
-  SyntaxKind.EnumDeclaration,
-])
-
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
   const cwd = opts.cwd ?? process.cwd()
   const verifyMode = resolveVerifyMode(opts.verify)
-  const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
-  const lazy = opts.lazy ?? true
-  const projectMode = !opts.project && lazy && tsconfigPath && verifyMode !== 'project' ? 'lazy' : 'full'
-  const candidatePaths = rgFiles(from, { cwd, glob: opts.glob })
-  const project = opts.project ?? (tsconfigPath
-    ? new Project({ tsConfigFilePath: tsconfigPath, skipAddingFilesFromTsConfig: projectMode === 'lazy' })
-    : new Project({ compilerOptions: { allowJs: true, checkJs: true } }))
+  const candidatePaths = rgFiles(from, { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+  const target = findReplacementTarget(rgFiles(to, { cwd, glob: opts.glob }).filter(path => !isVuePath(path)), to, cwd, opts.targetScope)
 
-  if (!tsconfigPath) {
-    for (const f of rgFiles('', { cwd, glob: opts.glob, listAll: true })) project.addSourceFileAtPathIfExists(f)
-  }
-  else if (projectMode === 'lazy') {
-    for (const f of candidatePaths) project.addSourceFileAtPathIfExists(f)
-    for (const f of rgFiles(to, { cwd, glob: opts.glob })) project.addSourceFileAtPathIfExists(f)
-  }
-
-  const loadedFiles = projectSourceFiles(project, candidatePaths, projectMode)
-  const target = findReplacementTarget(project, to, cwd, opts.targetScope)
-  const candidateFiles = sourceFilesMatching(project, candidatePaths)
-
-  const originals = new Map<string, string>()
-  for (const sf of candidateFiles) originals.set(sf.getFilePath(), sf.getFullText())
-
-  const verifyFiles = verifyMode === 'none'
-    ? []
-    : verifyMode === 'project'
-      ? project.getSourceFiles()
-      : candidateFiles
-  const baseline = verifyMode !== 'none' ? snapshotDiagnostics(project, verifyFiles) : null
-
-  for (const sf of candidateFiles)
-    replaceImportedSymbol(sf, from, to, target)
-
-  const changes: FileChange[] = []
-  for (const sf of candidateFiles) {
-    const before = originals.get(sf.getFilePath()) ?? ''
-    const after = sf.getFullText()
-    if (after !== before) {
-      changes.push({
-        path: sf.getFilePath(),
-        rel: relative(cwd, sf.getFilePath()),
-        before,
-        after,
-      })
+  const server = await startTsServer(cwd)
+  try {
+    const changes: FileChange[] = []
+    for (const path of candidatePaths) {
+      const before = readFileSync(path, 'utf8')
+      const after = await replaceImportedSymbol(server, path, before, from, to, target)
+      if (after !== before)
+        changes.push({ path, rel: relative(cwd, path), before, after })
     }
+    const regressions = verifyMode === 'none'
+      ? []
+      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), opts.glob))
+    return { changes, scanned: candidatePaths.length, regressions }
   }
-
-  const regressions = baseline ? findRegressions(baseline, project, verifyFiles) : []
-  return { changes, scanned: loadedFiles.length, regressions }
+  finally {
+    server.dispose()
+  }
 }
 
-function findReplacementTarget(project: Project, symbol: string, cwd: string, targetScope?: string): ReplacementTarget {
-  const matches: ReplacementTarget[] = []
+function findReplacementTarget(paths: string[], symbol: string, cwd: string, targetScope?: string): ReplacementTarget {
   const scopeAbs = targetScope ? resolve(cwd, targetScope) : null
-  for (const sf of project.getSourceFiles()) {
-    if (scopeAbs && sf.getFilePath() !== scopeAbs)
+  const matches: ReplacementTarget[] = []
+  for (const path of paths) {
+    if (scopeAbs && path !== scopeAbs)
       continue
-    const match = findExportedDeclaration(sf, symbol)
-    if (match)
-      matches.push(match)
+    const { program } = parseSource(path, readFileSync(path, 'utf8'))
+    const decl = listTopLevelDeclarations(program).find(d => d.name === symbol && d.exported && !d.isDefault)
+    if (decl)
+      matches.push({ filePath: path, importName: symbol, isTypeOnly: decl.kind === 'interface' || decl.kind === 'type' })
   }
   if (!matches.length) {
     if (targetScope)
@@ -124,166 +83,66 @@ function findReplacementTarget(project: Project, symbol: string, cwd: string, ta
   return matches[0]
 }
 
-function findExportedDeclaration(sf: SourceFile, symbol: string): ReplacementTarget | null {
-  for (const stmt of sf.getStatements()) {
-    if (stmt.getKind() === SyntaxKind.VariableStatement) {
-      const vs = stmt.asKindOrThrow(SyntaxKind.VariableStatement)
-      if (!vs.hasExportKeyword())
-        continue
-      for (const decl of vs.getDeclarationList().getDeclarations()) {
-        if (decl.getName() === symbol) {
-          return {
-            filePath: sf.getFilePath(),
-            importName: symbol,
-            isTypeOnly: false,
-          }
-        }
-      }
-      continue
-    }
-    if (!REPLACEABLE_KINDS.has(stmt.getKind()))
-      continue
-    const named = stmt as Node & {
-      hasExportKeyword?: () => boolean
-      hasDefaultKeyword?: () => boolean
-      getName?: () => string | undefined
-    }
-    if (!named.hasExportKeyword?.() || named.hasDefaultKeyword?.())
-      continue
-    if (named.getName?.() === symbol) {
-      return {
-        filePath: sf.getFilePath(),
-        importName: symbol,
-        isTypeOnly: stmt.getKind() === SyntaxKind.InterfaceDeclaration || stmt.getKind() === SyntaxKind.TypeAliasDeclaration,
-      }
-    }
-  }
-  return null
+interface ImportedBinding {
+  imp: ImportInfo
+  kind: 'named' | 'default'
+  name?: string
+  offset: number
 }
 
-function replaceImportedSymbol(sf: SourceFile, from: string, to: string, target: ReplacementTarget): void {
+async function replaceImportedSymbol(server: TsServer, path: string, source: string, from: string, to: string, target: ReplacementTarget): Promise<string> {
+  const program = parseProgram(path, source)
+  const imports = listImports(source, path, program)
+  const bindings: ImportedBinding[] = []
+  for (const imp of imports) {
+    for (const n of imp.named) {
+      if (localNameOf(n) === from)
+        bindings.push({ imp, kind: 'named', name: n.name, offset: n.localStart })
+    }
+    if (imp.defaultImport?.name === from)
+      bindings.push({ imp, kind: 'default', offset: imp.defaultImport.start })
+  }
+  if (!bindings.length)
+    return source
+
+  server.open(path, source)
+  const edits: TextEdit[] = []
   let replaced = false
-  for (const imp of [...sf.getImportDeclarations()]) {
-    for (const ni of [...imp.getNamedImports()]) {
-      const local = ni.getAliasNode()?.getText() ?? ni.getName()
-      if (local !== from)
+  for (const binding of bindings) {
+    for (const ref of await server.references(path, binding.offset)) {
+      if (ref.path !== path || imports.some(i => ref.start >= i.start && ref.start < i.end))
         continue
-      const binding = ni.getAliasNode() ?? ni.getNameNode()
-      for (const ref of findReferenceNodes(binding)) {
-        if (ref.getSourceFile() !== sf)
-          continue
-        if (isInsideImportDeclaration(ref))
-          continue
-        ref.replaceWithText(to)
-        replaced = true
-      }
-      ni.remove()
+      edits.push({ start: ref.start, end: ref.end, replacement: to })
+      replaced = true
     }
-
-    const def = imp.getDefaultImport()
-    if (def?.getText() === from) {
-      for (const ref of findReferenceNodes(def)) {
-        if (ref.getSourceFile() !== sf)
-          continue
-        if (isInsideImportDeclaration(ref))
-          continue
-        ref.replaceWithText(to)
-        replaced = true
-      }
-      imp.removeDefaultImport()
-    }
-
-    if (imp.getNamedImports().length === 0 && !imp.getDefaultImport() && !imp.getNamespaceImport())
-      imp.remove()
   }
 
+  const working = new Map<ImportInfo, ImportInfo>()
+  for (const binding of bindings) {
+    const current = working.get(binding.imp) ?? { ...binding.imp, named: [...binding.imp.named] }
+    if (binding.kind === 'named')
+      current.named = current.named.filter(n => localNameOf(n) !== from)
+    else
+      current.defaultImport = undefined
+    working.set(binding.imp, current)
+  }
+  for (const [imp, current] of working) {
+    if (isImportEmpty(current)) {
+      const end = source[imp.end] === '\n' ? imp.end + 1 : imp.end
+      edits.push({ start: imp.start, end, replacement: '' })
+    }
+    else {
+      edits.push({ start: imp.start, end: imp.end, replacement: renderImport(current) })
+    }
+  }
+  const stripped = applyTextEdits(source, edits)
   if (!replaced)
-    return
+    return stripped
 
-  const specifier = computeSpecifier(sf.getFilePath(), target.filePath, './placeholder.ts')
-  addOrMergeImport(sf, specifier, {
+  const specifier = computeSpecifier(path, target.filePath, './placeholder.ts')
+  const withImport = addOrMergeImport(stripped, path, specifier, {
     namedImports: [{ name: target.importName, alias: target.importName === to ? undefined : to, isTypeOnly: target.isTypeOnly }],
     isTypeOnly: target.isTypeOnly,
   })
-  pruneUnusedImports(sf)
-}
-
-function findReferenceNodes(node: Node): Node[] {
-  return (node as any).findReferencesAsNodes?.() as Node[] ?? []
-}
-
-function isInsideImportDeclaration(node: Node): boolean {
-  return !!node.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)
-}
-
-function addOrMergeImport(sf: SourceFile, moduleSpecifier: string, spec: { namedImports: ImportName[], isTypeOnly?: boolean }) {
-  const existing = sf.getImportDeclarations().find(i => i.getModuleSpecifierValue() === moduleSpecifier && i.isTypeOnly() === !!spec.isTypeOnly)
-  if (existing) {
-    const have = new Set(existing.getNamedImports().map(ni => `${ni.getName()}:${ni.getAliasNode()?.getText() ?? ''}`))
-    for (const ni of spec.namedImports) {
-      const key = `${ni.name}:${ni.alias ?? ''}`
-      if (!have.has(key))
-        existing.addNamedImport({ name: ni.name, alias: ni.alias, isTypeOnly: !existing.isTypeOnly() && ni.isTypeOnly })
-    }
-    return
-  }
-  sf.addImportDeclaration({
-    moduleSpecifier,
-    isTypeOnly: spec.isTypeOnly,
-    namedImports: spec.namedImports.map(ni => ({ name: ni.name, alias: ni.alias, isTypeOnly: !spec.isTypeOnly && ni.isTypeOnly })),
-  })
-}
-
-function pruneUnusedImports(sf: SourceFile): void {
-  const used = new Set<string>()
-  sf.forEachDescendant((n) => {
-    if (n.getKind() !== SyntaxKind.Identifier)
-      return
-    const p = n.getParent()
-    const pk = p?.getKind()
-    if (pk === SyntaxKind.ImportSpecifier || pk === SyntaxKind.ImportClause || pk === SyntaxKind.NamespaceImport)
-      return
-    used.add(n.getText())
-  })
-  for (const imp of sf.getImportDeclarations()) {
-    for (const ni of imp.getNamedImports()) {
-      const local = ni.getAliasNode()?.getText() ?? ni.getName()
-      if (!used.has(local))
-        ni.remove()
-    }
-    const def = imp.getDefaultImport()
-    if (def && !used.has(def.getText()))
-      imp.removeDefaultImport()
-    const ns = imp.getNamespaceImport()
-    if (ns && !used.has(ns.getText()))
-      imp.removeNamespaceImport()
-    if (imp.getNamedImports().length === 0 && !imp.getDefaultImport() && !imp.getNamespaceImport())
-      imp.remove()
-  }
-}
-
-function sourceFilesMatching(project: Project, paths: string[]): SourceFile[] {
-  const out: SourceFile[] = []
-  const seen = new Set<string>()
-  for (const path of paths) {
-    const sf = project.getSourceFile(path)
-    if (!sf || seen.has(sf.getFilePath()))
-      continue
-    seen.add(sf.getFilePath())
-    out.push(sf)
-  }
-  return out
-}
-
-const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
-const WIN_SEP_RE = /\\/g
-
-function computeSpecifier(fromFilePath: string, toFilePath: string, oldSpec: string): string {
-  const hasExt = MODULE_EXT_RE.test(oldSpec)
-  let rel = relative(dirname(fromFilePath), toFilePath).replace(WIN_SEP_RE, '/')
-  if (!hasExt)
-    rel = rel.replace(MODULE_EXT_RE, '')
-  if (!rel.startsWith('.'))
-    rel = `./${rel}`
-  return rel
+  return pruneUnusedImports(withImport, path)
 }

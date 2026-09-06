@@ -1,19 +1,20 @@
-import type { SourceFile } from 'ts-morph'
 import type { VerifyMode } from './project.ts'
+import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
-import { basename, extname, relative, resolve } from 'node:path'
+import { basename, dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { Project } from 'ts-morph'
 import { loadAdapter } from './adapter.ts'
-import { findTsconfig, resolveVerifyMode } from './project.ts'
+import { findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { mergeFileChanges, rgFiles } from './util.ts'
-import { findRegressions, snapshotDiagnostics } from './verify.ts'
+import { findRegressions } from './verify.ts'
 import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
 export interface RenameFileOptions {
   cwd?: string
+  /** tsconfig for the Vue adapter. The TypeScript server discovers its own project from the workspace. */
   tsconfig?: string
   verify?: boolean | VerifyMode
 }
@@ -53,126 +54,141 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   if (!tsconfigPath)
     throw new Error('ripast rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
+  const verifyMode = resolveVerifyMode(opts.verify)
   const vueAdapter = await loadAdapter('vue')
   const warnings: string[] = []
-  let consumerChanges: FileChange[]
+  const server = !vueAdapter || verifyMode !== 'none' ? await startTsServer(cwd) : null
+  try {
+    let consumerChanges: FileChange[]
+    if (vueAdapter) {
+      consumerChanges = await vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
+      const templateChanges = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, consumerChanges)
+      mergeFileChanges(consumerChanges, templateChanges)
+      if (vueAdapter.finalizeFileRename) {
+        const finalize = await vueAdapter.finalizeFileRename(cwd, oldAbs, newAbs, consumerChanges)
+        mergeFileChanges(consumerChanges, finalize.changes)
+        warnings.push(...finalize.warnings)
+      }
+    }
+    else {
+      // No Vue adapter available (e.g. `npx @ripast/cli` without @ripast/vue
+      // installed). A pure-TS file rename does not need it: the TypeScript
+      // server rewrites every importing file on its own.
+      if (oldAbs.endsWith('.vue') || newAbs.endsWith('.vue'))
+        throw new Error('ripast rename-file: renaming .vue files requires the Vue adapter (install @ripast/vue)')
+      consumerChanges = await tsOnlyFileRename(server!, cwd, oldAbs, newAbs)
+      const vueConsumers = rgFiles(basename(oldAbs, extname(oldAbs)), { cwd, glob: '*.vue' })
+      if (vueConsumers.length)
+        warnings.push(`${vueConsumers.length} .vue file(s) reference this name and were not checked; install @ripast/vue to rewrite .vue import sites`)
+    }
 
-  if (vueAdapter) {
-    consumerChanges = await vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
-    const templateChanges = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, consumerChanges)
-    mergeFileChanges(consumerChanges, templateChanges)
-    if (vueAdapter.finalizeFileRename) {
-      const finalize = await vueAdapter.finalizeFileRename(cwd, oldAbs, newAbs, consumerChanges)
-      mergeFileChanges(consumerChanges, finalize.changes)
-      warnings.push(...finalize.warnings)
+    const selfChangeRaw = consumerChanges.find(c => c.path === oldAbs || c.path === newAbs)
+    const selfChange = selfChangeRaw && selfChangeRaw.after !== selfChangeRaw.before
+      ? { before: selfChangeRaw.before, after: selfChangeRaw.after }
+      : null
+    const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !vueAdapter?.isGeneratedPath?.(cwd, c.path))
+
+    const regressions: Regression[] = []
+    if (verifyMode !== 'none') {
+      if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue')))
+        regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, consumerNoSelf))
+      regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode))
+    }
+
+    return {
+      changes: consumerNoSelf,
+      fileMove: { from: oldAbs, to: newAbs },
+      selfChange,
+      scanned: consumerNoSelf.length + 1,
+      regressions,
+      warnings,
     }
   }
-  else {
-    // No Vue adapter available (e.g. `npx @ripast/cli` without @ripast/vue
-    // installed). A pure-TS file rename does not need it: ts-morph rewrites
-    // every importing TS file on its own.
-    if (oldAbs.endsWith('.vue') || newAbs.endsWith('.vue'))
-      throw new Error('ripast rename-file: renaming .vue files requires the Vue adapter (install @ripast/vue)')
-    consumerChanges = tsOnlyFileRename(tsconfigPath, cwd, oldAbs, newAbs)
-    const vueConsumers = rgFiles(basename(oldAbs, extname(oldAbs)), { cwd, glob: '*.vue' })
-    if (vueConsumers.length)
-      warnings.push(`${vueConsumers.length} .vue file(s) reference this name and were not checked; install @ripast/vue to rewrite .vue import sites`)
-  }
-
-  const selfChangeRaw = consumerChanges.find(c => c.path === oldAbs || c.path === newAbs)
-  const selfChange = selfChangeRaw && selfChangeRaw.after !== selfChangeRaw.before
-    ? { before: selfChangeRaw.before, after: selfChangeRaw.after }
-    : null
-  const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !vueAdapter?.isGeneratedPath?.(cwd, c.path))
-
-  const verifyMode = resolveVerifyMode(opts.verify)
-  const regressions: Regression[] = []
-  if (verifyMode !== 'none') {
-    if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue')))
-      regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, consumerNoSelf))
-    regressions.push(...tsVerifyRenameFile(tsconfigPath, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode))
-  }
-
-  return {
-    changes: consumerNoSelf,
-    fileMove: { from: oldAbs, to: newAbs },
-    selfChange,
-    scanned: consumerNoSelf.length + 1,
-    regressions,
-    warnings,
+  finally {
+    server?.dispose()
   }
 }
 
-// Pure-TS file rename used when no framework adapter is loaded. ts-morph's
-// SourceFile.move rewrites the moved file's own relative imports and every
-// importing file's module specifier. Returns the moved file's change too
-// (path === newAbs) so the caller's self-change detection still works.
-function tsOnlyFileRename(tsconfigPath: string, cwd: string, oldAbs: string, newAbs: string): FileChange[] {
-  const project = new Project({ tsConfigFilePath: tsconfigPath })
-  const oldSF = project.getSourceFile(oldAbs) ?? project.addSourceFileAtPath(oldAbs)
-  const originals = new Map<string, string>()
-  for (const sf of project.getSourceFiles())
-    originals.set(sf.getFilePath(), sf.getFullText())
-  oldSF.move(newAbs)
+// Pure-TS file rename used when no framework adapter is loaded. The server's
+// willRenameFiles rewrites every importing file's module specifier and the
+// moved file's own relative imports. The moved file's change is returned under
+// its new path so the caller's self-change detection still works.
+async function tsOnlyFileRename(server: TsServer, cwd: string, oldAbs: string, newAbs: string): Promise<FileChange[]> {
+  const edits = await server.willRenameFile(oldAbs, newAbs)
   const out: FileChange[] = []
-  for (const sf of project.getSourceFiles()) {
-    const path = sf.getFilePath()
-    const before = originals.get(path === newAbs ? oldAbs : path)
-    const after = sf.getFullText()
-    if (before == null || before === after)
+  for (const [path, fileEdits] of edits) {
+    const before = server.textOf(path)
+    const after = applyLspEdits(before, fileEdits.map(edit => keepSpecifierStyle(before, edit)))
+    if (after === before)
       continue
-    out.push({ path, rel: relative(cwd, path), before, after })
+    const outPath = path === oldAbs ? newAbs : path
+    out.push({ path: outPath, rel: relative(cwd, outPath), before, after })
   }
   return out
 }
 
-function tsVerifyRenameFile(
-  tsconfigPath: string,
+const SPECIFIER_RE = /^(['"]?)(\.{1,2}\/.*?)\1$/
+const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
+
+// The server picks module specifier endings from its own preferences (it
+// wrote `./aa.js` for an import that read `./a.ts`). ripast keeps the style
+// the file already used: same extension, or none. The server edits the string
+// contents, sometimes with the quotes and sometimes without.
+function keepSpecifierStyle(text: string, edit: LspTextEdit): LspTextEdit {
+  const replaced = text.slice(offsetOfPosition(text, edit.range.start), offsetOfPosition(text, edit.range.end))
+  const oldMatch = SPECIFIER_RE.exec(replaced)
+  const newMatch = SPECIFIER_RE.exec(edit.newText)
+  if (!oldMatch || !newMatch)
+    return edit
+  const oldExt = MODULE_EXT_RE.exec(oldMatch[2])?.[0] ?? ''
+  const stripped = newMatch[2].replace(MODULE_EXT_RE, '')
+  return { ...edit, newText: `${newMatch[1]}${stripped}${oldExt}${newMatch[1]}` }
+}
+
+async function verifyFileRename(
+  server: TsServer,
+  cwd: string,
   oldAbs: string,
   newAbs: string,
   consumerChanges: FileChange[],
   selfChange: { before: string, after: string } | null,
   verifyMode: VerifyMode,
-): Regression[] {
+): Promise<Regression[]> {
   const consumerTsChanges = consumerChanges.filter(c => TS_LIKE_RE.test(c.path))
   const moveIsTs = TS_LIKE_RE.test(oldAbs) && TS_LIKE_RE.test(newAbs)
   if (!moveIsTs && !consumerTsChanges.length)
     return []
 
-  const project = new Project({ tsConfigFilePath: tsconfigPath })
-  const oldSF = project.getSourceFile(oldAbs) ?? project.addSourceFileAtPathIfExists(oldAbs)
-
-  const touched: SourceFile[] = []
-  if (oldSF)
-    touched.push(oldSF)
-  for (const c of consumerTsChanges) {
-    const sf = project.getSourceFile(c.path) ?? project.addSourceFileAtPathIfExists(c.path)
-    if (sf)
-      touched.push(sf)
-  }
-
-  const baselineFiles = verifyMode === 'project' ? project.getSourceFiles() : touched
-  const baseline = snapshotDiagnostics(project, baselineFiles)
-
-  for (const c of consumerTsChanges) {
-    const sf = project.getSourceFile(c.path)
-    if (sf)
-      sf.replaceWithText(c.after)
-  }
-
-  let newSF: SourceFile | null = null
+  const changes: FileChange[] = [...consumerTsChanges]
   if (moveIsTs) {
-    const movedText = selfChange?.after ?? oldSF?.getFullText() ?? readFileSync(oldAbs, 'utf8')
-    if (oldSF)
-      oldSF.delete()
-    newSF = project.createSourceFile(newAbs, movedText, { overwrite: true })
+    const oldText = readFileSync(oldAbs, 'utf8')
+    // Model the move as two overlays: the old path empties out, the new path
+    // appears with the post-move content. Nothing touches disk. The server
+    // checks the new file's own content in memory, but module resolution
+    // from consumers only sees disk, so their "cannot find module" for the
+    // new path is expected and filtered below. Everything else stays.
+    changes.push({ path: oldAbs, rel: relative(cwd, oldAbs), before: oldText, after: '' })
+    changes.push({ path: newAbs, rel: relative(cwd, newAbs), before: '', after: selfChange?.after ?? oldText })
   }
+  const files = verifyMode === 'project'
+    ? projectScriptFiles(cwd)
+    : [...(moveIsTs ? [newAbs] : []), ...consumerTsChanges.map(c => c.path)]
+  const regressions = await findRegressions(server, changes, files)
+  return regressions.filter(r => r.file !== oldAbs && !isUnresolvedNewPath(r, newAbs))
+}
 
-  const postFiles = verifyMode === 'project'
-    ? project.getSourceFiles()
-    : [...(newSF ? [newSF] : []), ...consumerTsChanges.map(c => project.getSourceFile(c.path)).filter((sf): sf is SourceFile => !!sf)]
+const CANNOT_FIND_MODULE_CODE = 2307
+const MODULE_IN_MESSAGE_RE = /Cannot find module '([^']+)'/
 
-  return findRegressions(baseline, project, postFiles)
+function isUnresolvedNewPath(regression: Regression, newAbs: string): boolean {
+  if (regression.code !== CANNOT_FIND_MODULE_CODE)
+    return false
+  const specifier = MODULE_IN_MESSAGE_RE.exec(regression.message)?.[1]
+  if (!specifier || !specifier.startsWith('.'))
+    return false
+  const base = resolve(dirname(regression.file), specifier)
+  const target = newAbs.replace(MODULE_EXT_RE, '')
+  return base === newAbs || base === target || base.replace(MODULE_EXT_RE, '') === target
 }
 
 function applyComponentTemplateRenameFallback(cwd: string, oldAbs: string, newAbs: string, changes: FileChange[]): FileChange[] {

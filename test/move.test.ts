@@ -214,3 +214,21 @@ it('move throws on missing symbol', async () => {
   }
   finally { fx.cleanup() }
 })
+
+it('move does not merge a value binding into an existing type-only import of the target', async () => {
+  const fx = makeFixture({
+    'a.ts': 'export function helper(): Shape { return { n: 1 } }\nimport type { Shape } from \'./c.ts\'\n',
+    'b.ts': 'import type { Shape } from \'./c.ts\'\nimport { helper } from \'./a.ts\'\nexport const r: Shape = helper()\n',
+    'c.ts': 'export interface Shape { n: number }\n',
+  })
+  try {
+    const result = await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir })
+    writeChanges(result.changes)
+    const b = fx.read('b.ts')
+    assert.match(b, /import type \{ Shape \} from '\.\/c\.ts'/, 'type import untouched')
+    assert.match(b, /import \{ helper \} from '\.\/c\.ts'/, 'value import added separately')
+    assert.doesNotMatch(b, /import type \{ Shape, helper \}/)
+    assert.equal(result.regressions.length, 0, JSON.stringify(result.regressions))
+  }
+  finally { fx.cleanup() }
+})

@@ -244,7 +244,7 @@ it('buildDeclarationTree truncates long signatures in compact summaries', () => 
   finally { fx.cleanup() }
 })
 
-it('buildUnusedDeclarations reports unreferenced top-level local declarations by default', () => {
+it('buildUnusedDeclarations reports unreferenced top-level local declarations by default', async () => {
   const fx = makeFixture({
     'src/a.ts': [
       'function usedLocal() { return 1 }',
@@ -255,7 +255,7 @@ it('buildUnusedDeclarations reports unreferenced top-level local declarations by
     'src/b.ts': 'import { publicApi } from \'./a.ts\'\npublicApi()\n',
   }, false)
   try {
-    const unused = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts' })
+    const unused = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts' })
     assert.deepEqual(unused.files.map(f => f.file), ['src/a.ts'])
     assert.deepEqual(unused.files[0].declarations.map(d => d.name), ['unusedLocal'])
 
@@ -266,7 +266,7 @@ it('buildUnusedDeclarations reports unreferenced top-level local declarations by
   finally { fx.cleanup() }
 })
 
-it('buildUnusedDeclarations supports exported and all filters', () => {
+it('buildUnusedDeclarations supports exported and all filters', async () => {
   const fx = makeFixture({
     'src/a.ts': [
       'const unusedLocal = 1',
@@ -277,10 +277,10 @@ it('buildUnusedDeclarations supports exported and all filters', () => {
     'src/b.ts': 'import { usedExport } from \'./a.ts\'\nconsole.log(usedExport)\n',
   }, false)
   try {
-    const exported = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    const exported = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
     assert.deepEqual(exported.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedExport'])
 
-    const all = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'all' })
+    const all = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'all' })
     assert.deepEqual(all.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedLocal', 'unusedExport'])
 
     const json = JSON.parse(formatUnusedDeclarations(exported, true))
@@ -289,31 +289,31 @@ it('buildUnusedDeclarations supports exported and all filters', () => {
   finally { fx.cleanup() }
 })
 
-it('buildUnusedDeclarations does not treat same-file named export specifiers as references', () => {
+it('buildUnusedDeclarations does not treat same-file named export specifiers as references', async () => {
   const fx = makeFixture({
     'src/a.ts': 'type PublicType = string\nexport { PublicType }\n',
   }, false)
   try {
-    const unused = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    const unused = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
     assert.deepEqual(unused.files.flatMap(f => f.declarations.map(d => d.name)), ['PublicType'])
   }
   finally { fx.cleanup() }
 })
 
-it('buildUnusedDeclarations handles JavaScript files when a tsconfig exists', () => {
+it('buildUnusedDeclarations handles JavaScript files when a tsconfig exists', async () => {
   const fx = makeFixture({
     'tsconfig.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext' }, include: ['src/**/*.ts'] }),
     'src/a.mjs': 'function unusedJs() {}\nexport function usedJs() {}\n',
     'src/b.ts': 'import { usedJs } from \'./a.mjs\'\nusedJs()\n',
   }, false)
   try {
-    const unused = buildUnusedDeclarations({ cwd: fx.dir, glob: ['*.ts', '*.mjs'], exports: 'all' })
+    const unused = await buildUnusedDeclarations({ cwd: fx.dir, glob: ['*.ts', '*.mjs'], exports: 'all' })
     assert.deepEqual(unused.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedJs'])
   }
   finally { fx.cleanup() }
 })
 
-it('buildUnusedDeclarations treats type references and shorthand properties as references', () => {
+it('buildUnusedDeclarations treats type references and shorthand properties as references', async () => {
   const fx = makeFixture({
     'src/a.ts': [
       'interface Shape { value: string }',
@@ -324,7 +324,7 @@ it('buildUnusedDeclarations treats type references and shorthand properties as r
     ].join('\n'),
   }, false)
   try {
-    const unused = buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts' })
+    const unused = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts' })
     assert.deepEqual(unused.files, [])
   }
   finally { fx.cleanup() }

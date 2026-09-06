@@ -70,7 +70,7 @@ it('replace CLI dry-run prints a diff without writing', () => {
       ['--experimental-strip-types', '--no-warnings', cli, 'replace', 'old', 'better', '--no-verify', '--profile', 'full'],
       { cwd: fx.dir, encoding: 'utf8' },
     )
-    assert.match(out, /1 file, \+3 -2 lines/)
+    assert.match(out, /1 file, \+2 -2 lines/)
     assert.match(out, /better\(\)/)
     assert.match(fx.read('use.ts'), /old\(\)/)
   }
