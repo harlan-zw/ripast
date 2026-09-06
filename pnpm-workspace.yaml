@@ -5,5 +5,9 @@ trustPolicy: no-downgrade
 packages:
   - packages/*
 
+overrides:
+  # Version 0.0.71 lacks the provenance supplied with 0.0.70.
+  volar-service-pug: 0.0.70
+
 allowBuilds:
   esbuild: true
