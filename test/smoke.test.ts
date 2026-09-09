@@ -1,13 +1,10 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
 import { it } from 'vitest'
 import { runMove } from '../packages/core/src/move.ts'
 import { runRename } from '../packages/core/src/rename.ts'
 import { scan } from '../packages/core/src/scan.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
-
-const REAL_PROJECT = '/home/harlan/pkg/skilld'
 
 const MINI_PROJECT: Record<string, string> = {
   'src/core/config.ts': `
@@ -97,12 +94,4 @@ it('smoke: move a function with transitive deps with --verify passes', async () 
     assert.match(fx.read('src/index.ts'), /core\/validate/, 'index.ts import updated')
   }
   finally { fx.cleanup() }
-})
-
-it.skipIf(!existsSync(REAL_PROJECT))('smoke: scan against real skilld repo (read-only)', () => {
-  const hits = scan('yamlEscape', { cwd: REAL_PROJECT, glob: ['src/**/*.ts'] })
-  assert.ok(hits.length > 0, 'should find yamlEscape in skilld')
-  const kinds = new Set(hits.map(h => h.kind))
-  assert.ok(kinds.has('identifier-binding'), 'has the declaration')
-  assert.ok(kinds.has('identifier-reference') || kinds.has('import-specifier'), 'has references or imports')
 })
