@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 export interface BenchFixtureOptions {
   files?: number
   importersPerSymbol?: number
+  tsconfig?: string
 }
 
 export interface BenchFixture {
@@ -31,7 +32,9 @@ export function makeBenchFixture(opts: BenchFixtureOptions = {}): BenchFixture {
   const importersPerSymbol = opts.importersPerSymbol ?? 160
   const dir = mkdtempSync(join(tmpdir(), 'ripast-bench-'))
 
-  write(dir, 'tsconfig.json', TSCONFIG)
+  const config = JSON.parse(TSCONFIG)
+  config.include = [join(dir, 'src/**/*.ts')]
+  write(dir, opts.tsconfig ?? 'tsconfig.json', JSON.stringify(config))
   write(dir, 'src/hot.ts', [
     'export interface SharedShape { value: number }',
     'export function hotSymbol(input: SharedShape): number { return input.value + 1 }',

@@ -1,6 +1,6 @@
 import type { ProfileEvent, ProfileSink } from '@ripast/core'
 import { performance } from 'node:perf_hooks'
-import { buildDeclarationTree, buildScanGraph, runMove, runRename, scan } from '@ripast/core'
+import { buildDeclarationTree, buildScanGraph, runMove, runRename, runRenameFile, scan } from '@ripast/core'
 import { makeBenchFixture } from './fixture.ts'
 
 interface BenchCase {
@@ -31,6 +31,21 @@ const RUNS = Number(process.env.RIPAST_BENCH_RUNS ?? 5)
 const SCAN_HITS_PER_SYMBOL = IMPORTERS_PER_SYMBOL * 2 + 1
 
 const benches: BenchCase[] = [
+  {
+    name: 'rename-file nested config verify',
+    fn: async () => {
+      const tsconfig = 'app/.nuxt/tsconfig.app.json'
+      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL, tsconfig })
+      try {
+        const result = await runRenameFile('src/hot.ts', 'src/renamed.ts', { cwd: fixture.dir, tsconfig })
+        assertCount('rename-file changes', result.changes.length, IMPORTERS_PER_SYMBOL)
+        assertCount('rename-file regressions', result.regressions.length, 0)
+      }
+      finally {
+        fixture.cleanup()
+      }
+    },
+  },
   {
     name: 'scan identifier',
     fn: () => {

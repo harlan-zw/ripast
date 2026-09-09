@@ -1,9 +1,39 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
+import { findRegressions, startTsServer } from '@ripast/core'
 import { it } from 'vitest'
-import { startTsServer } from '../packages/core/src/ts-server.ts'
-import { findRegressions } from '../packages/core/src/verify.ts'
 import { makeFixture } from './helpers.ts'
+
+it('uses compiler options from a selected generated config', async () => {
+  const fx = makeFixture({
+    'deck/.nuxt/tsconfig.app.json': JSON.stringify({
+      compilerOptions: { strictNullChecks: true, noEmit: true },
+      files: ['../consumer.ts'],
+    }),
+    'deck/consumer.ts': 'export const value: string = null\n',
+  }, false)
+  const server = await startTsServer(fx.dir, { tsconfig: 'deck/.nuxt/tsconfig.app.json' })
+  try {
+    const configPath = join(fx.dir, 'deck/.nuxt/tsconfig.app.json')
+    const configDiagnostics = await server.diagnostics([configPath])
+    assert.deepEqual(configDiagnostics.get(configPath), [])
+    const path = join(fx.dir, 'deck/consumer.ts')
+    const diagnostics = await server.diagnostics([path])
+    assert.deepEqual(diagnostics.get(path)?.map(diagnostic => diagnostic.code), [2322])
+  }
+  finally {
+    server.dispose()
+    fx.cleanup()
+  }
+})
+
+it('rejects a missing selected config', async () => {
+  const fx = makeFixture()
+  try {
+    await assert.rejects(startTsServer(fx.dir, { tsconfig: 'missing.json' }), { code: 'ENOENT' })
+  }
+  finally { fx.cleanup() }
+})
 
 it('findRegressions reports errors introduced by in-memory changes only', async () => {
   const fx = makeFixture({
