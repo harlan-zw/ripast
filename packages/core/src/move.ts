@@ -21,7 +21,7 @@ import { findRegressions } from './verify.ts'
 
 export interface MoveOptions {
   cwd?: string
-  /** tsconfig for the Vue adapter. The TypeScript server discovers its own project from the workspace. */
+  /** Configured project used for moves and verification. */
   tsconfig?: string
   verify?: boolean | VerifyMode
   vue?: boolean
@@ -84,7 +84,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   if (remainingReferences > 0)
     fromAfter = addOrMergeImport(fromAfter, fromAbs, computeSpecifier(fromAbs, toAbs, './placeholder.ts'), { namedImports: [{ name: symbol }] })
 
-  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd))
+  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
     const changes: FileChange[] = []
     if (fromAfter !== fromOriginal)

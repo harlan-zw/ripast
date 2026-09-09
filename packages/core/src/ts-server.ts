@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer'
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { posToLineCol } from './util.ts'
@@ -72,6 +72,8 @@ export interface TsServer {
 export interface TsServerOptions {
   /** Path to the native `tsc` binary. Defaults to the bundled `typescript-native` platform package. */
   binary?: string
+  /** Configured project to load before serving refactor requests. */
+  tsconfig?: string
 }
 
 const DEBUG = !!process.env.RIPAST_DEBUG
@@ -116,6 +118,9 @@ interface OpenDocument {
 
 export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Promise<TsServer> {
   const binary = opts.binary ?? resolveNativeTsc()
+  const tsconfig = opts.tsconfig ? resolve(cwd, opts.tsconfig) : undefined
+  const tsconfigText = tsconfig ? readFileSync(tsconfig, 'utf8') : undefined
+  const preferences = tsconfig ? { ...PREFERENCES, customConfigFileName: basename(tsconfig) } : PREFERENCES
   const proc: ChildProcessWithoutNullStreams = spawn(binary, ['--lsp', '--stdio'], { cwd, stdio: 'pipe' })
   const pending = new Map<number, Pending>()
   const documents = new Map<string, OpenDocument>()
@@ -152,7 +157,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     if (message.id !== undefined && message.method) {
       // Server -> client request. We hold no editor state beyond preferences.
       const result = message.method === 'workspace/configuration'
-        ? (message.params?.items ?? []).map(() => PREFERENCES)
+        ? (message.params?.items ?? []).map(() => preferences)
         : null
       write({ jsonrpc: '2.0', id: message.id, result })
       return
@@ -210,7 +215,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     processId: process.pid,
     rootUri: pathToFileURL(cwd).href,
     workspaceFolders: [{ uri: pathToFileURL(cwd).href, name: 'ripast' }],
-    initializationOptions: PREFERENCES,
+    initializationOptions: preferences,
     capabilities: {
       workspace: {
         workspaceEdit: { documentChanges: true },
@@ -284,6 +289,15 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     return out
   }
 
+  if (tsconfig) {
+    // Pulling config diagnostics loads its project, even when the source sits outside the config directory.
+    open(tsconfig, tsconfigText)
+    await request('textDocument/diagnostic', { textDocument: { uri: uriOf(tsconfig) } }).catch((error) => {
+      proc.kill()
+      throw error
+    })
+  }
+
   return {
     async rename(path, offset, newName) {
       open(path)
@@ -351,6 +365,8 @@ export function pathOf(uri: string): string {
 }
 
 function languageIdOf(path: string): string {
+  if (path.endsWith('.json'))
+    return 'json'
   if (path.endsWith('.tsx'))
     return 'typescriptreact'
   if (path.endsWith('.jsx'))

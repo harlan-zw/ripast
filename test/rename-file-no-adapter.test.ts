@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, it, vi } from 'vitest'
+import { makeFixture } from './helpers.ts'
 
 // Simulate `npx @ripast/cli` with no @ripast/vue installed: no framework
 // adapter resolves. A pure-TS rename-file must still work.
@@ -11,7 +12,8 @@ vi.mock('../packages/core/src/adapter.ts', async (importOriginal) => {
   return { ...actual, loadAdapter: async () => null }
 })
 
-const { runRenameFile } = await import('../packages/core/src/rename-file.ts')
+const { runMove, runRename, runRenameFile } = await import('../packages/core/src/index.ts')
+const { parseSourceFile } = await import('@ripast/core/adapter')
 const { writeChanges } = await import('../packages/core/src/util.ts')
 
 const TSCONFIG = JSON.stringify({
@@ -36,6 +38,57 @@ function makeFx(files: Record<string, string>) {
 }
 
 describe('rename-file without a framework adapter', () => {
+  it.each(['deck/tsconfig.json', 'deck/.nuxt/tsconfig.app.json'])('rewrites consumers from the selected %s', async (tsconfig) => {
+    const prefix = tsconfig.includes('.nuxt') ? '../' : ''
+    const fx = makeFixture({
+      [tsconfig]: JSON.stringify({
+        compilerOptions: { allowJs: true, noEmit: true, module: 'ESNext', moduleResolution: 'bundler' },
+        include: [`${prefix}*.ts`, `${prefix}../data/*.mjs`],
+      }),
+      'data/aggregate.mjs': 'export const amount = 1\n',
+      'deck/consumer.ts': 'import { amount } from \'../data/aggregate.mjs\'\nexport const total = amount + 1\n',
+    }, false)
+    try {
+      const result = await runRenameFile('data/aggregate.mjs', 'legacy/data/aggregate.mjs', { cwd: fx.dir, tsconfig })
+      const consumer = result.changes.find(change => change.rel === 'deck/consumer.ts')
+      assert.ok(consumer, 'the selected project consumer must be rewritten')
+      const program = parseSourceFile('consumer.ts', consumer.after).program
+      const imported = program.body.find((statement: any) => statement.type === 'ImportDeclaration')
+      assert.equal(imported?.source.value, '../legacy/data/aggregate.mjs')
+      assert.deepEqual(result.regressions, [])
+      assert.ok(!result.changes.some(change => change.rel.includes('.nuxt/')), 'generated configs must stay unchanged')
+    }
+    finally { fx.cleanup() }
+  })
+
+  it.each(['rename', 'move'])('finds the selected project consumers during a symbol %s', async (operation) => {
+    const tsconfig = 'deck/.nuxt/tsconfig.app.json'
+    const fx = makeFixture({
+      [tsconfig]: JSON.stringify({
+        compilerOptions: { allowJs: true, noEmit: true, module: 'ESNext', moduleResolution: 'bundler' },
+        include: ['../*.ts', '../../data/*.mjs'],
+      }),
+      'data/aggregate.mjs': 'export const amount = 1\n',
+      'deck/consumer.ts': 'import { amount } from \'../data/aggregate.mjs\'\nexport const total = amount + 1\n',
+    }, false)
+    try {
+      const options = { cwd: fx.dir, tsconfig, vue: false }
+      const result = operation === 'rename'
+        ? await runRename('amount', 'totalAmount', options)
+        : await runMove('amount', 'data/aggregate.mjs', 'data/target.mjs', options)
+      const consumer = result.changes.find(change => change.rel === 'deck/consumer.ts')
+      assert.ok(consumer, 'the selected project consumer must be rewritten')
+      const program = parseSourceFile('consumer.ts', consumer.after).program
+      const imported = program.body.find((statement: any) => statement.type === 'ImportDeclaration')
+      if (operation === 'rename')
+        assert.equal(imported?.specifiers[0].imported.name, 'totalAmount')
+      else
+        assert.equal(imported?.source.value, '../data/target.mjs')
+      assert.deepEqual(result.regressions, [])
+    }
+    finally { fx.cleanup() }
+  })
+
   it('renames a .ts file and rewrites consumer imports', async () => {
     const fx = makeFx({
       'src/a.ts': `export const foo = 1\n`,

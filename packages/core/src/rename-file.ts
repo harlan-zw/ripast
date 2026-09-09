@@ -14,7 +14,7 @@ import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
 export interface RenameFileOptions {
   cwd?: string
-  /** tsconfig for the Vue adapter. The TypeScript server discovers its own project from the workspace. */
+  /** Configured project used for import rewrites and verification. */
   tsconfig?: string
   verify?: boolean | VerifyMode
 }
@@ -57,7 +57,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   const verifyMode = resolveVerifyMode(opts.verify)
   const vueAdapter = await loadAdapter('vue')
   const warnings: string[] = []
-  const server = !vueAdapter || verifyMode !== 'none' ? await startTsServer(cwd) : null
+  const server = !vueAdapter || verifyMode !== 'none' ? await startTsServer(cwd, { tsconfig: tsconfigPath }) : null
   try {
     let consumerChanges: FileChange[]
     if (vueAdapter) {
@@ -86,7 +86,8 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     const selfChange = selfChangeRaw && selfChangeRaw.after !== selfChangeRaw.before
       ? { before: selfChangeRaw.before, after: selfChangeRaw.after }
       : null
-    const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs && !vueAdapter?.isGeneratedPath?.(cwd, c.path))
+    const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs
+      && !c.path.split(/[\\/]/).includes('.nuxt') && !vueAdapter?.isGeneratedPath?.(cwd, c.path))
 
     const regressions: Regression[] = []
     if (verifyMode !== 'none') {

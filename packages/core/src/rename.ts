@@ -20,7 +20,7 @@ import { rewriteTemplateReferences } from './vue-template.ts'
 
 export interface RenameOptions {
   cwd?: string
-  /** tsconfig for the Vue adapter. The TypeScript server discovers its own project from the workspace. */
+  /** Configured project used for renames and verification. */
   tsconfig?: string
   glob?: string | string[]
   verify?: boolean | VerifyMode
@@ -68,7 +68,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     throw new Error(`ripast rename: "${from}" is declared in multiple files (${[...uniqueFiles].join(', ')}). Pass --scope <file> to pick one, or --all to rename every occurrence.`)
   }
 
-  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd))
+  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
     const editsByPath = new Map<string, LspTextEdit[]>()
     await timedAsync(profile, 'rename transform', async () => {
