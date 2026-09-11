@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: [self-hosted, linux, x64, harlan-desktop-ci]
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         node: [22, 24]
