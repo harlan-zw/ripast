@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { createPatch } from 'diff'
@@ -63,6 +63,28 @@ const EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vu
 // snapshots, etc.).
 const DEFAULT_EXCLUDES = ['!.claude/worktrees/**', '!**/.claude/worktrees/**']
 
+function runRipgrep(args: string[], cwd: string): string[] {
+  const result = spawnSync('rg', args, { cwd, encoding: 'utf8' })
+  if (result.error) {
+    if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
+      throw new Error([
+        'Ripast requires ripgrep (rg) on PATH.',
+        'If ripgrep is already installed, add its directory to PATH.',
+        'Otherwise, install ripgrep:',
+        '  macOS: brew install ripgrep',
+        '  Ubuntu/Debian: sudo apt-get install ripgrep',
+        '  Windows: winget install BurntSushi.ripgrep.MSVC',
+        'Other systems: https://github.com/BurntSushi/ripgrep#installation',
+        'Then run rg --version and retry.',
+      ].join('\n'), { cause: result.error })
+    }
+    throw new Error(`Could not start rg: ${result.error.message}`, { cause: result.error })
+  }
+  if (result.status !== 0 && result.status !== 1)
+    throw new Error(`rg failed: ${result.stderr}`)
+  return result.stdout.split('\n').filter(Boolean).map(p => resolve(cwd, p))
+}
+
 export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {
   const cwd = opts.cwd ?? process.cwd()
   const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
@@ -81,10 +103,7 @@ export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?:
       args.push('-g', g)
     args.push(pattern, '.')
   }
-  const r = spawnSync('rg', args, { cwd, encoding: 'utf8' })
-  if (r.status !== 0 && r.status !== 1)
-    throw new Error(`rg failed: ${r.stderr}`)
-  return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
+  return runRipgrep(args, cwd)
 }
 
 /**
@@ -100,10 +119,7 @@ export function rgFilesMany(patterns: string[], opts: { glob?: string | string[]
   for (const g of globs) args.push('-g', g)
   for (const p of patterns) args.push('-e', p)
   args.push('.')
-  const r = spawnSync('rg', args, { cwd, encoding: 'utf8' })
-  if (r.status !== 0 && r.status !== 1)
-    throw new Error(`rg failed: ${r.stderr}`)
-  return r.stdout.split('\n').filter(Boolean).map((p: string) => resolve(cwd, p))
+  return runRipgrep(args, cwd)
 }
 
 const SFC_SCRIPT_RE = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi

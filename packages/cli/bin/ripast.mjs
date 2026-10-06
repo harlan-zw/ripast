@@ -58,6 +58,23 @@ function ensureAdapters(needed) {
     stdio: 'inherit',
     env: { ...process.env, RIPAST_REEXEC: '1' },
   })
+  if (res.error) {
+    if (res.error.code === 'ENOENT') {
+      process.stderr.write([
+        `ripast: pnpm was not found on PATH. It installs missing adapters: ${missing.join(', ')}.`,
+        'If pnpm is already installed, add its directory to PATH.',
+        'Otherwise, outside this project, run: npx get-pnpm',
+        'Then run pnpm --version and retry.',
+        'Installation guide: https://pnpm.io/installation',
+        `Or install the CLI and adapters together: npm install -g @ripast/cli ${missing.join(' ')}`,
+        'For script-only rename, move, or rename-file commands, retry with --no-vue.',
+        '',
+      ].join('\n'))
+    }
+    else {
+      process.stderr.write(`ripast: Could not start pnpm: ${res.error.message}\n`)
+    }
+  }
   process.exit(res.status ?? 1)
 }
 

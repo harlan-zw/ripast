@@ -244,6 +244,27 @@ npm i @ripast/core @ripast/vue
 
 Requires `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) on `PATH` and Node 22.13+.
 
+If `rg` is missing, install ripgrep for your system:
+
+| System | Command |
+| --- | --- |
+| macOS with Homebrew | `brew install ripgrep` |
+| Ubuntu or Debian | `sudo apt-get install ripgrep` |
+| Windows with Winget | `winget install BurntSushi.ripgrep.MSVC` |
+
+Then run `rg --version` and retry. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
+
+Automatic adapter installation also requires `pnpm` on `PATH`.
+If it is missing, follow the [pnpm installation guide](https://pnpm.io/installation), then run `pnpm --version` and retry.
+The launcher checks this only when a detected framework needs an adapter.
+You can install the CLI and adapters together to avoid this step:
+
+```bash
+npm install -g @ripast/cli @ripast/vue
+```
+
+For script-only `rename`, `move`, or `rename-file` commands, pass `--no-vue` to skip the adapter.
+
 ## Usage
 
 All mutating commands default to **dry-run** and print a unified diff. Pass `--apply` to write.
