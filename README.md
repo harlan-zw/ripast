@@ -105,7 +105,15 @@ ripast replace eventHandler defineAdminApiHandler --apply
 
 # Ambiguous target exports? Pick the declaring file
 ripast replace eventHandler defineAdminApiHandler --target-scope layers/admin/server/utils/admin-api.ts --apply
+
+# Route an existing binding through a named barrel and a framework alias
+ripast replace getSiteConfig getSiteConfig --target-scope ../nuxt-site-config/src/runtime/server/index.ts --target-import '#site-config/server' --apply
 ```
+
+`--target-scope` can select a named re-export barrel outside the consumer project.
+`--target-import` sets its import path explicitly, including Nuxt aliases.
+Value and type exports retain their import kind. Existing imports from that path merge safely.
+Default discovery still selects direct declarations and keeps the relative import policy.
 </details>
 
 <details>
