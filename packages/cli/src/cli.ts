@@ -48,6 +48,45 @@ import { agent, isAgent } from 'std-env'
 import { defineStrictCommand as defineCommand } from './command.ts'
 
 const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
+
+function splitGlobs(value: string): string[] {
+  const globs: string[] = []
+  let start = 0
+  let braces = 0
+  let characterClass = false
+  let escaped = false
+  for (let index = 0; index < value.length; index++) {
+    const character = value[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (character === '\\') {
+      escaped = true
+      continue
+    }
+    if (character === '[') {
+      characterClass = true
+    }
+    else if (character === ']') {
+      characterClass = false
+    }
+    else if (!characterClass) {
+      if (character === '{') {
+        braces++
+      }
+      else if (character === '}') {
+        braces--
+      }
+      else if (character === ',' && braces === 0) {
+        globs.push(value.slice(start, index))
+        start = index + 1
+      }
+    }
+  }
+  globs.push(value.slice(start))
+  return globs
+}
 const applyArg = { type: 'boolean' as const, default: false, description: 'Write changes. Default prints a unified diff.' }
 const verifyArg = { type: 'boolean' as const, default: true, description: 'Typecheck post-transform; refuse --apply on regression. Disable with --no-verify.' }
 const verifyModeArg = { type: 'string' as const, description: 'Verification mode: touched, project, or none. Defaults to touched; --no-verify maps to none.' }
@@ -140,7 +179,7 @@ const scanCmd = defineCommand({
   run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
     const opts = {
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       kinds: args.kind ? (args.kind as string).split(',') : undefined,
     }
     if (args.graph) {
@@ -177,7 +216,7 @@ const renameCmd = defineCommand({
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
     const r = await runRename(args.from as string, args.to as string, {
       tsconfig: args.tsconfig as string | undefined,
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       verify: verifyMode,
       scope: args.scope as string | undefined,
       allowMultiple: args.all as boolean,
@@ -203,7 +242,7 @@ const replaceCmd = defineCommand({
   async run({ args }) {
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
     const r = await runReplace(args.from as string, args.to as string, {
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       verify: verifyMode,
       targetScope: args['target-scope'] as string | undefined,
     })
@@ -225,7 +264,7 @@ const treeCmd = defineCommand({
       ? agentProfile ? 'exported' : 'all'
       : resolveExportFilter(args.exports)
     const tree = buildDeclarationTree({
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       exports: agentProfile ? 'all' : exportFilter,
     })
     if (agentProfile && !args.json) {
@@ -247,7 +286,7 @@ const unusedCmd = defineCommand({
   async run({ args }) {
     const exportFilter = args.exports == null ? 'exported' : resolveExportFilter(args.exports)
     const unused = await buildUnusedDeclarations({
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       exports: exportFilter,
     })
     process.stdout.write(`${formatUnusedDeclarations(unused, !!args.json)}\n`)
@@ -504,7 +543,7 @@ const cssClassRenameCmd = defineCommand({
   async run({ args }) {
     const map = buildRenameMap(args.from as string | undefined, args.to as string | undefined, args.map as string | undefined)
     const r = await runCssClassRename(map, {
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
     })
     emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
   },
@@ -569,7 +608,7 @@ const cssClassScanCmd = defineCommand({
     const { agentProfile } = resolveProfile(args.profile)
     const by = resolveCssClassScanGroup(args.by)
     const base = {
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       pattern: args.pattern ? (args.pattern as string).split(',') : undefined,
     }
     if (by === 'file') {
@@ -637,7 +676,7 @@ const vueTemplateWrapCmd = defineCommand({
   },
   async run({ args }) {
     const r = await runVueTemplateWrap(args.selector as string, args.wrapper as string, {
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       scope: args.scope as string | undefined,
       rootOnly: args.rootOnly as boolean,
     })
@@ -658,7 +697,7 @@ const vueTemplateUnwrapCmd = defineCommand({
   },
   async run({ args }) {
     const r = await runVueTemplateUnwrap(args.selector as string, {
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       scope: args.scope as string | undefined,
       rootOnly: args.rootOnly as boolean,
     })
@@ -679,7 +718,7 @@ const componentsCmd = defineCommand({
   async run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
     const opts = {
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       source: resolveComponentsSource(args.source),
     }
     if (args.name) {
@@ -758,7 +797,7 @@ const doctorCmd = defineCommand({
       }
     }
     const report = await runDoctor({
-      glob: args.glob ? (args.glob as string).split(',') : undefined,
+      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       checks,
       entry,
       changedFiles,
