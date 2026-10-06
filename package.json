@@ -36,15 +36,15 @@
     "@ripast/cli": "workspace:*",
     "@ripast/core": "workspace:*",
     "@ripast/vue": "workspace:*",
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.4",
     "@typescript/native": "npm:typescript@7.0.2",
-    "@vue/compiler-sfc": "^3.5.42",
+    "@vue/compiler-sfc": "^3.5.43",
     "bumpp": "^12.3.0",
-    "eslint": "^10.10.0",
-    "obuild": "^0.4.39",
-    "tsx": "^4.23.13",
+    "eslint": "^10.12.0",
+    "obuild": "^0.4.43",
+    "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.0",
+    "vitest": "^5.0.3",
     "vscode-uri": "^3.2.0"
   }
 }
