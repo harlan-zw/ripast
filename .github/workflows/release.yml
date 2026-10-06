@@ -68,6 +68,14 @@ jobs:
         with:
           ref: refs/tags/${{ inputs.tag || github.ref_name }}
           persist-credentials: false
+      - name: Load download tooling from this workflow revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: scripts/release.ts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -84,6 +92,8 @@ jobs:
       - name: Download published packages
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: npm run release:download -- "$RELEASE_TAG" "${{ runner.temp }}/ripast-published"
+        run: |
+          npm pkg set 'scripts.release:download=node --experimental-strip-types .release-tools/scripts/release.ts download'
+          npm run release:download -- "$RELEASE_TAG" "${{ runner.temp }}/ripast-published"
       - name: Check installation from npm
         run: npm run smoke:package -- "${{ runner.temp }}/ripast-published"
