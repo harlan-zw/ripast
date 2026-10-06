@@ -237,9 +237,9 @@ npm i @ripast/core @ripast/vue
 ```
 
 > [!TIP]
-> Generate an Agent Skill for ripast using [skilld](https://github.com/harlan-zw/skilld) so agents like Claude Code know exactly when to reach for it:
+> The CLI includes an [Agent Skill](./packages/cli/skills/ripast/SKILL.md). Install it with [skilld](https://github.com/harlan-zw/skilld):
 > ```bash
-> npx skilld add ripast
+> pnpm dlx skilld add @ripast/cli
 > ```
 
 Requires `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) on `PATH` and Node 22.13+.
