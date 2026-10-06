@@ -45,10 +45,10 @@
     "dev:prepare": "obuild --stub"
   },
   "peerDependencies": {
-    "@ripast/core": "workspace:*",
-    "typescript": ">=5.4"
+    "@ripast/core": "workspace:*"
   },
   "dependencies": {
+    "@typescript/typescript6": "^6.0.2",
     "@volar/language-service": "^2.4.28",
     "@volar/typescript": "^2.4.28",
     "@vue/language-core": "^3.3.11",

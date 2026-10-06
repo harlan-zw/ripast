@@ -1,10 +1,46 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
 import { runReplace } from '../packages/core/src/replace.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
+
+it('replace leaves the replacement wrapper callable without recursion', async () => {
+  const fx = makeFixture({
+    'original.ts': 'export function original() { return 42 }\n',
+    'wrapper.ts': 'import { original } from "./original.ts"\nexport function replacement() { return original() + 1 }\n',
+    'consumer.ts': 'import { original } from "./original.ts"\nexport const result = original()\n',
+  })
+  try {
+    const result = await runReplace('original', 'replacement', { cwd: fx.dir, verify: false })
+    writeChanges(result.changes)
+    const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
+    assert.equal(consumer.result, 43)
+  }
+  finally { fx.cleanup() }
+})
+
+it('replace resolves an explicit target outside the consumer glob', async () => {
+  const fx = makeFixture({
+    'original.ts': 'export function original() { return 42 }\n',
+    'helper.ts': 'export function replacement() { return 43 }\n',
+    'consumer.ts': 'import { original } from "./original.ts"\nexport const result = original()\n',
+  })
+  try {
+    const result = await runReplace('original', 'replacement', {
+      cwd: fx.dir,
+      glob: 'consumer.ts',
+      targetScope: 'helper.ts',
+      verify: false,
+    })
+    writeChanges(result.changes)
+    const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
+    assert.equal(consumer.result, 43)
+  }
+  finally { fx.cleanup() }
+})
 
 it('replace swaps an imported symbol and rewrites the import', async () => {
   const fx = makeFixture({

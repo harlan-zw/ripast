@@ -1,8 +1,38 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import process from 'node:process'
+import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
 import { runMove } from '../packages/core/src/move.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
+
+it('move rejects a destination alias before changing either module', async () => {
+  const fx = makeFixture({
+    'source.ts': 'export function helper() { return 42 }\n',
+    'target.ts': 'import { helper as current } from \'./source.ts\'\nexport const result = current()\n',
+  })
+  try {
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false }), /Remove the alias/)
+    const target = await import(pathToFileURL(`${fx.dir}/target.ts`).href)
+    assert.equal(target.result, 42)
+  }
+  finally { fx.cleanup() }
+})
+
+it('move preserves a destination that already imports the moved declaration', async () => {
+  const fx = makeFixture({
+    'source.ts': 'export function helper() { return 42 }\nexport const other = 1\n',
+    'target.ts': 'import { helper, other } from \'./source.ts\'\nexport const result = helper() + other\n',
+  })
+  try {
+    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    writeChanges(result.changes)
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e', `const target = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/target.ts`).href)}); console.log(target.result)`], { encoding: 'utf8' })
+    assert.equal(output.trim(), '43')
+  }
+  finally { fx.cleanup() }
+})
 
 it('move splits multi-named import at call sites', async () => {
   const fx = makeFixture({
