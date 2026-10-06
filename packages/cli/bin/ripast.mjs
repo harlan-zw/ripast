@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
+import spawn from 'cross-spawn'
 
 const FRAMEWORK_MARKERS = {
   vue: ['vue', 'nuxt', '@nuxt/kit'],
@@ -56,13 +56,13 @@ function ensureAdapters(needed) {
   const args = ['dlx', '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), 'ripast', ...process.argv.slice(2)]
   const options = { stdio: 'inherit', env: { ...process.env, RIPAST_REEXEC: '1' } }
   let manager = 'pnpm'
-  let res = spawnSync(manager, args, options)
+  let res = spawn.sync(manager, args, options)
   if (res.error?.code === 'ENOENT') {
     manager = 'npm'
     // Keep npm's project metadata separate. The executed CLI still uses the caller's cwd.
     const prefix = mkdtempSync(join(tmpdir(), 'ripast-adapters-'))
     try {
-      res = spawnSync(manager, ['exec', '--yes', `--prefix=${prefix}`, '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), '--', 'ripast', ...process.argv.slice(2)], options)
+      res = spawn.sync(manager, ['exec', '--yes', `--prefix=${prefix}`, '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), '--', 'ripast', ...process.argv.slice(2)], options)
     }
     finally { rmSync(prefix, { recursive: true, force: true }) }
   }

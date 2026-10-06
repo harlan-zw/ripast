@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ['**/*.md']
   pull_request:
     branches: [main]
+    paths-ignore: ['**/*.md']
 
 jobs:
   test:
@@ -30,3 +32,22 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm -r --filter './packages/*' exec publint
+      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
+      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
+
+  windows-launcher:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec vitest run test/launcher-platform.test.ts
+      - run: pnpm -r --filter './packages/*' exec publint
+      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
+      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
