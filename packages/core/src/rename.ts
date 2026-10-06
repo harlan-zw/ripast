@@ -38,6 +38,7 @@ export interface RenameResult {
 }
 
 interface Declaration {
+  _tag: 'TopLevel' | 'Local'
   filePath: string
   source: string
   pos: number
@@ -70,12 +71,18 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
-    const editsByPath = new Map<string, LspTextEdit[]>()
+    const editsByPath = new Map<string, Map<string, LspTextEdit>>()
     await timedAsync(profile, 'rename transform', async () => {
       for (const decl of declarations) {
         const edits = await server.rename(decl.filePath, decl.pos, to)
-        for (const [path, fileEdits] of edits)
-          editsByPath.set(path, [...(editsByPath.get(path) ?? []), ...fileEdits])
+        for (const [path, fileEdits] of edits) {
+          const unique = editsByPath.get(path) ?? new Map<string, LspTextEdit>()
+          for (const edit of fileEdits) {
+            const { start, end } = edit.range
+            unique.set(`${start.line}:${start.character}:${end.line}:${end.character}:${edit.newText}`, edit)
+          }
+          editsByPath.set(path, unique)
+        }
       }
     })
 
@@ -85,7 +92,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
         if (isVue(path))
           continue
         const before = readFileSync(path, 'utf8')
-        const after = applyLspEdits(before, edits)
+        const after = applyLspEdits(before, [...edits.values()])
         if (after !== before)
           out.push({ path, rel: relative(cwd, path), before, after })
       }
@@ -103,7 +110,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
     if (vueAdapter?.autoImportScopes) {
       const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
-      if (declarations.some(decl => isInsideAutoImportScope(decl.filePath, scopes))) {
+      if (declarations.some(decl => decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))) {
         removeVueLocalBindingChanges(changes, from)
         const fallbackChanges = timed(profile, 'nuxt rename fallback', () => applyNuxtBareIdentifierRename(vueAdapter, cwd, from, to, changes))
         mergeFileChanges(changes, fallbackChanges)
@@ -301,12 +308,12 @@ function findDeclarations(paths: string[], name: string, allowMultiple = false):
     const { program } = parseSource(path, source)
     for (const decl of listTopLevelDeclarations(program)) {
       if (decl.name === name)
-        out.push({ filePath: path, source, pos: decl.nameStart })
+        out.push({ _tag: 'TopLevel', filePath: path, source, pos: decl.nameStart })
     }
     walk(program, {
       enter(node: any) {
         if ((node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type)) && node.id?.name === name)
-          locals.push({ filePath: path, source, pos: node.id.start })
+          locals.push({ _tag: 'Local', filePath: path, source, pos: node.id.start })
       },
     })
   }

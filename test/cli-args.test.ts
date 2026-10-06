@@ -31,3 +31,11 @@ it('commands accept kebab-case options and negated booleans', async () => {
   const result = await runCommand(command, { rawArgs: ['--verify-mode=none', '--no-vue'] })
   assert.deepEqual(result.result, { mode: 'none', vue: false })
 })
+
+it('commands refuse positional names used as ignored options', async () => {
+  const command = defineStrictCommand({
+    args: { pattern: { type: 'positional' } },
+    run({ args }) { return args.pattern },
+  })
+  await assert.rejects(runCommand(command, { rawArgs: ['hits', '--pattern=ignored'] }), /Unknown option: --pattern/)
+})
