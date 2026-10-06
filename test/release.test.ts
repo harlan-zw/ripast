@@ -35,6 +35,11 @@ describe('publication retry', () => {
     expect(publicationDecision({ status: 0, stdout: '"sha512-local"' }, 'sha512-local')).toBe('skip')
   })
 
+  it('accepts the single-version array returned by npm 12', () => {
+    expect(publicationDecision({ status: 0, stdout: '["sha512-local"]' }, 'sha512-local')).toBe('skip')
+    expect(() => publicationDecision({ status: 0, stdout: '["sha512-local","sha512-other"]' }, 'sha512-local')).toThrow('different artifact')
+  })
+
   it('rejects an existing version with different bytes', () => {
     expect(() => publicationDecision({ status: 0, stdout: '"sha512-other"' }, 'sha512-local')).toThrow('different artifact')
   })

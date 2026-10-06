@@ -35,7 +35,8 @@ export function publicationDecision(response: RegistryResponse, integrity: strin
     }
     throw new Error('Registry lookup failed. Resolve the npm error before publishing.')
   }
-  if (value !== integrity)
+  const publishedIntegrity = Array.isArray(value) && value.length === 1 ? value[0] : value
+  if (publishedIntegrity !== integrity)
     throw new Error('This version contains a different artifact. Use a new version.')
   return 'skip'
 }
