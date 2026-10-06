@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 
@@ -54,10 +55,35 @@ function ensureAdapters(needed) {
     return
 
   const args = ['dlx', '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), 'ripast', ...process.argv.slice(2)]
-  const res = spawnSync('pnpm', args, {
-    stdio: 'inherit',
-    env: { ...process.env, RIPAST_REEXEC: '1' },
-  })
+  const options = { stdio: 'inherit', env: { ...process.env, RIPAST_REEXEC: '1' } }
+  let manager = 'pnpm'
+  let res = spawnSync(manager, args, options)
+  if (res.error?.code === 'ENOENT') {
+    manager = 'npm'
+    // Keep npm's project metadata separate. The executed CLI still uses the caller's cwd.
+    const prefix = mkdtempSync(join(tmpdir(), 'ripast-adapters-'))
+    try {
+      res = spawnSync(manager, ['exec', '--yes', `--prefix=${prefix}`, '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), '--', 'ripast', ...process.argv.slice(2)], options)
+    }
+    finally { rmSync(prefix, { recursive: true, force: true }) }
+  }
+  if (res.error) {
+    if (res.error.code === 'ENOENT') {
+      process.stderr.write([
+        `ripast: Neither pnpm nor npm was found on PATH. Missing adapters: ${missing.join(', ')}.`,
+        'If either package manager is installed, add its directory to PATH.',
+        'Install pnpm: https://pnpm.io/installation',
+        'Then run pnpm --version and retry.',
+        'After installing npm, you can install the CLI and adapters together:',
+        `  npm install -g @ripast/cli ${missing.join(' ')}`,
+        'For script-only rename, move, or rename-file commands, retry with --no-vue.',
+        '',
+      ].join('\n'))
+    }
+    else {
+      process.stderr.write(`ripast: Could not start ${manager}: ${res.error.message}\n`)
+    }
+  }
   process.exit(res.status ?? 1)
 }
 

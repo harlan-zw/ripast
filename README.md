@@ -242,7 +242,33 @@ npm i @ripast/core @ripast/vue
 > pnpm dlx skilld add @ripast/cli
 > ```
 
-Requires `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) on `PATH` and Node 22.13+.
+Requires Node 22.13+.
+Ripast uses `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) when it is available on `PATH`.
+If it is missing, Ripast searches files in Node instead. This can be slower.
+Both paths support fixed-string searches, file listing, globs, and standard ignore files.
+Programmatic regex searches still require `rg`.
+
+If `rg` is missing, install ripgrep for your system:
+
+| System | Command |
+| --- | --- |
+| macOS with Homebrew | `brew install ripgrep` |
+| Ubuntu or Debian | `sudo apt-get install ripgrep` |
+| Windows with Winget | `winget install BurntSushi.ripgrep.MSVC` |
+
+Then run `rg --version` and retry. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
+
+Automatic adapter installation prefers `pnpm` and falls back to `npm` if `pnpm` is missing.
+The npm fallback uses a separate temporary prefix and preserves your project directory.
+The launcher needs a package manager only when a detected framework lacks an adapter.
+If both are missing, follow the [pnpm installation guide](https://pnpm.io/installation), then retry.
+You can install the CLI and adapters together to avoid this step:
+
+```bash
+npm install -g @ripast/cli @ripast/vue
+```
+
+For script-only `rename`, `move`, or `rename-file` commands, pass `--no-vue` to skip the adapter.
 
 ## Usage
 
