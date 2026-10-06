@@ -27,10 +27,11 @@ it('launcher installs missing adapters through pnpm without running npm', () => 
   finally { fx.cleanup() }
 })
 
-it('installed adapters need no pnpm to show help', () => {
+it('installed import-only adapters need no pnpm to show help', () => {
   const fx = makeFixture({
     'package.json': '{"dependencies":{"vue":"*"}}',
-    'node_modules/@ripast/vue/index.js': '',
+    'node_modules/@ripast/vue/package.json': '{"type":"module","exports":{".":{"types":"./index.d.ts","import":"./index.mjs"}}}',
+    'node_modules/@ripast/vue/index.mjs': '',
     'bin/.keep': '',
   }, false)
   try {
@@ -42,6 +43,28 @@ it('installed adapters need no pnpm to show help', () => {
     assert.equal(child.status, 0, child.stderr)
     assert.match(child.stdout, /USAGE/)
     assert.doesNotMatch(child.stderr, /pnpm was not found/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('installs an adapter when its import entry is missing', () => {
+  const fx = makeFixture({
+    'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
+    'node_modules/@ripast/vue/package.json': '{"exports":{".":{"import":"./missing.mjs"}}}',
+    'pnpm': '#!/bin/sh\necho pnpm > manager\nexit 0\n',
+    'bin/.keep': '',
+  }, false)
+  try {
+    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'bin/ripast.mjs'))
+    symlinkSync(resolve('packages/cli/dist'), resolve(fx.dir, 'dist'), 'dir')
+    chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
+    const child = spawnSync(process.execPath, [resolve(fx.dir, 'bin/ripast.mjs'), '--help'], {
+      cwd: fx.dir,
+      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPAST_REEXEC: '' },
+      encoding: 'utf8',
+    })
+    assert.equal(child.status, 0, child.stderr)
+    assert.equal(fx.read('manager').trim(), 'pnpm')
   }
   finally { fx.cleanup() }
 })
