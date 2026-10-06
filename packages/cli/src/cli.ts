@@ -194,6 +194,7 @@ const replaceCmd = defineCommand({
     'to': { type: 'positional', required: true },
     'glob': globArg,
     'target-scope': { type: 'string', description: 'Restrict target symbol resolution to a single file when multiple files export the same name.' },
+    'target-import': { type: 'string', description: 'Import specifier for the validated replacement, including framework aliases.' },
     'apply': applyArg,
     'verify': verifyArg,
     'verifyMode': verifyModeArg,
@@ -206,6 +207,7 @@ const replaceCmd = defineCommand({
       glob: args.glob ? (args.glob as string).split(',') : undefined,
       verify: verifyMode,
       targetScope: args['target-scope'] as string | undefined,
+      targetImport: args['target-import'] as string | undefined,
     })
     emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
   },

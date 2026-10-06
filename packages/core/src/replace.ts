@@ -18,6 +18,8 @@ export interface ReplaceOptions {
   glob?: string | string[]
   verify?: boolean | VerifyMode
   targetScope?: string
+  /** Import specifier for the validated target, including framework aliases. */
+  targetImport?: string
 }
 
 export interface ReplaceResult {
@@ -30,6 +32,7 @@ interface ReplacementTarget {
   filePath: string
   importName: string
   isTypeOnly: boolean
+  declarationFiles: readonly string[]
 }
 
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
@@ -38,17 +41,19 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
     : rgFiles(to, { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
-  const target = findReplacementTarget(targetPaths, to, cwd, opts.targetScope)
-  // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-  const candidatePaths = rgFiles(from, { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && path !== target.filePath)
-  const projectStyle = inferProjectSpecifierStyle(cwd)
+  if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
+    throw new Error('ripast replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
   const server = await startTsServer(cwd)
   try {
+    const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
+    // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
+    const candidatePaths = rgFiles(from, { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
+    const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     for (const path of candidatePaths) {
       const before = readFileSync(path, 'utf8')
-      const after = await replaceImportedSymbol(server, path, before, from, to, target, projectStyle)
+      const after = await replaceImportedSymbol(server, path, before, from, to, target, projectStyle, opts.targetImport)
       if (after !== before)
         changes.push({ path, rel: relative(cwd, path), before, after })
     }
@@ -62,7 +67,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   }
 }
 
-function findReplacementTarget(paths: string[], symbol: string, cwd: string, targetScope?: string): ReplacementTarget {
+async function findReplacementTarget(server: TsServer, paths: string[], symbol: string, cwd: string, targetScope?: string): Promise<ReplacementTarget> {
   const scopeAbs = targetScope ? resolve(cwd, targetScope) : null
   const matches: ReplacementTarget[] = []
   for (const path of paths) {
@@ -70,8 +75,38 @@ function findReplacementTarget(paths: string[], symbol: string, cwd: string, tar
       continue
     const { program } = parseSource(path, readFileSync(path, 'utf8'))
     const decl = listTopLevelDeclarations(program).find(d => d.name === symbol && d.exported && !d.isDefault)
-    if (decl)
-      matches.push({ filePath: path, importName: symbol, isTypeOnly: decl.kind === 'interface' || decl.kind === 'type' })
+    if (decl) {
+      matches.push({ filePath: path, importName: symbol, isTypeOnly: decl.kind === 'interface' || decl.kind === 'type', declarationFiles: [path] })
+      continue
+    }
+    // Automatic discovery keeps its existing direct-declaration policy.
+    // Select a named barrel explicitly with targetScope.
+    if (!targetScope)
+      continue
+    for (const statement of program.body) {
+      if (statement.type !== 'ExportNamedDeclaration' || statement.declaration)
+        continue
+      const specifier = statement.specifiers.find((item: { exported: { name?: string, value?: string } }) => (item.exported.name ?? item.exported.value) === symbol)
+      if (!specifier)
+        continue
+      let isTypeOnly = statement.exportKind === 'type' || specifier.exportKind === 'type'
+      const declarationFiles = [path]
+      if (!isTypeOnly) {
+        server.open(path)
+        const definitions = await server.definition(path, specifier.local.start)
+        for (const definition of definitions) {
+          declarationFiles.push(definition.path)
+          const resolved = parseSource(definition.path, server.textOf(definition.path)).program
+          const declaration = listTopLevelDeclarations(resolved).find(item => item.start <= definition.start && definition.start < item.end)
+          if (declaration?.kind === 'interface' || declaration?.kind === 'type') {
+            isTypeOnly = true
+            break
+          }
+        }
+      }
+      matches.push({ filePath: path, importName: symbol, isTypeOnly, declarationFiles })
+      break
+    }
   }
   if (!matches.length) {
     if (targetScope)
@@ -95,7 +130,7 @@ interface ImportedBinding {
   offset: number
 }
 
-async function replaceImportedSymbol(server: TsServer, path: string, source: string, from: string, to: string, target: ReplacementTarget, projectStyle: (path: string) => string): Promise<string> {
+async function replaceImportedSymbol(server: TsServer, path: string, source: string, from: string, to: string, target: ReplacementTarget, projectStyle: (path: string) => string, targetImport?: string): Promise<string> {
   const program = parseProgram(path, source)
   const imports = listImports(source, path, program)
   const bindings: ImportedBinding[] = []
@@ -147,7 +182,7 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   const style = bindings.find(binding => relativeScriptSpecifier(binding.imp.specifier))?.imp.specifier
     ?? imports.find(imp => relativeScriptSpecifier(imp.specifier))?.specifier
     ?? projectStyle(path)
-  const specifier = computeSpecifier(path, target.filePath, style)
+  const specifier = targetImport ?? computeSpecifier(path, target.filePath, style)
   const withImport = addOrMergeImport(stripped, path, specifier, {
     namedImports: [{ name: target.importName, alias: target.importName === to ? undefined : to, isTypeOnly: target.isTypeOnly }],
     isTypeOnly: target.isTypeOnly,
