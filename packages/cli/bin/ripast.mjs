@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
@@ -43,11 +42,11 @@ function ensureAdapters(needed) {
   if (!needed.length)
     return
 
-  const require = createRequire(import.meta.url)
   const missing = []
   for (const name of needed) {
     try {
-      require.resolve(`@ripast/${name}`)
+      if (!existsSync(new URL(import.meta.resolve(`@ripast/${name}`))))
+        missing.push(`@ripast/${name}`)
     }
     catch { missing.push(`@ripast/${name}`) }
   }
