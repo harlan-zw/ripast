@@ -93,6 +93,12 @@ ripast rename useStore useAppStore --all --apply
 
 Replace references to an imported binding with a project export. `ripast` resolves the target export, rewrites the consumer import, prunes the old import, and preserves the call/body shape. This is for API migrations like swapping `eventHandler(...)` for `defineAdminApiHandler(...)`; it does not remove semantic body statements.
 
+New imports preserve the replaced relative import's extension policy.
+For package imports, they follow relative imports in the consumer, then nearby project files.
+Without a local policy, they use extensionless paths.
+JavaScript paths keep emitted `.js`, `.mjs`, or `.cjs` endings for TypeScript targets.
+Review mixed import policies in the dry run before applying.
+
 ```bash
 ripast replace eventHandler defineAdminApiHandler
 ripast replace eventHandler defineAdminApiHandler --apply
