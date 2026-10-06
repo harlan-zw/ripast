@@ -39,7 +39,8 @@
   },
   "files": [
     "bin",
-    "dist"
+    "dist",
+    "skills"
   ],
   "engines": {
     "node": ">=22.13"
