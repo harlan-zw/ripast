@@ -37,6 +37,7 @@
     "@ripast/core": "workspace:*",
     "@ripast/vue": "workspace:*",
     "@types/node": "^26.6.4",
+    "@types/picomatch": "^4.0.3",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vue/compiler-sfc": "^3.5.43",
     "bumpp": "^12.3.0",

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, symlinkSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, symlinkSync } from 'node:fs'
 import { delimiter, resolve } from 'node:path'
 import process from 'node:process'
 import { it } from 'vitest'
@@ -48,23 +48,27 @@ it('installed adapters need no pnpm to show help', () => {
   finally { fx.cleanup() }
 })
 
-it('built CLI shows ripgrep guidance when Vue work is disabled', () => {
-  const fx = makeFixture({ 'package.json': '{"dependencies":{"vue":"*"}}' }, false)
+it('built CLI renames a symbol without ripgrep when Vue work is disabled', () => {
+  const fx = makeFixture({
+    'package.json': '{"dependencies":{"vue":"*"}}',
+    'source.ts': 'export const target = 1',
+  })
   try {
-    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripast.mjs'), 'rename', 'target', 'next', '--no-vue'], {
+    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripast.mjs'), 'rename', 'target', 'next', '--no-vue', '--no-verify', '--json'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
       encoding: 'utf8',
     })
-    assert.equal(child.status, 1)
-    assert.match(child.stderr, /ripgrep \(rg\).*PATH/)
-    assert.match(child.stderr, /rg --version/)
+    assert.equal(child.status, 0, child.stderr)
+    const result = JSON.parse(child.stdout)
+    assert.ok(result.changes.some((change: { after: string }) => change.after.includes('export const next')))
+    assert.match(child.stderr, /Using Node file search/)
     assert.doesNotMatch(child.stderr, /pnpm was not found/)
   }
   finally { fx.cleanup() }
 })
 
-it('launcher explains missing pnpm when an adapter needs installation', () => {
+it('launcher explains missing package managers when an adapter needs installation', () => {
   const fx = makeFixture({
     'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
   }, false)
@@ -76,11 +80,58 @@ it('launcher explains missing pnpm when an adapter needs installation', () => {
       encoding: 'utf8',
     })
     assert.equal(child.status, 1)
-    assert.match(child.stderr, /pnpm.*PATH/)
+    assert.match(child.stderr, /pnpm.*npm.*PATH/)
     assert.match(child.stderr, /@ripast\/vue/)
-    assert.match(child.stderr, /npx get-pnpm/)
+    assert.match(child.stderr, /https:\/\/pnpm.io\/installation/)
     assert.match(child.stderr, /npm install -g @ripast\/cli @ripast\/vue/)
     assert.match(child.stderr, /--no-vue/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('launcher falls back to npm with a separate prefix and preserves project cwd', () => {
+  const fx = makeFixture({
+    'package.json': '{"dependencies":{"vue":"*"},"devEngines":{"packageManager":{"name":"pnpm","onFail":"error"}}}',
+    'npm': '#!/bin/sh\npwd > cwd\nprintf "%s\\n" "$@" > args\nprintf "%s" "$RIPAST_REEXEC" > reexec\nexit 0\n',
+  }, false)
+  try {
+    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'ripast.mjs'))
+    chmodSync(resolve(fx.dir, 'npm'), 0o755)
+    const child = spawnSync(process.execPath, [resolve(fx.dir, 'ripast.mjs'), 'rename', 'old name', 'next'], {
+      cwd: fx.dir,
+      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      encoding: 'utf8',
+    })
+    assert.equal(child.status, 0, child.stderr)
+    const args = fx.read('args').trim().split('\n')
+    assert.deepEqual(args.slice(0, 2), ['exec', '--yes'])
+    assert.match(args[2], /^--prefix=/)
+    const prefix = args[2].slice('--prefix='.length)
+    assert.notEqual(prefix, fx.dir)
+    assert.equal(existsSync(prefix), false, 'temporary npm prefix gets removed')
+    assert.deepEqual(args.slice(3), ['--package=@ripast/cli', '--package=@ripast/vue', '--', 'ripast', 'rename', 'old name', 'next'])
+    assert.equal(fx.read('cwd').trim(), fx.dir)
+    assert.equal(fx.read('reexec'), '1')
+  }
+  finally { fx.cleanup() }
+})
+
+it('launcher does not fall back when pnpm runs and fails', () => {
+  const fx = makeFixture({
+    'package.json': '{"dependencies":{"vue":"*"}}',
+    'pnpm': '#!/bin/sh\nexit 17\n',
+    'npm': '#!/bin/sh\necho called > npm-called\nexit 0\n',
+  }, false)
+  try {
+    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'ripast.mjs'))
+    for (const name of ['pnpm', 'npm']) chmodSync(resolve(fx.dir, name), 0o755)
+    const child = spawnSync(process.execPath, [resolve(fx.dir, 'ripast.mjs'), 'scan', 'target'], {
+      cwd: fx.dir,
+      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      encoding: 'utf8',
+    })
+    assert.equal(child.status, 17)
+    assert.equal(existsSync(resolve(fx.dir, 'npm-called')), false)
   }
   finally { fx.cleanup() }
 })

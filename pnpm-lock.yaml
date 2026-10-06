@@ -127,6 +127,9 @@ importers:
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       '@typescript/native':
         specifier: npm:typescript@7.0.2
         version: typescript@7.0.2
@@ -178,6 +181,9 @@ importers:
       diff:
         specifier: ^9.0.0
         version: 9.0.0
+      ignore:
+        specifier: ^7.0.12
+        version: 7.0.12
       magic-string:
         specifier: ^1.4.2
         version: 1.4.2
@@ -187,6 +193,9 @@ importers:
       oxc-walker:
         specifier: ^1.1.1
         version: 1.1.1(@oxc-project/types@0.148.0)(oxc-parser@0.152.0)(rolldown@1.0.0)
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
       std-env:
         specifier: ^4.3.0
         version: 4.3.0
@@ -1299,6 +1308,9 @@ packages:
 
   '@types/node@26.6.4':
     resolution: {integrity: sha512-ldVPDCzj7fsaGZrLB0NuHuTvJcsNasysBAqMolr/cgxrLd1xbqxIr3XJiPnHHJUCxj5sNF1vnRj9aWnrVh5Jcg==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
@@ -2425,6 +2437,10 @@ packages:
 
   ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
+    engines: {node: '>= 4'}
+
+  ignore@7.0.12:
+    resolution: {integrity: sha512-/8UvqAPU9DGTI9k4mxtf49U37Isfwr8Uts96+SBHIkFxPJnHS0Ew4f00sM4Scd8V8EjM0jUNtVDdv1kPdt35lg==}
     engines: {node: '>= 4'}
 
   ignore@7.0.5:
@@ -4126,6 +4142,8 @@ snapshots:
     dependencies:
       undici-types: 8.9.0
 
+  '@types/picomatch@4.0.3': {}
+
   '@types/unist@3.0.3': {}
 
   '@typescript-eslint/eslint-plugin@8.69.0(@typescript-eslint/parser@8.69.0(@typescript/typescript6@6.0.2)(eslint@10.12.0(jiti@2.7.0)))(@typescript/typescript6@6.0.2)(eslint@10.12.0(jiti@2.7.0))':
@@ -5254,6 +5272,8 @@ snapshots:
       reserved-identifiers: 1.2.0
 
   ignore@5.3.2: {}
+
+  ignore@7.0.12: {}
 
   ignore@7.0.5: {}
 
