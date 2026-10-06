@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import { it, vi } from 'vitest'
 import { rgFiles, rgFilesMany } from '../packages/core/src/adapter.ts'
+import vueAdapter from '../packages/vue/src/index.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([
   ['single-pattern search', (cwd: string) => rgFiles('target', { cwd })],
   ['file listing', (cwd: string) => rgFiles('', { cwd, listAll: true })],
   ['batch search', (cwd: string) => rgFilesMany(['target'], { cwd })],
+  ['Vue adapter search', (cwd: string) => vueAdapter.hasFilesContaining!(cwd, 'target')],
 ] as const)('%s explains how to install missing ripgrep', (_name, run) => {
   const fx = makeFixture({}, false)
   vi.stubEnv('PATH', fx.dir)
