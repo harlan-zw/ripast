@@ -55,8 +55,7 @@ it('installs an adapter when its import entry is missing', () => {
     'bin/.keep': '',
   }, false)
   try {
-    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'bin/ripast.mjs'))
-    symlinkSync(resolve('packages/cli/dist'), resolve(fx.dir, 'dist'), 'dir')
+    prepareLauncher(fx)
     chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
     const child = spawnSync(process.execPath, [resolve(fx.dir, 'bin/ripast.mjs'), '--help'], {
       cwd: fx.dir,
