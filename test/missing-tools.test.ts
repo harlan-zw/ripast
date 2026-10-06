@@ -8,6 +8,26 @@ import vueAdapter from '../packages/vue/src/index.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([
+  ['ignored directories', { '.git/config': '', '.gitignore': 'ignored/\n', 'ignored/a.ts': 'target' }, ['*.ts', 'ignored/**'], []],
+  ['explicit directory overrides', { '.git/config': '', '.gitignore': 'ignored/\n', 'ignored/a.ts': 'target' }, ['*.ts', 'ignored'], ['ignored/a.ts']],
+  ['nested repositories', { '.git/config': '', '.gitignore': 'blocked/\n', 'sub/.git/config': '', 'sub/blocked/a.ts': 'target' }, ['*.ts'], ['sub/blocked/a.ts']],
+  ['literal extglobs', { 'a.ts': 'target', '@(a|b).ts': 'target' }, ['@(a|b).ts'], ['@(a|b).ts']],
+  ['literal brace alternatives', { 'a1.ts': 'target', 'a1..3.ts': 'target', 'a{1..3}.ts': 'target' }, ['a{1..3}.ts'], ['a1..3.ts']],
+] as const)('fallback preserves ripgrep selection for %s', (_name, files, glob, expected) => {
+  const fx = makeFixture(files, false)
+  const run = () => rgFiles('target', { cwd: fx.dir, glob: [...glob] }).map(path => relative(fx.dir, path)).sort()
+  try {
+    assert.deepEqual(run(), expected)
+    vi.stubEnv('PATH', fx.dir)
+    assert.deepEqual(run(), expected)
+  }
+  finally {
+    vi.unstubAllEnvs()
+    fx.cleanup()
+  }
+})
+
+it.each([
   ['single-pattern search', (cwd: string) => rgFiles('target', { cwd })],
   ['file listing', (cwd: string) => rgFiles('', { cwd, listAll: true })],
   ['batch search', (cwd: string) => rgFilesMany(['target', 'other'], { cwd })],

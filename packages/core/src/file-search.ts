@@ -72,29 +72,39 @@ export function searchFiles(cwd: string, globs: string[], search: FileSearch): s
       break
   }
   const gitRoot = [...ancestors].reverse().find(directory => existsSync(join(directory, '.git')))
-  let initial: IgnoreLayer[] = []
-  if (gitRoot) {
-    initial = addIgnoreFile(initial, gitRoot, globalExcludes(), 0)
-    const gitPath = join(gitRoot, '.git')
+  const gitLayers = (repository: string): IgnoreLayer[] => {
+    const layers = addIgnoreFile([], repository, globalExcludes(), 0)
+    const gitPath = join(repository, '.git')
     const gitDirectory = statSync(gitPath).isDirectory()
       ? gitPath
-      : resolve(gitRoot, readFileSync(gitPath, 'utf8').replace(/^gitdir:\s*/, '').trim())
+      : resolve(repository, readFileSync(gitPath, 'utf8').replace(/^gitdir:\s*/, '').trim())
     const commonPath = join(gitDirectory, 'commondir')
     const commonDirectory = existsSync(commonPath) ? resolve(gitDirectory, readFileSync(commonPath, 'utf8').trim()) : gitDirectory
-    initial = addIgnoreFile(initial, gitRoot, join(commonDirectory, 'info', 'exclude'), 1)
+    return addIgnoreFile(layers, repository, join(commonDirectory, 'info', 'exclude'), 1)
   }
+  let initial: IgnoreLayer[] = gitRoot ? gitLayers(gitRoot) : []
   for (const directory of ancestors.slice(0, -1))
     initial = directoryLayers(initial, directory, gitRoot)
 
   const rules = globs.map((glob) => {
     const excluded = glob.startsWith('!')
-    const pattern = excluded ? glob.slice(1) : glob
-    return { excluded, matches: picomatch(pattern.replace(/^\//, ''), { dot: true, nonegate: true, basename: !pattern.includes('/') }) }
+    let pattern = excluded ? glob.slice(1) : glob
+    // ripgrep treats braces as alternatives, including a single literal alternative.
+    for (;;) {
+      const next = pattern.replace(/(?<!\\)\{([^{}]*)\}/g, (match, body: string) => body.includes(',') ? match : body)
+      if (next === pattern)
+        break
+      pattern = next
+    }
+    return { excluded, matches: picomatch(pattern.replace(/^\//, ''), { dot: true, nonegate: true, noext: true, strictSlashes: true, basename: !pattern.includes('/') }) }
   })
   const hasIncludes = rules.some(rule => !rule.excluded)
   const results: string[] = []
-  const walk = (directory: string, inherited: IgnoreLayer[]): void => {
-    const layers = directoryLayers(inherited, directory, gitRoot)
+  const walk = (directory: string, inherited: IgnoreLayer[], repository: string | undefined): void => {
+    const nestedRepository = directory !== repository && existsSync(join(directory, '.git'))
+    const currentRepository = nestedRepository ? directory : repository
+    const currentLayers = nestedRepository ? [...gitLayers(directory), ...inherited.filter(layer => layer.priority > 2)] : inherited
+    const layers = directoryLayers(currentLayers, directory, currentRepository)
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (entry.name === '.git' || entry.isSymbolicLink())
         continue
@@ -105,13 +115,13 @@ export function searchFiles(cwd: string, globs: string[], search: FileSearch): s
       const rel = normalize(relative(root, path))
       let selection: 'Include' | 'Exclude' | 'Unspecified' = 'Unspecified'
       for (const rule of rules) {
-        if (rule.matches(rel) || (isDirectory && rule.matches(`${rel}/`)))
+        if (rule.matches(rel) || (isDirectory && rule.excluded && rule.matches(`${rel}/`)))
           selection = rule.excluded ? 'Exclude' : 'Include'
       }
       if (selection === 'Exclude' || (selection !== 'Include' && isIgnored(path, isDirectory, layers)))
         continue
       if (isDirectory) {
-        walk(path, layers)
+        walk(path, layers, currentRepository)
         continue
       }
       if (selection === 'Unspecified' && hasIncludes)
@@ -125,6 +135,6 @@ export function searchFiles(cwd: string, globs: string[], search: FileSearch): s
         results.push(path)
     }
   }
-  walk(root, initial)
+  walk(root, initial, gitRoot)
   return results
 }
