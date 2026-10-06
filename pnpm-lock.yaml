@@ -130,6 +130,9 @@ importers:
       '@typescript/native':
         specifier: npm:typescript@7.0.2
         version: typescript@7.0.2
+      '@vue/compiler-sfc':
+        specifier: ^3.5.42
+        version: 3.5.42
       bumpp:
         specifier: ^12.3.0
         version: 12.3.0
@@ -163,9 +166,6 @@ importers:
       std-env:
         specifier: ^4.2.0
         version: 4.2.0
-      typescript:
-        specifier: '>=5.4'
-        version: 6.0.3
 
   packages/core:
     dependencies:
@@ -193,24 +193,24 @@ importers:
 
   packages/vue:
     dependencies:
+      '@typescript/typescript6':
+        specifier: ^6.0.2
+        version: 6.0.2
       '@volar/language-service':
         specifier: ^2.4.28
-        version: 2.4.28(typescript@6.0.3)
+        version: 2.4.28(@typescript/typescript6@6.0.2)
       '@volar/typescript':
         specifier: ^2.4.28
-        version: 2.4.28(typescript@6.0.3)
+        version: 2.4.28(@typescript/typescript6@6.0.2)
       '@vue/language-core':
         specifier: ^3.3.11
         version: 3.3.11
       '@vue/language-service':
         specifier: ^3.3.11
-        version: 3.3.11(typescript@6.0.3)
-      typescript:
-        specifier: '>=5.4'
-        version: 6.0.3
+        version: 3.3.11(@typescript/typescript6@6.0.2)
       volar-service-typescript:
         specifier: ^0.0.71
-        version: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(typescript@6.0.3)
+        version: 0.0.71(@typescript/typescript6@6.0.2)(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2))
       vscode-languageserver-protocol:
         specifier: 3.17.5
         version: 3.17.5
@@ -4392,14 +4392,14 @@ snapshots:
     dependencies:
       '@volar/source-map': 2.4.28
 
-  '@volar/language-service@2.4.28(typescript@6.0.3)':
+  '@volar/language-service@2.4.28(@typescript/typescript6@6.0.2)':
     dependencies:
       '@volar/language-core': 2.4.28
       vscode-languageserver-protocol: 3.17.5
       vscode-languageserver-textdocument: 1.0.14
       vscode-uri: 3.2.0
     optionalDependencies:
-      typescript: 6.0.3
+      typescript: '@typescript/typescript6@6.0.2'
 
   '@volar/source-map@2.4.28': {}
 
@@ -4410,15 +4410,6 @@ snapshots:
       vscode-uri: 3.2.0
     optionalDependencies:
       typescript: '@typescript/typescript6@6.0.2'
-    optional: true
-
-  '@volar/typescript@2.4.28(typescript@6.0.3)':
-    dependencies:
-      '@volar/language-core': 2.4.28
-      path-browserify: 1.0.1
-      vscode-uri: 3.2.0
-    optionalDependencies:
-      typescript: 6.0.3
 
   '@vscode/emmet-helper@2.11.0':
     dependencies:
@@ -4491,19 +4482,19 @@ snapshots:
       pug-parser: 6.0.0
       vscode-languageserver-textdocument: 1.0.12
 
-  '@vue/language-service@3.3.11(typescript@6.0.3)':
+  '@vue/language-service@3.3.11(@typescript/typescript6@6.0.2)':
     dependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
       '@vue/language-core': 3.3.11
       '@vue/shared': 3.5.34
       path-browserify: 1.0.1
-      volar-service-css: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
-      volar-service-emmet: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
-      volar-service-html: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
-      volar-service-json: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
-      volar-service-pug: 0.0.70(typescript@6.0.3)
-      volar-service-pug-beautify: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
-      volar-service-typescript: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(typescript@6.0.3)
+      volar-service-css: 0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2))
+      volar-service-emmet: 0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2))
+      volar-service-html: 0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2))
+      volar-service-json: 0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2))
+      volar-service-pug: 0.0.70(@typescript/typescript6@6.0.2)
+      volar-service-pug-beautify: 0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2))
+      volar-service-typescript: 0.0.71(@typescript/typescript6@6.0.2)(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2))
       vscode-html-languageservice: 5.6.2
       vscode-uri: 3.1.0
     transitivePeerDependencies:
@@ -6292,63 +6283,63 @@ snapshots:
     transitivePeerDependencies:
       - msw
 
-  volar-service-css@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
+  volar-service-css@0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2)):
     dependencies:
       vscode-css-languageservice: 6.3.10
       vscode-languageserver-textdocument: 1.0.12
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
 
-  volar-service-emmet@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
+  volar-service-emmet@0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2)):
     dependencies:
       '@emmetio/css-parser': 0.4.1
       '@emmetio/html-matcher': 1.3.0
       '@vscode/emmet-helper': 2.11.0
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
 
-  volar-service-html@0.0.70(@volar/language-service@2.4.28(typescript@6.0.3)):
+  volar-service-html@0.0.70(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2)):
     dependencies:
       vscode-html-languageservice: 5.6.2
       vscode-languageserver-textdocument: 1.0.12
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
 
-  volar-service-html@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
+  volar-service-html@0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2)):
     dependencies:
       vscode-html-languageservice: 5.6.2
       vscode-languageserver-textdocument: 1.0.12
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
 
-  volar-service-json@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
+  volar-service-json@0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2)):
     dependencies:
       vscode-json-languageservice: 5.7.2
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
 
-  volar-service-pug-beautify@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
+  volar-service-pug-beautify@0.0.71(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2)):
     dependencies:
       '@johnsoncodehk/pug-beautify': 0.2.2
     optionalDependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
 
-  volar-service-pug@0.0.70(typescript@6.0.3):
+  volar-service-pug@0.0.70(@typescript/typescript6@6.0.2):
     dependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
       '@vue/language-plugin-pug': 3.2.8
-      volar-service-html: 0.0.70(@volar/language-service@2.4.28(typescript@6.0.3))
+      volar-service-html: 0.0.70(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2))
       vscode-html-languageservice: 5.6.2
       vscode-languageserver-textdocument: 1.0.12
     transitivePeerDependencies:
       - typescript
 
-  volar-service-typescript@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(typescript@6.0.3):
+  volar-service-typescript@0.0.71(@typescript/typescript6@6.0.2)(@volar/language-service@2.4.28(@typescript/typescript6@6.0.2)):
     dependencies:
       path-browserify: 1.0.1
       semver: 7.8.0
@@ -6357,8 +6348,8 @@ snapshots:
       vscode-nls: 5.2.0
       vscode-uri: 3.2.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28(typescript@6.0.3)
-      typescript: 6.0.3
+      '@volar/language-service': 2.4.28(@typescript/typescript6@6.0.2)
+      typescript: '@typescript/typescript6@6.0.2'
 
   vscode-css-languageservice@6.3.10:
     dependencies:

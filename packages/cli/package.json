@@ -48,9 +48,6 @@
     "build": "obuild",
     "dev:prepare": "obuild --stub"
   },
-  "peerDependencies": {
-    "typescript": ">=5.4"
-  },
   "dependencies": {
     "@ripast/core": "workspace:*",
     "citty": "^0.2.2",

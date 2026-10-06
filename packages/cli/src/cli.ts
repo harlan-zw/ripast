@@ -388,6 +388,7 @@ const renameFileCmd = defineCommand({
     apply: applyArg,
     verify: verifyArg,
     verifyMode: verifyModeArg,
+    vue: vueArg,
     profile: profileArg,
     json: jsonArg,
   },
@@ -399,6 +400,7 @@ const renameFileCmd = defineCommand({
     const r = await runRenameFile(recovered.old, recovered.new, {
       tsconfig: args.tsconfig as string | undefined,
       verify: verifyMode,
+      vue: args.vue as boolean,
     })
     const apply = !!args.apply
     const verify = verifyMode !== 'none'

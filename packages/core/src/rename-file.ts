@@ -17,6 +17,7 @@ export interface RenameFileOptions {
   /** Configured project used for import rewrites and verification. */
   tsconfig?: string
   verify?: boolean | VerifyMode
+  vue?: boolean
 }
 
 const TS_LIKE_RE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
@@ -55,7 +56,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     throw new Error('ripast rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
   const verifyMode = resolveVerifyMode(opts.verify)
-  const vueAdapter = await loadAdapter('vue')
+  const vueAdapter = opts.vue === false ? null : await loadAdapter('vue')
   const warnings: string[] = []
   const server = !vueAdapter || verifyMode !== 'none' ? await startTsServer(cwd, { tsconfig: tsconfigPath }) : null
   try {

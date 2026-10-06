@@ -86,6 +86,20 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
 
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
+    const destinationImports = listImports(toAfter, toAbs, parseProgram(toAbs, toAfter))
+    const replacements = new Map<ImportInfo, string | null>()
+    for (const imp of destinationImports) {
+      if (imp.sideEffectOnly || !(await importResolvesTo(server, toAbs, imp, fromAbs)))
+        continue
+      const match = imp.named.find(binding => binding.name === symbol)
+      if (!match)
+        continue
+      if (match.alias && match.alias !== symbol)
+        throw new Error(`ripast move: destination imports "${symbol}" as "${match.alias}". Remove the alias before moving it.`)
+      const remaining = { ...imp, named: imp.named.filter(binding => binding !== match) }
+      replacements.set(imp, isImportEmpty(remaining) ? null : renderImport(remaining))
+    }
+    toAfter = rewriteImports(toAfter, destinationImports, replacements, [])
     const changes: FileChange[] = []
     if (fromAfter !== fromOriginal)
       changes.push({ path: fromAbs, rel: relative(cwd, fromAbs), before: fromOriginal, after: fromAfter })

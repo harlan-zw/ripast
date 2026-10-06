@@ -35,8 +35,12 @@ interface ReplacementTarget {
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
   const cwd = opts.cwd ?? process.cwd()
   const verifyMode = resolveVerifyMode(opts.verify)
-  const candidatePaths = rgFiles(from, { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
-  const target = findReplacementTarget(rgFiles(to, { cwd, glob: opts.glob }).filter(path => !isVuePath(path)), to, cwd, opts.targetScope)
+  const targetPaths = opts.targetScope
+    ? [resolve(cwd, opts.targetScope)]
+    : rgFiles(to, { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+  const target = findReplacementTarget(targetPaths, to, cwd, opts.targetScope)
+  // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
+  const candidatePaths = rgFiles(from, { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && path !== target.filePath)
 
   const server = await startTsServer(cwd)
   try {

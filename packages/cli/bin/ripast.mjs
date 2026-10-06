@@ -61,6 +61,6 @@ function ensureAdapters(needed) {
   process.exit(res.status ?? 1)
 }
 
-ensureAdapters(detectFrameworks(process.cwd()))
+ensureAdapters(process.argv.includes('--no-vue') ? [] : detectFrameworks(process.cwd()))
 
 await import('../dist/cli.mjs')
