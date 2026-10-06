@@ -30,7 +30,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:package": "node --experimental-strip-types scripts/smoke-package.ts",
-    "release": "pnpm build && bumpp --recursive && pnpm -r --filter './packages/*' publish"
+    "release": "bumpp --recursive",
+    "release:publish": "node --experimental-strip-types scripts/release.ts publish"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^9.5.1",
