@@ -4,11 +4,11 @@ import type { TsServer } from './ts-server.ts'
 import type { FileChange, TextEdit } from './util.ts'
 import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { listTopLevelDeclarations, parseSource } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport } from './imports.ts'
-import { isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
+import { isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFiles } from './util.ts'
 import { findRegressions } from './verify.ts'
@@ -41,13 +41,14 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   const target = findReplacementTarget(targetPaths, to, cwd, opts.targetScope)
   // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
   const candidatePaths = rgFiles(from, { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && path !== target.filePath)
+  const projectStyle = inferProjectSpecifierStyle(cwd)
 
   const server = await startTsServer(cwd)
   try {
     const changes: FileChange[] = []
     for (const path of candidatePaths) {
       const before = readFileSync(path, 'utf8')
-      const after = await replaceImportedSymbol(server, path, before, from, to, target)
+      const after = await replaceImportedSymbol(server, path, before, from, to, target, projectStyle)
       if (after !== before)
         changes.push({ path, rel: relative(cwd, path), before, after })
     }
@@ -94,7 +95,7 @@ interface ImportedBinding {
   offset: number
 }
 
-async function replaceImportedSymbol(server: TsServer, path: string, source: string, from: string, to: string, target: ReplacementTarget): Promise<string> {
+async function replaceImportedSymbol(server: TsServer, path: string, source: string, from: string, to: string, target: ReplacementTarget, projectStyle: (path: string) => string): Promise<string> {
   const program = parseProgram(path, source)
   const imports = listImports(source, path, program)
   const bindings: ImportedBinding[] = []
@@ -143,10 +144,46 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   if (!replaced)
     return stripped
 
-  const specifier = computeSpecifier(path, target.filePath, './placeholder.ts')
+  const style = bindings.find(binding => relativeScriptSpecifier(binding.imp.specifier))?.imp.specifier
+    ?? imports.find(imp => relativeScriptSpecifier(imp.specifier))?.specifier
+    ?? projectStyle(path)
+  const specifier = computeSpecifier(path, target.filePath, style)
   const withImport = addOrMergeImport(stripped, path, specifier, {
     namedImports: [{ name: target.importName, alias: target.importName === to ? undefined : to, isTypeOnly: target.isTypeOnly }],
     isTypeOnly: target.isTypeOnly,
   })
   return pruneUnusedImports(withImport, path)
+}
+
+function relativeScriptSpecifier(specifier: string): boolean {
+  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|vue|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
+}
+
+function inferProjectSpecifierStyle(cwd: string): (path: string) => string {
+  let entries: { directory: string[], style: string }[] | undefined
+  return (path) => {
+    entries ??= projectScriptFiles(cwd).flatMap((file) => {
+      const source = readFileSync(file, 'utf8')
+      return listImports(source, file).filter(imp => relativeScriptSpecifier(imp.specifier)).map(imp => ({ directory: dirname(file).split(/[\\/]/), style: imp.specifier }))
+    })
+    const directory = dirname(path).split(/[\\/]/)
+    let nearest = Infinity
+    const counts = new Map<string, { count: number, style: string }>()
+    for (const entry of entries) {
+      let common = 0
+      while (common < directory.length && directory[common] === entry.directory[common])
+        common++
+      const distance = directory.length + entry.directory.length - 2 * common
+      if (distance > nearest)
+        continue
+      if (distance < nearest) {
+        nearest = distance
+        counts.clear()
+      }
+      const ending = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/.exec(entry.style)?.[0] ?? ''
+      const previous = counts.get(ending)
+      counts.set(ending, { count: (previous?.count ?? 0) + 1, style: entry.style })
+    }
+    return [...counts.values()].sort((a, b) => b.count - a.count || a.style.localeCompare(b.style))[0]?.style ?? './placeholder'
+  }
 }

@@ -239,10 +239,16 @@ const WIN_SEP_RE = /\\/g
 
 /** Relative specifier from `fromFilePath` to `toFilePath`, keeping the extension style of `styleSpec`. */
 export function computeSpecifier(fromFilePath: string, toFilePath: string, styleSpec: string): string {
-  const hasExt = MODULE_EXT_RE.test(styleSpec)
+  const extension = MODULE_EXT_RE.exec(styleSpec)?.[0]
   let rel = relativePosix(fromFilePath, toFilePath)
-  if (!hasExt)
+  if (!extension) {
     rel = rel.replace(MODULE_EXT_RE, '')
+  }
+  else if (/^\.(?:jsx?|mjs|cjs)$/.test(extension)) {
+    const runtimeExtension = /\.(?:jsx?|mjs|cjs)$/.exec(rel)?.[0]
+    const emitted = runtimeExtension ?? (rel.endsWith('.mts') ? '.mjs' : rel.endsWith('.cts') ? '.cjs' : rel.endsWith('.tsx') && extension === '.jsx' ? '.jsx' : '.js')
+    rel = rel.replace(MODULE_EXT_RE, emitted)
+  }
   if (!rel.startsWith('.'))
     rel = `./${rel}`
   return rel

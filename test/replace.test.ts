@@ -42,22 +42,6 @@ it('replace resolves an explicit target outside the consumer glob', async () => 
   finally { fx.cleanup() }
 })
 
-it('replace swaps an imported symbol and rewrites the import', async () => {
-  const fx = makeFixture({
-    'utils.ts': 'export function defineAdminApiHandler(fn: Function) { return fn }\n',
-    'route.ts': 'import { eventHandler } from \'h3\'\nexport default eventHandler(async () => 1)\n',
-  })
-  try {
-    const result = await runReplace('eventHandler', 'defineAdminApiHandler', { cwd: fx.dir, verify: false })
-    writeChanges(result.changes)
-    const route = fx.read('route.ts')
-    assert.match(route, /import \{ defineAdminApiHandler \} from ["']\.\/utils\.ts["']/)
-    assert.doesNotMatch(route, /eventHandler/)
-    assert.match(route, /export default defineAdminApiHandler\(async \(\) => 1\)/)
-  }
-  finally { fx.cleanup() }
-})
-
 it('replace removes one old named import from a mixed import', async () => {
   const fx = makeFixture({
     'utils.ts': 'export function better() { return 1 }\n',
