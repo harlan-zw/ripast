@@ -83,9 +83,7 @@ jobs:
         run: npm run release:publish -- "$RELEASE_TAG" "${{ runner.temp }}/ripast-pack"
       - name: Download published packages
         env:
-          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/ripast-published"
-          npm pack "@ripast/core@$RELEASE_VERSION" "@ripast/vue@$RELEASE_VERSION" "@ripast/cli@$RELEASE_VERSION" --pack-destination "$RUNNER_TEMP/ripast-published" --registry=https://registry.npmjs.org
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: npm run release:download -- "$RELEASE_TAG" "${{ runner.temp }}/ripast-published"
       - name: Check installation from npm
         run: npm run smoke:package -- "${{ runner.temp }}/ripast-published"

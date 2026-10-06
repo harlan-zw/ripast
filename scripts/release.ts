@@ -1,13 +1,33 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
+import { setTimeout } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 
 const folders = ['core', 'vue', 'cli'] as const
 interface ReleasePackage { name: string, version: string }
 interface RegistryResponse { status: number | null, stdout: string }
+
+export async function downloadPublishedPackages(pack: () => RegistryResponse, pause: () => Promise<void>, attempts = 30) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const response = pack()
+    if (response.status === 0)
+      return
+    if (response.status === null || !response.stdout.trim())
+      throw new Error('Package download failed. Check npm connectivity before retrying.')
+    const value: unknown = JSON.parse(response.stdout)
+    if (typeof value !== 'object' || value === null || !('error' in value)
+      || typeof value.error !== 'object' || value.error === null
+      || !('code' in value.error) || !['E404', 'ETARGET'].includes(String(value.error.code))) {
+      throw new Error('Package download failed. Resolve the npm error before retrying.')
+    }
+    if (attempt + 1 < attempts)
+      await pause()
+  }
+  throw new Error('Published packages are not available. Retry after npm finishes processing them.')
+}
 
 export function planRelease(tag: string, packages: ReleasePackage[]) {
   const match = /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-z-][\da-z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-z-][\da-z-]*))*))?)$/i.exec(tag)
@@ -52,16 +72,31 @@ function readPackages(cwd: string): ReleasePackage[] {
   })
 }
 
-function run() {
+async function run() {
   const [command, tag = '', directory] = process.argv.slice(2)
   const plan = planRelease(tag, readPackages(process.cwd()))
   if (command === 'plan') {
     process.stdout.write(`version=${plan.version}\nnpmTag=${plan.npmTag}\n`)
     return
   }
-  if (command !== 'publish' || !directory || !process.env.npm_execpath?.endsWith('npm-cli.js'))
-    throw new Error('Run npm run release:publish with a version tag and tarball directory.')
+  if (!['publish', 'download'].includes(command) || !directory || !process.env.npm_execpath?.endsWith('npm-cli.js'))
+    throw new Error('Run npm run release:publish or release:download with a version tag and tarball directory.')
   const npm = process.env.npm_execpath
+  if (command === 'download') {
+    mkdirSync(directory, { recursive: true })
+    await downloadPublishedPackages(() => {
+      const response = spawnSync(process.execPath, [npm, 'pack', ...folders.map(folder => `@ripast/${folder}@${plan.version}`), '--json', '--pack-destination', directory, '--registry=https://registry.npmjs.org'], { encoding: 'utf8' })
+      if (response.error)
+        throw response.error
+      if (response.stderr)
+        process.stderr.write(response.stderr)
+      return response
+    }, () => {
+      process.stdout.write('npm is processing published packages. Retry the download in 20 seconds.\n')
+      return setTimeout(20_000)
+    })
+    return
+  }
   const artifacts = folders.map((folder) => {
     const name = `@ripast/${folder}`
     const tarball = join(directory, `ripast-${folder}-${plan.version}.tgz`)
@@ -85,4 +120,4 @@ function run() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-  run()
+  await run()

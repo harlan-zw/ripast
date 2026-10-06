@@ -31,6 +31,7 @@
     "test:watch": "vitest",
     "smoke:package": "node --experimental-strip-types scripts/smoke-package.ts",
     "release": "bumpp --recursive",
+    "release:download": "node --experimental-strip-types scripts/release.ts download",
     "release:publish": "node --experimental-strip-types scripts/release.ts publish"
   },
   "devDependencies": {

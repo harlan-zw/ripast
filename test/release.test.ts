@@ -1,7 +1,43 @@
 import { describe, expect, it } from 'vitest'
-import { planRelease, publicationDecision } from '../scripts/release.ts'
+import { downloadPublishedPackages, planRelease, publicationDecision } from '../scripts/release.ts'
 
 const packages = ['@ripast/core', '@ripast/vue', '@ripast/cli'].map(name => ({ name, version: '0.5.0' }))
+
+describe('registry download', () => {
+  it('waits for processed packages before completing the download', async () => {
+    const responses = [
+      { status: 1, stdout: '{"error":{"code":"ETARGET"}}' },
+      { status: 1, stdout: '{"error":{"code":"E404"}}' },
+      { status: 0, stdout: '[]' },
+    ]
+    let pauses = 0
+    await downloadPublishedPackages(() => responses.shift()!, async () => {
+      pauses++
+    }, 3)
+    expect(pauses).toBe(2)
+    expect(responses).toEqual([])
+  })
+
+  it('stops when processing exceeds the retry limit', async () => {
+    let pauses = 0
+    await expect(downloadPublishedPackages(
+      () => ({ status: 1, stdout: '{"error":{"code":"ETARGET"}}' }),
+      async () => { pauses++ },
+      2,
+    )).rejects.toThrow('not available')
+    expect(pauses).toBe(1)
+  })
+
+  it.each(['E401', 'E503'])('fails immediately for %s', async (code) => {
+    let pauses = 0
+    await expect(downloadPublishedPackages(
+      () => ({ status: 1, stdout: JSON.stringify({ error: { code } }) }),
+      async () => { pauses++ },
+      3,
+    )).rejects.toThrow('download failed')
+    expect(pauses).toBe(0)
+  })
+})
 
 describe('release plan', () => {
   it('publishes matching package versions to latest', () => {
