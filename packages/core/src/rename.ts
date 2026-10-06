@@ -52,10 +52,10 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   const candidatePaths = timed(profile, 'rg candidates', () => rgFiles(from, { cwd, glob: opts.glob }))
   const scriptCandidates = candidatePaths.filter(path => !isVue(path))
 
-  const allDeclarations = timed(profile, 'find declarations', () => findDeclarations(scriptCandidates, from))
-  const declarations = opts.scope
-    ? allDeclarations.filter(d => d.filePath === resolve(cwd, opts.scope!))
-    : allDeclarations
+  const declarationPaths = opts.scope
+    ? scriptCandidates.filter(path => path === resolve(cwd, opts.scope!))
+    : scriptCandidates
+  const declarations = timed(profile, 'find declarations', () => findDeclarations(declarationPaths, from, opts.allowMultiple))
 
   if (!declarations.length) {
     if (opts.scope)
@@ -292,9 +292,10 @@ function rewriteScriptIdentifiers(source: string, from: string, to: string): str
   return applyTextEdits(source, edits.map(edit => ({ ...edit, replacement: to })))
 }
 
-/** Top-level declarations named `name`, found syntactically with oxc. */
-function findDeclarations(paths: string[], name: string): Declaration[] {
+/** Prefer top-level declarations; fall back to local declarations. */
+function findDeclarations(paths: string[], name: string, allowMultiple = false): Declaration[] {
   const out: Declaration[] = []
+  const locals: Declaration[] = []
   for (const path of paths) {
     const source = readFileSync(path, 'utf8')
     const { program } = parseSource(path, source)
@@ -302,6 +303,17 @@ function findDeclarations(paths: string[], name: string): Declaration[] {
       if (decl.name === name)
         out.push({ filePath: path, source, pos: decl.nameStart })
     }
+    walk(program, {
+      enter(node: any) {
+        if ((node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type)) && node.id?.name === name)
+          locals.push({ filePath: path, source, pos: node.id.start })
+      },
+    })
   }
-  return out
+  // Keep top-level renames from changing unrelated local shadows.
+  if (out.length)
+    return out
+  if (!allowMultiple && locals.length > new Set(locals.map(d => d.filePath)).size)
+    throw new Error(`ripast rename: "${name}" has multiple declarations in one file. Pass --all to rename every occurrence.`)
+  return locals
 }

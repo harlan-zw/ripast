@@ -80,3 +80,46 @@ it('emits no stale-consumer warning when every import site is rewritten', async 
   }
   finally { fx.cleanup() }
 })
+
+it('rename finds a local variable inside a function', async () => {
+  const fx = makeFixture({
+    'a.ts': 'export function count(closes: number) { const markedCloses = closes; const hits = [markedCloses]; return hits.length + closes }\n',
+  })
+  try {
+    const result = await runRename('hits', 'markedHits', { cwd: fx.dir, verify: true, vue: false })
+    writeChanges(result.changes)
+    assert.equal(result.regressions.length, 0)
+    assert.match(fx.read('a.ts'), /const markedHits = \[markedCloses\]; return markedHits.length \+ closes/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('rename refuses ambiguous local declarations unless all is requested', async () => {
+  const fx = makeFixture({
+    'a.ts': 'export function a() { const hits = 1; return hits }\nexport function b() { const hits = 2; return hits }\n',
+  })
+  try {
+    await assert.rejects(runRename('hits', 'markedHits', { cwd: fx.dir, vue: false }), /multiple declarations/)
+    const result = await runRename('hits', 'markedHits', { cwd: fx.dir, allowMultiple: true, vue: false })
+    writeChanges(result.changes)
+    assert.equal(result.regressions.length, 0)
+    assert.match(fx.read('a.ts'), /function a\(\) \{ const markedHits = 1; return markedHits \}/)
+    assert.match(fx.read('a.ts'), /function b\(\) \{ const markedHits = 2; return markedHits \}/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('rename keeps local shadows when a top-level declaration exists', async () => {
+  const fx = makeFixture({
+    'a.ts': 'export const hits = 1; export function count() { const hits = 2; return hits }\nexport const value = hits\n',
+  })
+  try {
+    const result = await runRename('hits', 'markedHits', { cwd: fx.dir, vue: false })
+    writeChanges(result.changes)
+    assert.equal(result.regressions.length, 0)
+    assert.match(fx.read('a.ts'), /export const markedHits = 1/)
+    assert.match(fx.read('a.ts'), /function count\(\) \{ const hits = 2; return hits \}/)
+    assert.match(fx.read('a.ts'), /export const value = markedHits/)
+  }
+  finally { fx.cleanup() }
+})

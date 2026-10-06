@@ -43,8 +43,9 @@ import {
   summarize,
   writeChanges,
 } from '@ripast/core'
-import { defineCommand, runMain } from 'citty'
+import { runMain } from 'citty'
 import { agent, isAgent } from 'std-env'
+import { defineStrictCommand as defineCommand } from './command.ts'
 
 const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
 const applyArg = { type: 'boolean' as const, default: false, description: 'Write changes. Default prints a unified diff.' }

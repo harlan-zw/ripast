@@ -53,8 +53,8 @@ function ensureAdapters(needed) {
   if (!missing.length)
     return
 
-  const args = ['--yes', '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), '--', 'ripast', ...process.argv.slice(2)]
-  const res = spawnSync('npx', args, {
+  const args = ['dlx', '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), 'ripast', ...process.argv.slice(2)]
+  const res = spawnSync('pnpm', args, {
     stdio: 'inherit',
     env: { ...process.env, RIPAST_REEXEC: '1' },
   })
