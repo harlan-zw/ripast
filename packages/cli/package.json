@@ -52,6 +52,7 @@
   "dependencies": {
     "@ripast/core": "workspace:*",
     "citty": "^0.2.2",
+    "cross-spawn": "^7.0.6",
     "std-env": "^4.3.0"
   }
 }
