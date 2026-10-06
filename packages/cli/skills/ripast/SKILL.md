@@ -4,7 +4,9 @@ description: "Use Ripast for AST-aware renames, moves, usages, imports, and CSS 
 ---
 
 Ripast ships on npm as `@ripast/cli`. Run commands from the target project's root.
-Requires Node 22.13+ and `rg` (ripgrep) on PATH.
+Requires Node 22.13+.
+If `rg` is missing, Ripast searches files in Node. This can be slower.
+Programmatic regex searches still require `rg`.
 
 ## Invocation
 
@@ -14,6 +16,12 @@ pnpm dlx @ripast/cli <command> ...
 
 If the project already installs Ripast, use `pnpm exec ripast <command> ...`.
 The CLI installs framework adapters when needed, including `@ripast/vue` for Vue and Nuxt.
+Adapter installation prefers pnpm and uses npm if pnpm is missing.
+If pnpm is unavailable, invoke the published CLI with npm:
+
+```bash
+npm exec --yes --package=@ripast/cli -- ripast <command> ...
+```
 
 ## Commands
 

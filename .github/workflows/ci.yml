@@ -30,6 +30,9 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm -r --filter './packages/*' exec publint
+      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
+      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
 
   windows-launcher:
     runs-on: windows-latest
@@ -43,3 +46,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm exec vitest run test/launcher-platform.test.ts
+      - run: pnpm -r --filter './packages/*' exec publint
+      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
+      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"

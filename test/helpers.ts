@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 const TSCONFIG = JSON.stringify({
   compilerOptions: {
@@ -20,6 +20,16 @@ export interface Fixture {
   write: (rel: string, content: string) => string
   read: (rel: string) => string
   cleanup: () => void
+}
+
+export function prepareLauncher(fx: Fixture): string {
+  const path = fx.write('bin/ripast.mjs', '')
+  copyFileSync(resolve('packages/cli/bin/ripast.mjs'), path)
+  mkdirSync(join(fx.dir, 'node_modules'), { recursive: true })
+  // Link this dependency alone. Keep adapter resolution isolated from the workspace.
+  symlinkSync(resolve('packages/cli/node_modules/cross-spawn'), join(fx.dir, 'node_modules/cross-spawn'), 'junction')
+  symlinkSync(resolve('packages/cli/dist'), join(fx.dir, 'dist'), 'junction')
+  return path
 }
 
 export function makeFixture(files: Record<string, string> = {}, includeTsconfig = true): Fixture {

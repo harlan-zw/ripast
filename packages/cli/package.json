@@ -1,7 +1,7 @@
 {
   "name": "@ripast/cli",
   "type": "module",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "CLI for ripast. Deterministic AST refactors (rename, move, find-usages, tailwind/CSS class migration) for TypeScript and frontend frameworks. Auto-installs framework adapters as needed.",
   "author": {
     "name": "Harlan Wilton",
@@ -28,12 +28,12 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/cli.d.ts",
+      "types": "./dist/cli.d.mts",
       "import": "./dist/cli.mjs"
     }
   },
   "main": "./dist/cli.mjs",
-  "types": "./dist/cli.d.ts",
+  "types": "./dist/cli.d.mts",
   "bin": {
     "ripast": "./bin/ripast.mjs"
   },

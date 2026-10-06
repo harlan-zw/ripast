@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, symlinkSync } from 'node:fs'
+import { chmodSync, existsSync } from 'node:fs'
 import { delimiter, resolve } from 'node:path'
 import process from 'node:process'
 import { it } from 'vitest'
-import { makeFixture } from './helpers.ts'
+import { makeFixture, prepareLauncher } from './helpers.ts'
 
 it('launcher installs missing adapters through pnpm without running npm', () => {
   const fx = makeFixture({
@@ -13,9 +13,9 @@ it('launcher installs missing adapters through pnpm without running npm', () => 
     'pnpm': '#!/bin/sh\necho pnpm > manager\nprintf "%s\\n" "$@" > args\nexit 0\n',
   })
   try {
-    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'ripast.mjs'))
+    const launcher = prepareLauncher(fx)
     for (const name of ['npx', 'pnpm']) chmodSync(resolve(fx.dir, name), 0o755)
-    const child = spawnSync(process.execPath, [resolve(fx.dir, 'ripast.mjs'), 'rename', 'old', 'next'], {
+    const child = spawnSync(process.execPath, [launcher, 'rename', 'old', 'next'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPAST_REEXEC: '' },
       encoding: 'utf8',
@@ -34,9 +34,7 @@ it('installed adapters need no pnpm to show help', () => {
     'bin/.keep': '',
   }, false)
   try {
-    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'bin/ripast.mjs'))
-    symlinkSync(resolve('packages/cli/dist'), resolve(fx.dir, 'dist'), 'dir')
-    const child = spawnSync(process.execPath, [resolve(fx.dir, 'bin/ripast.mjs'), '--help'], {
+    const child = spawnSync(process.execPath, [prepareLauncher(fx), '--help'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
       encoding: 'utf8',
@@ -73,8 +71,7 @@ it('launcher explains missing package managers when an adapter needs installatio
     'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
   }, false)
   try {
-    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'ripast.mjs'))
-    const child = spawnSync(process.execPath, [resolve(fx.dir, 'ripast.mjs'), 'scan', 'target'], {
+    const child = spawnSync(process.execPath, [prepareLauncher(fx), 'scan', 'target'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
       encoding: 'utf8',
@@ -95,9 +92,9 @@ it('launcher falls back to npm with a separate prefix and preserves project cwd'
     'npm': '#!/bin/sh\npwd > cwd\nprintf "%s\\n" "$@" > args\nprintf "%s" "$RIPAST_REEXEC" > reexec\nexit 0\n',
   }, false)
   try {
-    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'ripast.mjs'))
+    const launcher = prepareLauncher(fx)
     chmodSync(resolve(fx.dir, 'npm'), 0o755)
-    const child = spawnSync(process.execPath, [resolve(fx.dir, 'ripast.mjs'), 'rename', 'old name', 'next'], {
+    const child = spawnSync(process.execPath, [launcher, 'rename', 'old name', 'next'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
       encoding: 'utf8',
@@ -123,9 +120,9 @@ it('launcher does not fall back when pnpm runs and fails', () => {
     'npm': '#!/bin/sh\necho called > npm-called\nexit 0\n',
   }, false)
   try {
-    copyFileSync(resolve('packages/cli/bin/ripast.mjs'), resolve(fx.dir, 'ripast.mjs'))
+    const launcher = prepareLauncher(fx)
     for (const name of ['pnpm', 'npm']) chmodSync(resolve(fx.dir, name), 0o755)
-    const child = spawnSync(process.execPath, [resolve(fx.dir, 'ripast.mjs'), 'scan', 'target'], {
+    const child = spawnSync(process.execPath, [launcher, 'scan', 'target'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
       encoding: 'utf8',

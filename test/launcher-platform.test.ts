@@ -1,15 +1,14 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import process from 'node:process'
 import { it } from 'vitest'
-import { makeFixture } from './helpers.ts'
+import { makeFixture, prepareLauncher } from './helpers.ts'
 
 it.each(['pnpm', 'npm'] as const)('launcher runs %s shims with literal arguments', (manager) => {
   const fx = makeFixture({ 'package.json': '{"dependencies":{"vue":"*"}}' }, false)
   try {
-    // Keep the launcher near its package dependencies, as an installed CLI would be.
     const record = join(fx.dir, 'record.json')
     const script = fx.write('manager.ts', `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd() }));`)
     const command = process.platform === 'win32'
@@ -17,7 +16,7 @@ it.each(['pnpm', 'npm'] as const)('launcher runs %s shims with literal arguments
       : fx.write(manager, `#!/bin/sh\nexec "${process.execPath}" --experimental-strip-types "${script}" "$@"\n`)
     chmodSync(command, 0o755)
     const args = ['scan', 'space & (literal)', '--glob', 'src/{a,b}.ts']
-    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripast.mjs'), ...args], {
+    const child = spawnSync(process.execPath, [prepareLauncher(fx), ...args], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
       encoding: 'utf8',
