@@ -167,6 +167,7 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
 
   const fileToUri = (fileName: string): URI => URI.file(resolve(cwd, fileName))
   const uriToFile = (uri: URI): string => normalizeFileName(uri.fsPath)
+  const uriToTsFile = (uri: URI): string => uriToFile(uri).replace(/\\/g, '/')
 
   const language = createLanguage<URI>(
     [
@@ -174,7 +175,7 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
         ts,
         commandLine.options,
         commandLine.vueOptions,
-        uri => uriToFile(uri),
+        uriToTsFile,
       ),
       { getLanguageId: uri => resolveFileLanguageId(uri.path) },
     ],
@@ -195,10 +196,10 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
 
   let projectVersion = 0
   const projectHost: TypeScriptProjectHost = {
-    getCurrentDirectory: () => cwd,
+    getCurrentDirectory: () => cwd.replace(/\\/g, '/'),
     getCompilationSettings: () => commandLine.options,
     getProjectReferences: () => commandLine.projectReferences,
-    getScriptFileNames: () => [...roots],
+    getScriptFileNames: () => [...roots].map(file => file.replace(/\\/g, '/')),
     getProjectVersion: () => String(projectVersion),
   }
 
@@ -254,9 +255,9 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
 
   const project: ProjectContext = {
     typescript: {
-      configFileName: tsconfigPath,
+      configFileName: tsconfigPath.replace(/\\/g, '/'),
       sys,
-      uriConverter: { asFileName: uriToFile, asUri: fileToUri },
+      uriConverter: { asFileName: uriToTsFile, asUri: fileToUri },
       ...createLanguageServiceHost(ts, sys, language, fileToUri, projectHost),
     },
   }

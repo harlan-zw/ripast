@@ -2,7 +2,7 @@ import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { loadAdapter } from './adapter.ts'
@@ -50,11 +50,12 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   }
   // Inspect the entry itself: existsSync follows symlinks and misses dangling targets.
   const target = lstatSync(newAbs, { throwIfNoEntry: false })
+  const source = lstatSync(oldAbs)
   const caseOnlyRename = oldAbs !== newAbs
     && dirname(oldAbs) === dirname(newAbs)
     && basename(oldAbs).toLowerCase() === basename(newAbs).toLowerCase()
     && target?.isFile()
-    && realpathSync(oldAbs) === realpathSync(newAbs)
+    && source.dev === target.dev && source.ino === target.ino
     && !readdirSync(dirname(newAbs)).includes(basename(newAbs))
   if (target && !caseOnlyRename)
     throw new Error(`ripast rename-file: target "${newPath}" already exists`)

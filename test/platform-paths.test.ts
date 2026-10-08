@@ -124,11 +124,9 @@ it.each([false, true])('plans a case-only file rename with vue=%s', async (useVu
 it('accepts the source entry under another casing on a case-insensitive filesystem', async () => {
   const fx = makeFixture({ 'Source.ts': 'export const value = 42\n' })
   const lstat = fs.lstatSync
-  const realpath = fs.realpathSync
   const source = join(fx.dir, 'Source.ts')
   const target = join(fx.dir, 'source.ts')
   const lstatSpy = vi.spyOn(fs, 'lstatSync').mockImplementation(((path: fs.PathLike, options: any) => lstat(path === target ? source : path, options)) as typeof lstat)
-  const realpathSpy = vi.spyOn(fs, 'realpathSync').mockImplementation(((path: fs.PathLike, options: any) => realpath(path === target ? source : path, options)) as typeof realpath)
   syncBuiltinESMExports()
   try {
     const result = await runRenameFile('Source.ts', 'source.ts', { cwd: fx.dir, vue: false, verify: false })
@@ -137,7 +135,6 @@ it('accepts the source entry under another casing on a case-insensitive filesyst
   }
   finally {
     lstatSpy.mockRestore()
-    realpathSpy.mockRestore()
     syncBuiltinESMExports()
     fx.cleanup()
   }
