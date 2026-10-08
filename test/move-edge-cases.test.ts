@@ -59,3 +59,18 @@ it.each([
   }
   finally { fx.cleanup() }
 })
+
+it('move upgrades an existing inline type import for value use', async () => {
+  const fx = makeFixture({
+    'source.ts': 'import { Model } from \'./dependency.ts\'\nexport function make() { return new Model().value }\n',
+    'dependency.ts': 'export class Model { value = 42 }\n',
+    'target.ts': 'import { type Model } from \'./dependency.ts\'\nexport type Existing = Model\n',
+  })
+  try {
+    const result = await runMove('make', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    writeChanges(result.changes)
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e', `const target = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/target.ts`).href)}); console.log(target.make())`], { encoding: 'utf8' })
+    assert.equal(output.trim(), '42')
+  }
+  finally { fx.cleanup() }
+})

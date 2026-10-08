@@ -202,11 +202,14 @@ export function addOrMergeImport(source: string, path: string, specifier: string
   if (existing) {
     const next: ImportInfo = { ...existing, named: [...existing.named] }
     const bindingKey = (binding: { name: string, alias?: string }): string => `${binding.name}\0${binding.alias ?? binding.name}`
-    const have = new Set(existing.named.map(bindingKey))
     for (const ni of spec.namedImports) {
-      if (have.has(bindingKey(ni)))
+      const index = next.named.findIndex(binding => bindingKey(binding) === bindingKey(ni))
+      if (index !== -1) {
+        // A value use needs a runtime binding, even if an earlier use was type-only.
+        if (!existing.isTypeOnly && !ni.isTypeOnly && next.named[index].isTypeOnly)
+          next.named[index] = { ...next.named[index], isTypeOnly: false }
         continue
-      have.add(bindingKey(ni))
+      }
       next.named.push({ name: ni.name, alias: ni.alias, isTypeOnly: !existing.isTypeOnly && !!ni.isTypeOnly, localStart: -1 })
     }
     if (spec.defaultImport && !existing.defaultImport)
