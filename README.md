@@ -1,3 +1,5 @@
+<div align="center">
+
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./branding/logo-dark.svg">
@@ -5,23 +7,16 @@
   </picture>
 </h1>
 
-[![npm version](https://img.shields.io/npm/v/@ripast/cli?color=yellow)](https://npmjs.com/package/@ripast/cli)
-[![npm downloads](https://img.shields.io/npm/dm/@ripast/cli?color=yellow)](https://npm.chart.dev/@ripast/cli)
-[![license](https://img.shields.io/github/license/harlan-zw/ripast?color=yellow)](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md)
-[![Agent skill on skilld.dev](https://skilld.dev/b/harlan-zw/ripast?style=flat&color=dfb317)](https://skilld.dev/gh/harlan-zw/ripast)
+[![npm version](https://img.shields.io/npm/v/@ripast/cli?style=flat-square&labelColor=334155&color=334155)](https://npmjs.com/package/@ripast/cli)
+[![npm downloads](https://img.shields.io/npm/dm/@ripast/cli?style=flat-square&labelColor=334155&color=334155)](https://npm.chart.dev/@ripast/cli)
+[![license](https://img.shields.io/github/license/harlan-zw/ripast?style=flat-square&labelColor=334155&color=334155)](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md)
+[![Agent skill on skilld.dev](https://img.shields.io/badge/Skill_repo-skilld.dev-334155?style=flat-square&labelColor=334155)](https://skilld.dev/gh/harlan-zw/ripast)
 
-> AST refactoring for TypeScript, JavaScript, Vue, Nuxt, React, and Solid. Built for AI coding agents, with dry runs by default.
+> IDE-like refactoring for agents: rename, move, find-usages, css-class-rename, etc. Works with TS, Vue, React & more
 
-<div align="center">
-<table>
-<tbody>
-<tr>
-<td align="center">
-<sub>Made possible by my <a href="https://github.com/sponsors/harlan-zw">Sponsor Program 💖</a><br> Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <a href="https://discord.gg/275MBUBvgP">Discord</a> for help</sub>
-</td>
-</tr>
-</tbody>
-</table>
+<p><sub>Made possible by my <a href="https://github.com/sponsors/harlan-zw">Sponsor Program 💖</a><br>
+Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <a href="https://discord.gg/275MBUBvgP">Discord</a> for help</sub></p>
+
 </div>
 
 ## Features
