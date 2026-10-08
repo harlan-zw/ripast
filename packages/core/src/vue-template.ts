@@ -308,8 +308,9 @@ export function parseTemplateWrapper(input: string): { tag: string, inner: strin
     const children = parsed.descriptor.template?.ast?.children as any[] | undefined
     const parent = children?.[0]
     if (!parsed.errors.length && children?.length === 1 && parent.type === NODE_ELEMENT
-      && parent.tag === tag && parent.children?.length === 1 && parent.children[0].tag === 'RipastChild')
+      && parent.tag === tag && parent.children?.length === 1 && parent.children[0].tag === 'RipastChild') {
       return { tag, inner }
+    }
   }
   throw new Error('ripast: wrapper must be a valid tag with optional attributes')
 }
