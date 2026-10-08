@@ -3,9 +3,10 @@ import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parse } from '@vue/compiler-sfc'
+import { detectFrameworks, loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
@@ -47,6 +48,17 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
       `ripast delete: no top-level declaration named "${symbol}" in ${fromPath} `
       + `(supported: function, class, interface, type, enum, const/let/var with single declarator)`,
     )
+  }
+
+  const nuxt = decl.exported && (detectFrameworks(cwd).includes('nuxt')
+    || ['.nuxt', 'nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mts', 'nuxt.config.mjs'].some(path => existsSync(join(cwd, path))))
+  const nuxtAdapter = nuxt ? await loadAdapter('nuxt') : null
+  if (nuxt) {
+    if (!nuxtAdapter?.autoImportScopes || !nuxtAdapter.inspectAutoImportConsumers)
+      throw new Error('ripast delete: cannot inspect Nuxt auto-imports without @ripast/vue. Install @ripast/vue before deleting exported declarations.')
+    const consumers = nuxtAdapter.inspectAutoImportConsumers({ cwd, symbol, fromAbs, files: candidatePaths, scopes: nuxtAdapter.autoImportScopes(cwd) })
+    if (consumers.length)
+      throw new Error(`ripast delete: cannot prove "${symbol}" is unused through Nuxt auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
   }
 
   const server = await startTsServer(cwd)
@@ -131,6 +143,8 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     }
     const references: DeleteReference[] = []
     for (const ref of await server.references(fromAbs, decl.nameStart)) {
+      if (nuxtAdapter?.isGeneratedPath?.(cwd, ref.path))
+        continue
       if (ref.path === fromAbs && ref.start >= decl.start && ref.start < decl.end)
         continue
       references.push({ file: relative(cwd, vueScripts.get(ref.path) ?? ref.path), line: ref.line, col: ref.col })

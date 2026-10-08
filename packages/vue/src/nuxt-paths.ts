@@ -7,7 +7,7 @@ const WIN_SEP_RE = /\\/g
 
 export function isGeneratedNuxtPath(cwd: string, filePath: string): boolean {
   const rel = relative(cwd, filePath).replace(/\\/g, '/')
-  return rel === '.nuxt' || rel.startsWith('.nuxt/')
+  return rel.split('/').includes('.nuxt')
 }
 
 export function removeGeneratedNuxtChanges(cwd: string, changes: FileChange[]): void {

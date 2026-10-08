@@ -4,7 +4,7 @@ import { compileScript, compileTemplate, parse, registerTS } from '@vue/compiler
 type ScriptBlock = 'script' | 'scriptSetup'
 
 /** Resolve only consumer-local bindings. Nuxt supplies unresolved names at runtime. */
-export function unboundNuxtSymbols(path: string, source: string, symbols: Set<string>): Map<string, ScriptBlock> {
+export function unboundNuxtSymbols(path: string, source: string, symbols: Set<string>, purpose: 'Move' | 'Delete' = 'Move'): Map<string, ScriptBlock> {
   const needed = new Map<string, ScriptBlock>()
   if (!path.endsWith('.vue')) {
     const { file, checker } = inspectScript(path, source)
@@ -63,7 +63,7 @@ export function unboundNuxtSymbols(path: string, source: string, symbols: Set<st
           }).bindings ?? {}
         }
         if (propsBindings?.[name] === 'props' || propsBindings?.[name] === 'props-aliased') {
-          if (needed.has(name))
+          if (purpose === 'Move' && needed.has(name))
             throw new Error(`ripast move: "${name}" is a Nuxt prop in ${path}. Use an explicit import alias before moving it.`)
         }
         else if (!needed.has(name)) {
@@ -98,6 +98,8 @@ function inspectScript(path: string, source: string) {
 function unresolvedReferences(root: ts.Node, checker: ts.TypeChecker, symbols: Set<string>): Set<string> {
   const needed = new Set<string>()
   const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) || (ts.isExportDeclaration(node) && node.moduleSpecifier))
+      return
     if (ts.isIdentifier(node) && symbols.has(node.text)) {
       const parent = node.parent
       const property = ts.isPropertyAccessExpression(parent) && parent.name === node

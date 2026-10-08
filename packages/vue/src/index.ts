@@ -14,6 +14,7 @@ import { findComponentUsage, findComponentUsages } from './component-usages.ts'
 import { listComponents } from './components.ts'
 import { doctor } from './doctor.ts'
 import { finalizeVueFileRename } from './finalize-rename.ts'
+import { inspectNuxtAutoImportConsumers } from './nuxt-delete.ts'
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
 import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
 import { createVueService, workspaceEditToChanges } from './service.ts'
@@ -47,6 +48,7 @@ const adapter: FrameworkAdapter = {
     return nuxtAutoImportScopes(cwd)
   },
   isGeneratedPath: isGeneratedNuxtPath,
+  inspectAutoImportConsumers: inspectNuxtAutoImportConsumers,
   filterGeneratedChanges: removeGeneratedNuxtChanges,
   addExplicitImports: ctx => addNuxtExplicitImports({ ...ctx, scan }),
   async finalizeFileRename(cwd, oldAbs, newAbs, existingChanges) {
