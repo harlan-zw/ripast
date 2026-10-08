@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { createPatch } from 'diff'
 import { parseSync } from 'oxc-parser'
@@ -170,26 +170,62 @@ export function spliceScript(file: ParsedFile, newScript: string): string {
 }
 
 export function writeChanges(changes: FileChange[]): void {
-  const staged: { tmp: string, target: string }[] = []
+  const targets = new Map<string, FileChange>()
+  for (const change of changes) {
+    const target = existsSync(change.path) ? realpathSync(change.path) : resolve(change.path)
+    const existing = targets.get(target)
+    if (existing && (existing.before !== change.before || existing.after !== change.after))
+      throw new Error(`Conflicting changes for ${change.rel}`)
+    targets.set(target, change)
+    const before = existsSync(target) ? readFileSync(target, 'utf8') : ''
+    if (before !== change.before)
+      throw new Error(`File changed since planning: ${change.rel}. Run the command again.`)
+  }
+
+  const staged: { directory: string, tmp: string, target: string, backup: string | null }[] = []
+  const committed: typeof staged = []
   try {
-    for (const c of changes) {
-      mkdirSync(dirname(c.path), { recursive: true })
-      const tmp = `${c.path}.ripast-tmp-${process.pid}`
-      writeFileSync(tmp, c.after)
-      staged.push({ tmp, target: c.path })
+    for (const [target, change] of targets) {
+      mkdirSync(dirname(target), { recursive: true })
+      const directory = mkdtempSync(join(dirname(target), '.ripast-tmp-'))
+      const tmp = join(directory, 'after')
+      const backup = existsSync(target) ? join(directory, 'before') : null
+      staged.push({ directory, tmp, target, backup })
+      writeFileSync(tmp, change.after)
+      if (backup) {
+        const mode = statSync(target).mode
+        chmodSync(tmp, mode)
+        writeFileSync(backup, change.before)
+        chmodSync(backup, mode)
+      }
     }
-    for (const { tmp, target } of staged)
-      renameSync(tmp, target)
+    for (const entry of staged) {
+      renameSync(entry.tmp, entry.target)
+      committed.push(entry)
+    }
   }
   catch (err) {
-    for (const { tmp } of staged) {
+    const failures: unknown[] = [err]
+    for (const { target, backup } of committed.reverse()) {
       try {
-        unlinkSync(tmp)
+        if (backup)
+          renameSync(backup, target)
+        else
+          unlinkSync(target)
       }
-      catch {}
+      catch (restoreError) {
+        failures.push(restoreError)
+      }
     }
+    // Keep backups available if the filesystem also prevents restoration.
+    if (failures.length > 1)
+      throw new AggregateError(failures, 'Could not restore every file. Original files remain in .ripast-tmp- directories.')
+    for (const { directory } of staged)
+      rmSync(directory, { recursive: true, force: true })
     throw err
   }
+  for (const { directory } of staged)
+    rmSync(directory, { recursive: true, force: true })
 }
 
 export function printDiffs(changes: FileChange[], out: NodeJS.WritableStream = process.stdout): void {

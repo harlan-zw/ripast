@@ -16,7 +16,7 @@ import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { mergeFileChanges, rgFiles } from './util.ts'
+import { applyTextEdits, mergeFileChanges, rgFiles } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface MoveOptions {
@@ -45,6 +45,8 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
 
   const fromAbs = resolve(cwd, fromPath)
   const toAbs = resolve(cwd, toPath)
+  if (fromAbs === toAbs)
+    throw new Error('ripast move: source and destination must be different files')
   const candidatePaths = timed(profile, 'rg candidates', () => rgFiles(symbol, { cwd }))
 
   const fromOriginal = readFileSync(fromAbs, 'utf8')
@@ -111,7 +113,8 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
         if (path === fromAbs || path === toAbs || isVuePath(path))
           continue
         const before = readFileSync(path, 'utf8')
-        const after = await rewriteImportSites(server, path, before, fromAbs, toAbs, symbol)
+        const importsAfter = await rewriteImportSites(server, path, before, fromAbs, toAbs, symbol)
+        const after = await rewriteReexports(server, path, importsAfter, before, fromAbs, toAbs, symbol)
         if (after !== before)
           changes.push({ path, rel: relative(cwd, path), before, after })
       }
@@ -181,10 +184,8 @@ function splitMultiDeclaratorIfNeeded(source: string, path: string, symbol: stri
   if (!target)
     return source
   const lines = (target.node.declarations as any[]).map((declarator) => {
-    const id = declarator.id
-    const typeAnnotation = id.typeAnnotation ? source.slice(id.typeAnnotation.start, id.typeAnnotation.end) : ''
-    const init = declarator.init ? ` = ${source.slice(declarator.init.start, declarator.init.end)}` : ''
-    return `export ${target.variableKind} ${id.name}${typeAnnotation}${init}`
+    const declaration = source.slice(declarator.start, declarator.end)
+    return `export ${target.variableKind} ${declaration};`
   })
   return source.slice(0, target.start) + lines.join('\n') + source.slice(target.end)
 }
@@ -352,6 +353,42 @@ function isSimpleSoleNamedImport(imp: ImportInfo, symbol: string): boolean {
     return false
   const only = imp.named[0]
   return only.name === symbol && !only.alias
+}
+
+async function rewriteReexports(server: TsServer, path: string, source: string, original: string, fromAbs: string, toAbs: string, symbol: string): Promise<string> {
+  const edits: { start: number, end: number, replacement: string }[] = []
+  for (const node of parseProgram(path, source).body ?? []) {
+    if (node.type !== 'ExportNamedDeclaration' || !node.source)
+      continue
+    const moved = node.specifiers.filter((specifier: any) => (specifier.local.name ?? specifier.local.value) === symbol)
+    if (!moved.length)
+      continue
+    const specifier = node.source.value
+    let resolves: boolean
+    if (specifier.startsWith('.')) {
+      resolves = relativeImportTarget(path, specifier) === fromAbs
+    }
+    else {
+      // Import rewrites may shift this statement. Query the server at its original offset.
+      const originalNode = parseProgram(path, original).body.find((statement: any) =>
+        statement.type === 'ExportNamedDeclaration' && statement.source?.value === specifier
+        && statement.specifiers.some((spec: any) => (spec.local.name ?? spec.local.value) === symbol),
+      )
+      const originalSpecifier = originalNode.specifiers.find((spec: any) => (spec.local.name ?? spec.local.value) === symbol)
+      resolves = (await server.definition(path, originalSpecifier.local.start)).some(definition => definition.path === fromAbs)
+    }
+    if (!resolves)
+      continue
+    const quote = source[node.source.start]
+    const prefix = node.exportKind === 'type' ? 'export type' : 'export'
+    const semicolon = source[node.end - 1] === ';' ? ';' : ''
+    const render = (specifiers: any[], target: string): string => `${prefix} { ${specifiers.map(spec => source.slice(spec.start, spec.end)).join(', ')} } from ${quote}${target}${quote}${semicolon}`
+    const remaining = node.specifiers.filter((specifier: any) => !moved.includes(specifier))
+    const statements = remaining.length ? [render(remaining, specifier)] : []
+    statements.push(render(moved, computeSpecifier(path, toAbs, specifier)))
+    edits.push({ start: node.start, end: node.end, replacement: statements.join('\n') })
+  }
+  return applyTextEdits(source, edits)
 }
 
 const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
