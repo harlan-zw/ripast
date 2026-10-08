@@ -70,3 +70,61 @@ it('delete refuses a namespace containing a type export', async () => {
   }
   finally { fx.cleanup() }
 })
+
+it('delete resolves namespaces after opening excluded ambient declarations', async () => {
+  const fx = makeFixture({
+    'source.ts': 'export const helper = 42\nexport const keep = 7\n',
+    'aa.ts': 'import * as ns from \'virtual\'\nexport const values = Object.values(ns)',
+    'ac.vue': '<script setup lang="ts">import * as ns from \'virtual\'</script><template>{{ ns.keep }}</template>',
+    'zz.d.ts': 'declare module \'virtual\' { export const keep: number }',
+    'tsconfig.json': JSON.stringify({ compilerOptions: { module: 'ESNext', moduleResolution: 'bundler', noEmit: true }, files: ['source.ts'] }),
+  })
+  try {
+    const result = await runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false })
+    assert.equal(result.changes[0]!.after, 'export const keep = 7\n')
+    assert.equal(fx.read('source.ts'), 'export const helper = 42\nexport const keep = 7\n')
+  }
+  finally { fx.cleanup() }
+})
+
+it('delete keeps same-text namespace imports in different directories separate', async () => {
+  const fx = makeFixture({
+    'source.ts': 'export interface Shape { value: number }',
+    'one/module.ts': 'export const other = 7',
+    'one/consumer.ts': 'import * as ns from \'./module.ts\'\nexport const values = Object.values(ns)',
+    'two/module.ts': 'export * from \'../source.ts\'',
+    'two/consumer.ts': 'import * as ns from \'./module.ts\'\nexport type Value = ns.Shape',
+  })
+  try {
+    await assert.rejects(runDelete('Shape', 'source.ts', { cwd: fx.dir, verify: false }), /namespace import at two\/consumer\.ts:1:/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('delete checks namespace resolution again in each operation', async () => {
+  const fx = makeFixture({
+    'source.ts': 'export function helper() { return 42 }',
+    'module.ts': 'export const other = 7',
+    'a.ts': 'import * as ns from \'./module.ts\'\nexport const values = Object.values(ns)',
+    'b.vue': '<script setup>import * as ns from \'./module.ts\'</script><template>{{ ns.other }}</template>',
+  })
+  try {
+    const result = await runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false })
+    assert.equal(result.changes[0]!.after, '')
+    fx.write('module.ts', 'export * from \'./source.ts\'')
+    await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false }), /namespace import at (a\.ts|b\.vue):1:/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('delete still refuses an unresolved namespace after a resolved namespace', async () => {
+  const fx = makeFixture({
+    'source.ts': 'export const helper = 42',
+    'module.ts': 'export const other = 7',
+    'consumer.ts': 'import * as ns from \'./module.ts\'\nimport * as missing from \'./missing.ts\'\nexport const values = [Object.values(ns), Object.values(missing)]',
+  })
+  try {
+    await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false }), /cannot resolve a namespace import at consumer\.ts:2:/)
+  }
+  finally { fx.cleanup() }
+})
