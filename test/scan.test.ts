@@ -300,6 +300,42 @@ it('buildUnusedDeclarations does not treat same-file named export specifiers as 
   finally { fx.cleanup() }
 })
 
+it.each(['"accessed"', '`accessed`'])('buildUnusedDeclarations keeps exported names accessed through %s', async (property) => {
+  const fx = makeFixture({
+    'src/source.ts': [
+      'export const imported = 1',
+      'export const accessed = 2',
+      'export const unused = 3',
+    ].join('\n'),
+    'src/consumer.ts': [
+      'import { "imported" as alias } from "./source.ts"',
+      'import * as source from "./source.ts"',
+      `console.log(alias, source[${property}])`,
+    ].join('\n'),
+  })
+  try {
+    const unused = await buildUnusedDeclarations({ cwd: fx.dir, exports: 'exported' })
+    assert.deepEqual(unused.files.flatMap(file => file.declarations.map(declaration => declaration.name)), ['unused'])
+  }
+  finally { fx.cleanup() }
+})
+
+it.each([
+  'export const { value = used } = {}',
+  'export const [value = used] = []',
+  'export const { [used]: value } = { 1: 2 }',
+  'const { value = used } = {}',
+])('buildUnusedDeclarations keeps references inside binding patterns: %s', async (declaration) => {
+  const fx = makeFixture({
+    'source.ts': `export const used = 1\n${declaration}\nconsole.log(value)\n`,
+  })
+  try {
+    const unused = await buildUnusedDeclarations({ cwd: fx.dir, exports: 'exported' })
+    assert.deepEqual(unused.files, [])
+  }
+  finally { fx.cleanup() }
+})
+
 it('buildUnusedDeclarations handles JavaScript files when a tsconfig exists', async () => {
   const fx = makeFixture({
     'tsconfig.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext' }, include: ['src/**/*.ts'] }),

@@ -549,7 +549,7 @@ function buildPotentialReferenceNames(paths: string[], cwd: string): Set<string>
     const ignored = ignoredTopLevelNameRanges(file.program as any, file.scriptStart)
     walk(file.program as any, {
       enter(node: any) {
-        const name = identifierName(node)
+        const name = potentialReferenceName(node)
         if (!name)
           return
         const start = (node.start ?? 0) + file.scriptStart
@@ -562,9 +562,14 @@ function buildPotentialReferenceNames(paths: string[], cwd: string): Set<string>
   return out
 }
 
-function identifierName(node: any): string | null {
+function potentialReferenceName(node: any): string | null {
   if (node?.type === 'Identifier' || node?.type === 'JSXIdentifier')
     return node.name ?? null
+  // String imports and computed namespace access can reference exported names.
+  if (node?.type === 'Literal' && typeof node.value === 'string')
+    return node.value
+  if (node?.type === 'TemplateElement')
+    return node.value.cooked ?? null
   return null
 }
 
@@ -582,7 +587,7 @@ function ignoredTopLevelNameRanges(program: any, offset: number): SourceRange[] 
       pushNodeRange(ranges, node.declaration?.id, offset)
       continue
     }
-    if (node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration')
+    if (node.type === 'ImportDeclaration' || node.type === 'ExportAllDeclaration')
       continue
     switch (declaration.type) {
       case 'FunctionDeclaration':
@@ -610,9 +615,8 @@ function pushNodeRange(ranges: SourceRange[], node: any, offset: number): void {
 function pushBindingNameRange(ranges: SourceRange[], node: any, offset: number): void {
   if (node?.type === 'Identifier' && typeof node.start === 'number' && typeof node.name === 'string') {
     ranges.push({ start: node.start + offset, end: node.start + offset + node.name.length })
-    return
   }
-  pushNodeRange(ranges, node, offset)
+  // Destructuring patterns can contain references in computed keys and defaults.
 }
 
 function importSpecifiers(program: any): string[] {

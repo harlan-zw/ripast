@@ -1,6 +1,7 @@
 import type { RenameMap } from './css-class-token.ts'
 import { readFileSync } from 'node:fs'
 import process from 'node:process'
+import { parse as parseSfc } from '@vue/compiler-sfc'
 import { rewriteClassString, visitClassTokens } from './css-class-token.ts'
 import { applyTextEdits, parseFile, rgFiles, rgFilesMany } from './util.ts'
 
@@ -215,32 +216,42 @@ function nodeName(node: any): string | null {
   return null
 }
 
-const TEMPLATE_BLOCK_RE = /<template(?:\s[^>]*)?>([\s\S]*?)<\/template>/gi
-const CLASS_ATTR_RE = /\b(:?class)\s*=\s*(["'])([\s\S]*?)\2/g
 const NESTED_STRING_RE = /(['"`])((?:\\.|(?!\1)[^\\])*)\1/g
 
-function visitVueTemplateClassAttrs(source: string, visit: (text: string) => void): void {
-  for (const tmpl of source.matchAll(TEMPLATE_BLOCK_RE)) {
-    const body = tmpl[1]
-    for (const match of body.matchAll(CLASS_ATTR_RE)) {
-      const name = match[1]
-      const value = match[3]
-      if (name === 'class') {
-        visit(value)
+function visitVueClassAttributes(source: string, visit: (value: string, start: number, end: number, dynamic: boolean) => void): void {
+  const ast = parseSfc(source).descriptor.template?.ast
+  function walk(node: any): void {
+    for (const prop of node.props ?? []) {
+      if (prop.type === 6 && prop.name === 'class' && prop.value) {
+        const { start, end, source: raw } = prop.value.loc
+        const quoted = raw.startsWith('"') || raw.startsWith('\'')
+        visit(source.slice(start.offset + Number(quoted), end.offset - Number(quoted)), start.offset + Number(quoted), end.offset - Number(quoted), false)
       }
-      else {
-        for (const nested of value.matchAll(NESTED_STRING_RE))
-          visit(nested[2])
+      else if (prop.type === 7 && prop.name === 'bind' && prop.arg?.isStatic && prop.arg.content === 'class' && prop.exp) {
+        const { start, end } = prop.exp.loc
+        visit(source.slice(start.offset, end.offset), start.offset, end.offset, true)
       }
     }
+    for (const child of node.children ?? []) walk(child)
   }
+  if (ast)
+    walk(ast)
 }
 
-const STYLE_BLOCK_RE = /<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/gi
+function visitVueTemplateClassAttrs(source: string, visit: (text: string) => void): void {
+  visitVueClassAttributes(source, (value, _start, _end, dynamic) => {
+    if (!dynamic) {
+      visit(value)
+    }
+    else {
+      for (const nested of value.matchAll(NESTED_STRING_RE)) visit(nested[2])
+    }
+  })
+}
 
 function visitVueStyleBlocks(source: string, visit: (body: string) => void): void {
-  for (const match of source.matchAll(STYLE_BLOCK_RE))
-    visit(match[1])
+  for (const style of parseSfc(source).descriptor.styles)
+    visit(style.content)
 }
 
 const APPLY_RE = /@apply[ \t]+(\S[^;}\n]*)/g
@@ -273,7 +284,7 @@ function rewriteStringsInProgram(source: string, program: any, map: RenameMap, o
         return
       const rewritten = rewriteClassString(node.value, map)
       if (rewritten !== node.value)
-        edits.push({ start: node.start + offset + 1, end: node.end + offset - 1, replacement: rewritten })
+        edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, source[node.start + offset]) })
     }
     else if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
       const raw: string = node.value.raw
@@ -305,16 +316,20 @@ function rewriteScriptWithin(full: string, start: number, end: number, scriptSou
 }
 
 function rewriteVueTemplateClassAttrs(source: string, map: RenameMap): string {
-  return source.replace(TEMPLATE_BLOCK_RE, (full, body) => {
-    const rewrittenBody = body.replace(CLASS_ATTR_RE, (match: string, name: string, quote: string, value: string) => {
-      if (!mapIncludesAny(value, map))
-        return match
-      if (name === 'class')
-        return `${name}=${quote}${rewriteClassString(value, map)}${quote}`
-      return `${name}=${quote}${rewriteDynamicClassExpr(value, map)}${quote}`
-    })
-    return full.replace(body, rewrittenBody)
+  const edits: { start: number, end: number, replacement: string }[] = []
+  visitVueClassAttributes(source, (value, start, end, dynamic) => {
+    if (!mapIncludesAny(value, map))
+      return
+    const replacement = dynamic ? rewriteDynamicClassExpr(value, map) : rewriteClassString(value, map)
+    if (replacement !== value)
+      edits.push({ start, end, replacement })
   })
+  return applyTextEdits(source, edits)
+}
+
+function encodeStringLiteral(value: string, quote: string): string {
+  const encoded = JSON.stringify(value)
+  return quote === '\'' ? `'${encoded.slice(1, -1).replace(/'/g, '\\\'')}'` : encoded
 }
 
 function rewriteDynamicClassExpr(expr: string, map: RenameMap): string {
@@ -326,11 +341,15 @@ function rewriteDynamicClassExpr(expr: string, map: RenameMap): string {
 }
 
 function rewriteVueStyleBlocks(source: string, map: RenameMap): string {
-  return source.replace(STYLE_BLOCK_RE, (full, body) => {
-    if (!mapIncludesAny(body, map))
-      return full
-    return full.replace(body, rewriteCss(body, map))
-  })
+  const edits: { start: number, end: number, replacement: string }[] = []
+  for (const style of parseSfc(source).descriptor.styles) {
+    if (!mapIncludesAny(style.content, map))
+      continue
+    const replacement = rewriteCss(style.content, map)
+    if (replacement !== style.content)
+      edits.push({ start: style.loc.start.offset, end: style.loc.end.offset, replacement })
+  }
+  return applyTextEdits(source, edits)
 }
 
 const APPLY_REWRITE_RE = /(@apply[ \t]+)(\S[^;}\n]*)/g

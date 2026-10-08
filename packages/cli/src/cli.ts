@@ -267,7 +267,7 @@ const treeCmd = defineCommand({
       : resolveExportFilter(args.exports)
     const tree = buildDeclarationTree({
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
-      exports: agentProfile ? 'all' : exportFilter,
+      exports: agentProfile && !args.json ? 'all' : exportFilter,
     })
     if (agentProfile && !args.json) {
       process.stdout.write(`${profileHeader()}\n`)
@@ -457,11 +457,20 @@ const renameFileCmd = defineCommand({
     const wrote = apply && !blockedByRegression
 
     if (wrote) {
-      writeChanges(r.changes)
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
       renameSync(r.fileMove.from, r.fileMove.to)
-      if (selfChangeDisplay)
-        writeChanges([selfChangeDisplay])
+      try {
+        writeChanges(displayChanges)
+      }
+      catch (error) {
+        try {
+          renameSync(r.fileMove.to, r.fileMove.from)
+        }
+        catch (rollbackError) {
+          throw new AggregateError([error, rollbackError], 'File rename failed. Restoring the source path also failed.')
+        }
+        throw error
+      }
     }
 
     if (json) {
@@ -847,7 +856,7 @@ const doctorCmd = defineCommand({
     if (report.findings.length)
       process.exit(1)
   },
-})
+}, ['changed'])
 
 runMain(defineCommand({
   meta: { name: 'ripast', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },

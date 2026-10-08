@@ -1,12 +1,24 @@
 import type { ArgsDef, CommandDef } from 'citty'
-import { defineCommand } from 'citty'
+import { defineCommand, parseArgs } from 'citty'
 
-export function defineStrictCommand<const T extends ArgsDef>(definition: CommandDef<T>): CommandDef<T> {
+export function defineStrictCommand<const T extends ArgsDef>(definition: CommandDef<T>, optionalValues: (keyof T & string)[] = []): CommandDef<T> {
   return defineCommand({
     ...definition,
     async setup(context) {
       if (!definition.subCommands) {
         const args: ArgsDef = (typeof definition.args === 'function' ? await definition.args() : await definition.args) ?? {}
+        if (optionalValues.length) {
+          let positionalOnly = false
+          const normalized = context.rawArgs.map((token, index, tokens) => {
+            if (token === '--')
+              positionalOnly = true
+            const next = tokens[index + 1]
+            return !positionalOnly && optionalValues.some(name => token === `--${name}`) && (!next || next.startsWith('-'))
+              ? `${token}=`
+              : token
+          })
+          context.args = parseArgs<T>(normalized, args)
+        }
         const allowed = new Set(['_'])
         const options = new Set<string>()
         let positionalCount = 0
@@ -19,6 +31,9 @@ export function defineStrictCommand<const T extends ArgsDef>(definition: Command
               allowed.add(variant)
               if (arg.type !== 'positional')
                 options.add(variant)
+              const value = context.args[variant]
+              if (arg.type === 'string' && value !== undefined && (typeof value !== 'string' || (value.length === 0 && !optionalValues.includes(name))))
+                throw new Error(`Option --${name} requires a non-empty string. Run the command with --help.`)
             }
           }
           if (arg.type === 'positional')

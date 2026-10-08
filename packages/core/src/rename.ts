@@ -142,8 +142,6 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
 const isVue = isVuePath
 
-const IMPORT_LINE_RE = /^\s*(?:import|export)\b.+\bfrom\b/
-
 // After a rename, the server's file set is bounded by the project it discovers.
 // A symbol re-exported through a package barrel and consumed from a file
 // outside that set (sibling test dirs, other packages) keeps the old name and
@@ -162,8 +160,15 @@ function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], 
     catch {
       continue
     }
-    const named = new RegExp(`\\b${from}\\b`)
-    const importsName = text.split('\n').some(line => IMPORT_LINE_RE.test(line) && named.test(line))
+    const { program } = parseSourceFile(path, text, cwd)
+    const importsName = program?.body.some((node: any) => {
+      if (!node.source || (node.type !== 'ImportDeclaration' && node.type !== 'ExportNamedDeclaration'))
+        return false
+      return node.specifiers.some((specifier: any) => {
+        const imported = specifier.type === 'ImportSpecifier' ? specifier.imported : specifier.local
+        return (imported?.name ?? imported?.value) === from
+      })
+    })
     if (importsName)
       stale.push(relative(cwd, path))
   }
