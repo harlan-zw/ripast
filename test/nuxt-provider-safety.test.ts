@@ -124,6 +124,38 @@ it('refuses a Nuxt rename that captures a consumer local destination binding', a
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+it('refuses a Nuxt rename that captures a local binding aliased to the same provider', async () => {
+  const { dir } = appFixture()
+  try {
+    writeFileSync(join(dir, '.nuxt/types/imports.d.ts'), `declare global {
+const format: typeof import('../../app/utils/format').format
+const pretty: typeof import('../../app/utils/format').format
+} export {}`)
+    const source = '<script setup lang="ts">const pretty = (value: number) => value * 10; const label = format(7)</script><template>{{ label }}</template>'
+    writeFileSync(join(dir, 'app/pages/index.vue'), source)
+    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verify: false }), /capture.*pretty/)
+    assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+it('refuses a Nuxt rename captured by another export of the same provider', async () => {
+  const { dir } = appFixture()
+  try {
+    writeFileSync(join(dir, 'app/utils/format.ts'), 'export function format(value: number) { return value }\nexport const pretty = (value: number) => value * 10')
+    writeFileSync(join(dir, '.nuxt/types/imports.d.ts'), `declare global {
+const format: typeof import('../../app/utils/format').format
+const pretty: typeof import('../../app/utils/format').pretty
+} export {}`)
+    const source = '<script setup lang="ts">const label = format(7)</script><template>{{ label }}</template>'
+    writeFileSync(join(dir, 'app/pages/index.vue'), source)
+    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verify: false }), /capture.*pretty/)
+    assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
+    assert.equal(typeof moduleExports(readFileSync(join(dir, 'app/utils/format.ts'), 'utf8')).format, 'function')
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 it('refuses a Nuxt rename that captures another provider global', async () => {
   const { dir } = appFixture()
   try {

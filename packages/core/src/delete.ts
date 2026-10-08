@@ -54,11 +54,13 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   const nuxt = decl.exported && (detectFrameworks(cwd).includes('nuxt')
     || ['.nuxt', 'nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mts', 'nuxt.config.mjs'].some(path => existsSync(join(cwd, path))))
   const nuxtAdapter = nuxt ? await loadAdapter('nuxt') : null
+  let inspectedScopes = false
   if (nuxt) {
     if (!nuxtAdapter?.autoImportScopes || !nuxtAdapter.inspectAutoImportConsumers)
       throw new Error('ripast delete: cannot inspect Nuxt auto-imports without @ripast/vue. Install @ripast/vue before deleting exported declarations.')
     const scopes = nuxtAdapter.autoImportScopes(cwd)
-    if (isInsideAutoImportScope(fromAbs, scopes)) {
+    inspectedScopes = isInsideAutoImportScope(fromAbs, scopes)
+    if (inspectedScopes) {
       const consumers = nuxtAdapter.inspectAutoImportConsumers({ cwd, symbol, fromAbs, files: candidatePaths, scopes })
       if (consumers.length)
         throw new Error(`ripast delete: cannot prove "${symbol}" is unused through Nuxt auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
@@ -147,7 +149,8 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     }
     const references: DeleteReference[] = []
     for (const ref of await server.references(fromAbs, decl.nameStart)) {
-      if (nuxtAdapter?.isGeneratedPath?.(cwd, ref.path))
+      // Generated references stay live evidence unless consumer inspection already proved the provider unused.
+      if (nuxtAdapter?.isGeneratedPath?.(cwd, ref.path) && inspectedScopes)
         continue
       if (ref.path === fromAbs && ref.start >= decl.start && ref.start < decl.end)
         continue

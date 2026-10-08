@@ -4,7 +4,7 @@ import ts from '@typescript/typescript6'
 import { isGeneratedNuxtPath, loadNuxtPathAliases } from './nuxt-paths.ts'
 
 type NuxtBindingNames = { _tag: 'Resolved', names: string[] } | { _tag: 'Unknown' }
-type NuxtGlobalProvider = { _tag: 'Missing' } | { _tag: 'Resolved', path: string } | { _tag: 'Unknown' }
+type NuxtGlobalProvider = { _tag: 'Missing' } | { _tag: 'Resolved', exported: string, path: string } | { _tag: 'Unknown' }
 
 export function nuxtConsumerContext(path: string, cwd: string): string {
   let current = dirname(path)
@@ -111,21 +111,26 @@ export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: strin
   return mapped && !unresolved ? { _tag: 'Resolved', names: [...names] } : { _tag: 'Unknown' }
 }
 
-/** Resolve one generated global to its provider, preserving an absent destination as distinct from invalid metadata. */
+/** Resolve one generated global to its provider export, preserving an absent destination as distinct from invalid metadata. */
 export function loadNuxtGlobalProvider(cwd: string, name: string): NuxtGlobalProvider {
   const paths = [join(cwd, '.nuxt/imports.d.ts'), join(cwd, '.nuxt/types/imports.d.ts')].filter(path => existsSync(path))
   if (!paths.length)
     return { _tag: 'Unknown' }
-  const providers = new Set<string>()
+  const providers: { exported: string, path: string }[] = []
   let matched = false
   let unresolved = false
-  const record = (specifier: string, path: string): void => {
+  const record = (specifier: string, exported: string, path: string): void => {
     matched = true
     const target = resolveBindingTarget(cwd, path, specifier)
-    if (target._tag === 'Unknown')
+    if (target._tag === 'Unknown') {
       unresolved = true
-    else
-      providers.add(realpathSync(target.path))
+      return
+    }
+    const provider = { exported, path: realpathSync(target.path) }
+    if (providers[0] && (providers[0].path !== provider.path || providers[0].exported !== provider.exported))
+      unresolved = true
+    if (!providers[0])
+      providers.push(provider)
   }
   const visit = (node: ts.Node, path: string): void => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
@@ -137,8 +142,11 @@ export function loadNuxtGlobalProvider(cwd: string, name: string): NuxtGlobalPro
         : nodeType
       const indexed = declared && ts.isIndexedAccessTypeNode(declared) ? declared : undefined
       const type = indexed?.objectType ?? declared
-      if (type && ts.isImportTypeNode(type) && type.isTypeOf && ts.isLiteralTypeNode(type.argument) && ts.isStringLiteral(type.argument.literal))
-        record(type.argument.literal.text, path)
+      const exported = indexed && ts.isLiteralTypeNode(indexed.indexType) && ts.isStringLiteral(indexed.indexType.literal)
+        ? indexed.indexType.literal.text
+        : type && ts.isImportTypeNode(type) && type.qualifier && ts.isIdentifier(type.qualifier) ? type.qualifier.text : undefined
+      if (exported && type && ts.isImportTypeNode(type) && type.isTypeOf && ts.isLiteralTypeNode(type.argument) && ts.isStringLiteral(type.argument.literal))
+        record(type.argument.literal.text, exported, path)
       else
         unresolved = true
     }
@@ -158,16 +166,16 @@ export function loadNuxtGlobalProvider(cwd: string, name: string): NuxtGlobalPro
         && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
         for (const exported of statement.exportClause.elements) {
           if (exported.name.text === name)
-            record(statement.moduleSpecifier.text, path)
+            record(statement.moduleSpecifier.text, (exported.propertyName ?? exported.name).text, path)
         }
       }
     }
   }
   if (!matched)
     return { _tag: 'Missing' }
-  if (unresolved || providers.size !== 1)
+  if (unresolved || providers.length !== 1)
     return { _tag: 'Unknown' }
-  return { _tag: 'Resolved', path: [...providers][0]! }
+  return { _tag: 'Resolved', exported: providers[0]!.exported, path: providers[0]!.path }
 }
 
 function resolveBindingTarget(cwd: string, declarationPath: string, specifier: string): { _tag: 'Resolved', path: string } | { _tag: 'Unknown' } {

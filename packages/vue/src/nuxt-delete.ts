@@ -19,8 +19,10 @@ export const validateNuxtAutoImportRename: NonNullable<FrameworkAdapter['validat
       if (!unboundNuxtSymbols(change.path, change.after, new Set([ctx.to]), 'Rename').has(ctx.to))
         return [relative(ctx.cwd, change.path)]
       const provider = loadNuxtGlobalProvider(nuxtConsumerContext(change.path, ctx.cwd), ctx.to)
-      if (provider._tag === 'Missing' || (provider._tag === 'Resolved' && provider.path === realpathSync(ctx.fromAbs)))
+      if (provider._tag === 'Missing'
+        || (provider._tag === 'Resolved' && provider.path === realpathSync(ctx.fromAbs) && provider.exported === ctx.symbol)) {
         return []
+      }
       if (provider._tag === 'Unknown')
         throw new Error(`ripast rename: cannot resolve Nuxt provider metadata for destination "${ctx.to}" in ${relative(ctx.cwd, change.path)}. Run Nuxt prepare first.`)
       return [relative(ctx.cwd, change.path)]
