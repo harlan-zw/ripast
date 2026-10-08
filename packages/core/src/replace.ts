@@ -60,7 +60,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
       if (after !== before)
         changes.push({ path, rel: relative(cwd, path), before, after })
     }
-    const regressions = verifyMode === 'none'
+    const regressions = verifyMode === 'none' || !changes.length
       ? []
       : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path)))
     if (verifyMode === 'project')
