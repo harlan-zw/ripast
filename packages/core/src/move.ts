@@ -5,7 +5,7 @@ import type { VerifyMode } from './project.ts'
 import type { TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
@@ -86,16 +86,18 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   fromAfter = pruneUnusedImports(fromAfter, fromAbs)
   if (remainingReferences > 0)
     fromAfter = addOrMergeImport(fromAfter, fromAbs, computeSpecifier(fromAbs, toAbs, './placeholder.ts'), { namedImports: [{ name: symbol }] })
+  // Removing the last export must not turn module-local declarations into globals.
+  if (fromAfter.trim() && !parseProgram(fromAbs, fromAfter).body.some((node: any) => node.type === 'ImportDeclaration' || node.type.startsWith('Export')))
+    fromAfter = appendStatement(fromAfter, 'export {}')
 
+  const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
     const destinationImports = listImports(toAfter, toAbs, parseProgram(toAbs, toAfter))
     const replacements = new Map<ImportInfo, string | null>()
     for (const imp of destinationImports) {
-      if (imp.sideEffectOnly || !(await importResolvesTo(server, toAbs, imp, fromAbs)))
-        continue
       const match = imp.named.find(binding => binding.name === symbol)
-      if (!match)
+      if (imp.sideEffectOnly || !match || !(await importResolvesTo(server, toAbs, imp, fromAbs)))
         continue
       if (match.alias && match.alias !== symbol)
         throw new Error(`ripast move: destination imports "${symbol}" as "${match.alias}". Remove the alias before moving it.`)
@@ -103,6 +105,9 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
       replacements.set(imp, isImportEmpty(remaining) ? null : renderImport(remaining))
     }
     toAfter = rewriteImports(toAfter, destinationImports, replacements, [])
+    const unsupportedConsumer = await findUnsupportedModuleConsumer(server, candidatePaths.filter(path => !vueAdapter?.isGeneratedPath?.(cwd, path)), fromAbs)
+    if (unsupportedConsumer)
+      throw new Error(`ripast move: cannot move "${symbol}" while ${relative(cwd, unsupportedConsumer)} uses a namespace or dynamic import of ${fromPath}. Use named imports first.`)
     const changes: FileChange[] = []
     if (fromAfter !== fromOriginal)
       changes.push({ path: fromAbs, rel: relative(cwd, fromAbs), before: fromOriginal, after: fromAfter })
@@ -115,14 +120,13 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
           continue
         const before = readFileSync(path, 'utf8')
         const importsAfter = await rewriteImportSites(server, path, before, fromAbs, toAbs, symbol)
-        const after = await rewriteReexports(server, path, importsAfter, before, fromAbs, toAbs, symbol)
+        const after = await rewriteReexports(server, path, importsAfter, before, fromAbs, toAbs, symbol, decl.kind === 'interface' || decl.kind === 'type', !fromAfter.trim())
         if (after !== before)
           changes.push({ path, rel: relative(cwd, path), before, after })
       }
     })
 
     const fromBasename = fromPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
-    const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
     if (vueAdapter && tsconfigPath && fromBasename && timed(profile, 'vue prefilter', () => vueAdapter.hasFilesContaining(cwd, fromBasename))) {
       const vueChanges = await timedAsync(profile, 'vue import rewrite', () => vueAdapter.applyImportRewrite(tsconfigPath, cwd, fromAbs, toAbs))
       for (const vc of vueChanges) {
@@ -297,7 +301,7 @@ async function rewriteImportSites(server: TsServer, path: string, source: string
   }
   const inserts: string[] = []
   for (const imp of imports) {
-    if (imp.sideEffectOnly || !(await importResolvesTo(server, path, imp, fromAbs)))
+    if (imp.sideEffectOnly || !imp.named.some(binding => binding.name === symbol) || !(await importResolvesTo(server, path, imp, fromAbs)))
       continue
     const current = copyOf(imp)
     const match = current.named.find(n => n.name === symbol)
@@ -352,9 +356,26 @@ function isSimpleSoleNamedImport(imp: ImportInfo, symbol: string): boolean {
   return only.name === symbol && !only.alias
 }
 
-async function rewriteReexports(server: TsServer, path: string, source: string, original: string, fromAbs: string, toAbs: string, symbol: string): Promise<string> {
+async function rewriteReexports(server: TsServer, path: string, source: string, original: string, fromAbs: string, toAbs: string, symbol: string, isTypeOnly: boolean, sourceIsEmpty: boolean): Promise<string> {
   const edits: { start: number, end: number, replacement: string }[] = []
   for (const node of parseProgram(path, source).body ?? []) {
+    if (node.type === 'ExportAllDeclaration' && !node.exported) {
+      const specifier = node.source.value
+      const originalNode = parseProgram(path, original).body.find((statement: any) => statement.type === 'ExportAllDeclaration' && statement.source?.value === specifier)
+      const resolves = specifier.startsWith('.')
+        ? relativeImportTarget(path, specifier) === fromAbs
+        : (await server.definition(path, originalNode.source.start + 1)).some(definition => definition.path === fromAbs)
+      if (resolves) {
+        const quote = source[node.source.start]
+        const kind = isTypeOnly || node.exportKind === 'type' ? 'export type' : 'export'
+        const semicolon = source[node.end - 1] === ';' ? ';' : ''
+        const statement = `${kind} { ${symbol} } from ${quote}${computeSpecifier(path, toAbs, specifier)}${quote}${semicolon}`
+        edits.push(sourceIsEmpty
+          ? { start: node.start, end: node.end, replacement: statement }
+          : { start: node.end, end: node.end, replacement: `\n${statement}` })
+      }
+      continue
+    }
     if (node.type !== 'ExportNamedDeclaration' || !node.source)
       continue
     const moved = node.specifiers.filter((specifier: any) => (specifier.local.name ?? specifier.local.value) === symbol)
@@ -405,17 +426,20 @@ function relativeImportTarget(fromFile: string, specifier: string): string | nul
         : base.endsWith('.cjs') ? ['.cts'] : []
   for (const ext of sourceExtensions) {
     const candidate = base.replace(/\.[^.]+$/, ext)
-    if (existsSync(candidate))
+    if (statSync(candidate, { throwIfNoEntry: false })?.isFile()) {
+      if (statSync(base, { throwIfNoEntry: false })?.isFile())
+        throw new Error(`ripast move: ambiguous module "${specifier}" from ${fromFile}. Both runtime and source files exist.`)
       return candidate
+    }
   }
   for (const ext of RESOLVE_EXTS) {
     const candidate = `${base}${ext}`
-    if (existsSync(candidate))
+    if (statSync(candidate, { throwIfNoEntry: false })?.isFile())
       return candidate
   }
   for (const ext of RESOLVE_EXTS.slice(1)) {
     const candidate = join(base, `index${ext}`)
-    if (existsSync(candidate))
+    if (statSync(candidate, { throwIfNoEntry: false })?.isFile())
       return candidate
   }
   return base
@@ -430,4 +454,33 @@ async function importResolvesTo(server: TsServer, path: string, imp: ImportInfo,
     return false
   const definitions = await server.definition(path, offset)
   return definitions.some(d => d.path === targetAbs)
+}
+
+async function findUnsupportedModuleConsumer(server: TsServer, paths: string[], fromAbs: string): Promise<string | null> {
+  for (const path of paths) {
+    if (isVuePath(path))
+      continue
+    const program = parseProgram(path, readFileSync(path, 'utf8'))
+    const modules: any[] = []
+    walk(program, {
+      enter(node: any) {
+        if ((node.type === 'ExportAllDeclaration' && node.exported) || node.type === 'ImportExpression' || node.type === 'TSImportType'
+          || (node.type === 'ImportDeclaration' && node.specifiers.some((specifier: any) => specifier.type === 'ImportNamespaceSpecifier'))) {
+          modules.push(node.source)
+        }
+      },
+    })
+    for (const module of modules) {
+      if (typeof module?.value !== 'string')
+        return path
+      if (module.value.startsWith('.')) {
+        if (relativeImportTarget(path, module.value) === fromAbs)
+          return path
+      }
+      else if ((await server.definition(path, module.start + 1)).some(definition => definition.path === fromAbs)) {
+        return path
+      }
+    }
+  }
+  return null
 }

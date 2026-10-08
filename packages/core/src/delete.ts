@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parse } from '@vue/compiler-sfc'
+import { walk } from 'oxc-walker'
 import { detectFrameworks, loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
@@ -105,13 +106,42 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
         vueScripts.set(scriptPath, path)
       }
       const imports = decl.exported ? listImports(script, scriptPath).filter(imp => imp.namespaceImport) : []
-      if (imports.length)
+      if (decl.exported)
         scripts.push({ path, source, script, imports })
     }
     // Open every script before caching namespace resolution. Excluded scripts
     // can contribute ambient modules or augmentations to the same project.
     const inspectedNamespaces = new Set<string>()
     for (const { path, source, script, imports } of scripts) {
+      const dynamicImports: any[] = []
+      // Generated Nuxt metadata uses the consumer proof and reference checks below.
+      if (!nuxtAdapter?.isGeneratedPath?.(cwd, path)) {
+        walk(parseSource(path, script).program, {
+          enter(node: any) {
+            if (node.type === 'ImportExpression' || node.type === 'TSImportType')
+              dynamicImports.push(node.source)
+          },
+        })
+      }
+      for (const module of dynamicImports) {
+        const { line, col } = posToLineCol(source, module.start)
+        const location = `${relative(cwd, path)}:${line}:${col}`
+        if (typeof module.value !== 'string')
+          throw new Error(`ripast delete: cannot resolve a dynamic import at ${location}. Use a resolvable named import first.`)
+        const importText = `import * as __RipastDynamic from ${script.slice(module.start, module.end)}`
+        const access = `__RipastDynamic.${symbol}`
+        const probe = `${importText}\n${access};\ntype __RipastDynamicType = ${access};`
+        const probePath = inspectionPath(path, 'ts')
+        server.open(probePath, probe)
+        for (const offset of [probe.indexOf(access), probe.lastIndexOf(access)]) {
+          const definitions = await server.definition(probePath, offset + '__RipastDynamic.'.length)
+          if (definitions.some(site => site.path === fromAbs && site.start >= decl.start && site.start < decl.end))
+            throw new Error(`ripast delete: cannot prove "${symbol}" is unused through a dynamic import at ${location}. Use named imports first.`)
+        }
+        const moduleOffset = parseSource(probePath, importText).program.body[0].source.start + 1
+        if (!(await server.definition(probePath, moduleOffset)).length)
+          throw new Error(`ripast delete: cannot resolve a dynamic import at ${location}. Use a resolvable named import first.`)
+      }
       for (const imp of imports) {
         const namespace = imp.namespaceImport
         if (!namespace)
