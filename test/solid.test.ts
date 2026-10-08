@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { renameSync } from 'node:fs'
 import { describe, it } from 'vitest'
-import { runCssClassRename, runMove, runRename, runRenameFile, scan, writeChanges } from '../packages/core/src/index.ts'
-import { assertSolidDiagnostics, makeSolidFixture, solidSyntax } from './solid-helpers.ts'
+import { runCssClassRename, runCssClassScan, runMove, runRename, runRenameFile, scan, writeChanges } from '../packages/core/src/index.ts'
+import { assertSolidDiagnostics, makeSolidFixture, solidModuleValue, solidSyntax } from './solid-helpers.ts'
 
 const options = { vue: false, verify: 'project' as const }
 
@@ -44,8 +44,11 @@ describe('solid TSX refactors', () => {
   it('scans Solid component references through an import alias', () => {
     const fx = makeSolidFixture()
     try {
-      const hits = scan('Counter', { cwd: fx.dir })
-      assert.deepEqual([...new Set(hits.map(hit => hit.file))].sort(), ['src/App.tsx', 'src/Counter.tsx'])
+      const hits = scan('ScoreCounter', { cwd: fx.dir })
+      assert.deepEqual(hits.map(hit => ({ file: hit.file, line: hit.line })), [
+        { file: 'src/App.tsx', line: 1 },
+        { file: 'src/App.tsx', line: 4 },
+      ])
     }
     finally { fx.cleanup() }
   })
@@ -59,12 +62,13 @@ describe('solid TSX refactors', () => {
       writeChanges(result.changes)
       const moved = solidSyntax(fx, 'src/components/Counter.tsx')
       assert.deepEqual(moved.declarations, ['Counter'])
-      assert.deepEqual(moved.imports, [
+      const importsByName = (a: { imported: string }, b: { imported: string }) => a.imported.localeCompare(b.imported)
+      assert.deepEqual(moved.imports.toSorted(importsByName), [
         { from: 'solid-js', imported: 'createSignal', local: 'createSignal' },
         { from: 'solid-js', imported: 'For', local: 'For' },
         { from: 'solid-js', imported: 'Show', local: 'Show' },
         { from: '../Counter.tsx', imported: 'CounterProps', local: 'CounterProps' },
-      ])
+      ].toSorted(importsByName))
       assert.deepEqual(solidSyntax(fx, 'src/App.tsx').imports, [{ from: './components/Counter', imported: 'Counter', local: 'ScoreCounter' }])
       assertSolidDiagnostics(fx)
     }
@@ -92,12 +96,89 @@ describe('solid TSX refactors', () => {
     const fx = makeSolidFixture()
     try {
       assertSolidDiagnostics(fx)
+      assert.deepEqual(runCssClassScan({ cwd: fx.dir, pattern: ['text-gray-*'] }), [
+        { token: 'text-gray-900', count: 1, files: ['src/Counter.tsx'] },
+      ])
       const result = await runCssClassRename(new Map([['bg-gray-500', 'bg-neutral-500'], ['text-gray-900', 'text-neutral-900']]), { cwd: fx.dir })
       writeChanges(result.changes)
       const attributes = solidSyntax(fx, 'src/Counter.tsx').attributes
       assert.deepEqual(attributes.filter(attr => attr.name === 'class' || attr.name === 'classList'), [
         { name: 'class', values: ['bg-neutral-500 text-white'] },
         { name: 'classList', values: ['text-neutral-900'] },
+      ])
+      assertSolidDiagnostics(fx)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it.each(['value', 'rest', 'others'])('renames nested destructured %s bindings and preserves local shadows', async (from) => {
+    const fx = makeSolidFixture()
+    try {
+      fx.write('src/state.ts', `
+export const { state: [value = 3, ...rest], ...others } = { state: [undefined, 8], marker: 9 }
+export function read() { const value = 99; return value }
+export const output = [value, rest[0], others.marker, read()]
+`)
+      assertSolidDiagnostics(fx)
+      const result = await runRename(from, `new${from}`, { cwd: fx.dir, scope: 'src/state.ts', ...options })
+      assert.deepEqual(result.regressions, [])
+      writeChanges(result.changes)
+      assert.deepEqual(solidModuleValue(fx, 'src/state.ts', 'output'), [3, 8, 9, 99])
+      assert.deepEqual(scan(`new${from}`, { cwd: fx.dir }).map(hit => hit.line), [2, 4])
+      assertSolidDiagnostics(fx)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('renames a local object alias without changing the input property', async () => {
+    const fx = makeSolidFixture()
+    try {
+      fx.write('src/state.ts', `
+export function read() { const { value: score = 4 } = { value: undefined }; return score }
+export const output = read()
+`)
+      assertSolidDiagnostics(fx)
+      const result = await runRename('score', 'points', { cwd: fx.dir, scope: 'src/state.ts', ...options })
+      assert.deepEqual(result.regressions, [])
+      writeChanges(result.changes)
+      assert.equal(solidModuleValue(fx, 'src/state.ts', 'output'), 4)
+      assertSolidDiagnostics(fx)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('rejects an object property that binds only an alias', async () => {
+    const fx = makeSolidFixture()
+    try {
+      fx.write('src/state.ts', 'export const { value: score } = { value: 4 }')
+      await assert.rejects(runRename('value', 'points', { cwd: fx.dir, scope: 'src/state.ts', ...options }), /no declaration/)
+    }
+    finally { fx.cleanup() }
+  })
+
+  it('rewrites classList keys without changing conditions or unrelated object keys', async () => {
+    const fx = makeSolidFixture()
+    try {
+      fx.write('src/Classes.tsx', `
+const marker = 'text-gray-900'
+const classList = { 'text-gray-900': marker === 'text-gray-900', ['bg-gray-500']: true }
+export const other = { 'text-gray-900': true }
+export const View = () => <div classList={classList} data-label="bg-gray-500" />
+`)
+      assertSolidDiagnostics(fx)
+      assert.deepEqual(runCssClassScan({ cwd: fx.dir, glob: '*Classes.tsx', sort: 'token' }), [
+        { token: 'bg-gray-500', count: 1, files: ['src/Classes.tsx'] },
+        { token: 'text-gray-900', count: 1, files: ['src/Classes.tsx'] },
+      ])
+      const result = await runCssClassRename(new Map([['bg-gray-500', 'bg-neutral-500'], ['text-gray-900', 'text-neutral-900']]), { cwd: fx.dir, glob: '*Classes.tsx' })
+      writeChanges(result.changes)
+      assert.deepEqual(solidSyntax(fx, 'src/Classes.tsx').strings, [
+        'text-gray-900',
+        'text-neutral-900',
+        'text-gray-900',
+        'bg-neutral-500',
+        'text-gray-900',
+        'bg-gray-500',
       ])
       assertSolidDiagnostics(fx)
     }

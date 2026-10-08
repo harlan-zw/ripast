@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, symlinkSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 import { resolveNativeTsc } from '../packages/core/src/index.ts'
 import { makeFixture } from './helpers.ts'
@@ -26,7 +27,10 @@ export function solidSyntax(fx: Fixture, rel: string) {
   const declarations: string[] = []
   const imports: { from: string, imported: string, local: string }[] = []
   const attributes: { name: string, values: string[] }[] = []
+  const strings: string[] = []
   const visit = (node: ts.Node): void => {
+    if (ts.isStringLiteral(node))
+      strings.push(node.text)
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))
       tags.push(node.tagName.getText(file))
     if (ts.isCallExpression(node))
@@ -54,5 +58,12 @@ export function solidSyntax(fx: Fixture, rel: string) {
     ts.forEachChild(node, visit)
   }
   visit(file)
-  return { tags, calls, declarations, imports, attributes }
+  return { tags, calls, declarations, imports, attributes, strings }
+}
+
+export function solidModuleValue(fx: Fixture, rel: string, name: string): unknown {
+  const compiled = ts.transpileModule(fx.read(rel), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } })
+  const exports: Record<string, unknown> = {}
+  runInNewContext(compiled.outputText, { exports })
+  return JSON.parse(JSON.stringify(exports[name]))
 }
