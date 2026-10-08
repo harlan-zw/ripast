@@ -106,6 +106,20 @@ it('deletes an inactive provider without capturing the active global binding', a
   }
 })
 
+it('deletes an unused export outside Nuxt auto-import scopes', async () => {
+  const dir = fixture()
+  try {
+    writeFileSync(join(dir, 'lib/value.ts'), 'export const value = 7')
+    const result = await runDelete('value', 'lib/value.ts', { cwd: dir })
+    const exports = {}
+    runInNewContext(ts.transpileModule(result.changes[0]!.after, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
+    assert.deepEqual(exports, {})
+  }
+  finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 it('checks each nested Nuxt app before deleting a workspace provider', async () => {
   const dir = fixture()
   try {

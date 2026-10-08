@@ -9,6 +9,7 @@ import { parse } from '@vue/compiler-sfc'
 import { detectFrameworks, loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
+import { isInsideAutoImportScope } from './nuxt.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
@@ -56,9 +57,12 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   if (nuxt) {
     if (!nuxtAdapter?.autoImportScopes || !nuxtAdapter.inspectAutoImportConsumers)
       throw new Error('ripast delete: cannot inspect Nuxt auto-imports without @ripast/vue. Install @ripast/vue before deleting exported declarations.')
-    const consumers = nuxtAdapter.inspectAutoImportConsumers({ cwd, symbol, fromAbs, files: candidatePaths, scopes: nuxtAdapter.autoImportScopes(cwd) })
-    if (consumers.length)
-      throw new Error(`ripast delete: cannot prove "${symbol}" is unused through Nuxt auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
+    const scopes = nuxtAdapter.autoImportScopes(cwd)
+    if (isInsideAutoImportScope(fromAbs, scopes)) {
+      const consumers = nuxtAdapter.inspectAutoImportConsumers({ cwd, symbol, fromAbs, files: candidatePaths, scopes })
+      if (consumers.length)
+        throw new Error(`ripast delete: cannot prove "${symbol}" is unused through Nuxt auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
+    }
   }
 
   const server = await startTsServer(cwd)

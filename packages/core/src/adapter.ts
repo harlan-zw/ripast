@@ -97,6 +97,7 @@ export interface FrameworkAdapter {
   validateAutoImportRename?: (ctx: {
     cwd: string
     symbol: string
+    to: string
     fromAbs: string
     changes: FileChange[]
     scopes: Set<string>
