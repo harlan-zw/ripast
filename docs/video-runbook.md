@@ -76,13 +76,13 @@ If the agent UI has no reliable token display, show the final total after comple
 
 ## Camera and layout
 
-- Export a 1920 × 1080 landscape composition at 30 fps.
+- Start with a 1440 × 1080 composition at 30 fps for the Twitter feed.
 - Start with the task and both code panes already visible.
 - Put ordinary editing on the left and Ripast on the right.
 - Label both panes. Use the same font size and crop scale.
 - Crop to the command, changed code, and check result.
 - Hide sidebars, tabs, unrelated output, and editor chrome.
-- Use code at 32 px or larger in the 1080p composition.
+- Use changed identifiers at 56 px or larger. Crop surrounding syntax when it reduces readability.
 - Use labels at 36 px or larger. Keep method notes readable.
 - Use Ripast's [existing palette](../branding/README.md).
 - Use one shared start and the same playback speed for both recordings.
