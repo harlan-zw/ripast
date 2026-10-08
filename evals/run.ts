@@ -1,5 +1,6 @@
 import type { Arm, CaseName, EvalCase, Measurement } from './core.ts'
 import { spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -107,6 +108,7 @@ async function main() {
     arm: { type: 'string', default: 'both' },
     out: { type: 'string' },
     preflight: { type: 'boolean', default: false },
+    skill: { type: 'string' },
   } })
   const repetitions = integer(values.runs, '--runs')
   const consumers = integer(values.consumers, '--consumers')
@@ -117,6 +119,7 @@ async function main() {
     throw new Error('--arm requires both, agent, or ripast')
   const arms: Arm[] = values.arm === 'both' ? ['ripast', 'agent'] : [values.arm as Arm]
   const cases = (values.case ? [values.case as CaseName] : caseNames).map(name => makeCase(name, consumers))
+  const skill = values.skill ? readFileSync(values.skill === 'current' ? join(root, 'packages/cli/skills/ripast/SKILL.md') : resolve(values.skill), 'utf8') : null
   const cli = join(root, 'packages/cli/bin/ripast.mjs')
   if (!existsSync(join(root, 'packages/cli/dist/cli.mjs')))
     throw new Error('If the CLI build is missing, run pnpm build')
@@ -140,6 +143,7 @@ async function main() {
     started: new Date().toISOString(),
     timeoutMs: timeout,
     preflight: values.preflight,
+    skillHash: skill ? createHash('sha256').update(skill).digest('hex') : null,
   }
   writeFileSync(join(out, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`)
   // Read only provider settings. Do not inherit global plugins, MCP, instructions, or Skills.
@@ -193,9 +197,11 @@ async function main() {
       evalCase.task,
       'Preserve the unrelated calculateTotal in src/decoy.ts and the string in src/labels.ts.',
       'Do not change configuration or add dependencies. Work only in this fixture. Do not read external Skills or repositories.',
-      arm === 'ripast'
-        ? `Use the local ripast CLI for this refactor. It is on PATH. Run: ${evalCase.command}. You may inspect files and use --help.`
-        : 'Use your normal read, edit, and shell tools. You may write scripts. Do not use Ripast or another refactor CLI.',
+      arm === 'ripast' && skill
+        ? `Use the provided Ripast Skill. The ripast executable is on PATH.\n<skill>\n${skill}\n</skill>`
+        : arm === 'ripast'
+          ? `Use the local ripast CLI for this refactor. It is on PATH. Run: ${evalCase.command}. You may inspect files and use --help.`
+          : 'Use your normal read, edit, and shell tools. You may write scripts. Do not use Ripast or another refactor CLI.',
       `After the refactor, run this typecheck: ${checkCommand}. Give a brief result.`,
     ].join('\n')
     writeFileSync(join(dir, 'prompt.txt'), prompt)
