@@ -92,6 +92,8 @@ If the agent UI has no reliable token display, show the final total after comple
 
 Prefer a fixed, tight crop. Add a small zoom only if it makes the changed identifier easier to read.
 Keep the same wordmark through the splash, comparison header, and closing card.
+Use plain text labels. Avoid italics, underlines, decorative captions, and extra slogans.
+Keep syntax colours in the code. Give measurements and the wordmark room to breathe.
 Use eased transforms for scene changes. Stagger terminal entrances by 30 to 80 milliseconds.
 Keep elapsed-time counters linear. Let completed identifiers settle with a short transition.
 Use silence by default. The video must make sense without audio.
