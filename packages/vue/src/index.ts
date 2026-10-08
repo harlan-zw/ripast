@@ -1,5 +1,5 @@
 import type { FileChange, FrameworkAdapter } from '@ripast/core/adapter'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { extractTemplateExpressions, rgFiles, scan } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
@@ -105,7 +105,7 @@ function nuxtAutoImportScopes(cwd: string): Set<string> {
       .map(name => join(context, name))
       .find(existsSync)
     const config = configPath ? literalNuxtConfig(readFileSync(configPath, 'utf8')) : undefined
-    const sourceRoot = resolve(context, literalString(configProperty(config, 'srcDir')) ?? (existsSync(join(context, 'app')) ? 'app' : '.'))
+    const sourceRoot = resolve(context, literalString(configProperty(config, 'srcDir')) || defaultNuxtSourceDir(context, config))
     for (const dir of DEFAULT_NUXT_AUTO_IMPORT_DIRS)
       scopes.add(resolve(context, dir))
     for (const dir of ['utils', 'composables', 'components', 'middleware'])
@@ -117,6 +117,20 @@ function nuxtAutoImportScopes(cwd: string): Set<string> {
       scopes.add(provider)
   }
   return scopes
+}
+
+function defaultNuxtSourceDir(context: string, config: ts.Expression | undefined): string {
+  const app = join(context, 'app')
+  if (!existsSync(app))
+    return '.'
+  const entries = readdirSync(app).filter(name => name !== 'spa-loading-template.html' && !name.startsWith('router.options'))
+  if (entries.length)
+    return 'app'
+  if (['app.vue', 'App.vue'].some(name => existsSync(join(context, name))))
+    return '.'
+  const directories = ['assets', 'layouts', 'middleware', 'pages', 'plugins']
+    .map(name => literalString(configProperty(configProperty(config, 'dir'), name)) ?? name)
+  return directories.some(directory => existsSync(resolve(context, directory))) ? '.' : 'app'
 }
 
 function literalNuxtConfig(source: string): ts.Expression | undefined {

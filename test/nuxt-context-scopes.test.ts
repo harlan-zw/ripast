@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { mkdirSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { runRename, writeChanges } from '@ripast/core'
 import { it } from 'vitest'
@@ -13,6 +14,7 @@ const cases = [
   { name: 'shared utils', config: 'export default {}', provider: 'shared/utils/format.ts' },
   { name: 'literal shared directory', config: 'export default { dir: { shared: \'common\' } }', provider: 'common/utils/format.ts' },
   { name: 'configured imports within srcDir', config: 'export default { srcDir: \'src\', imports: { dirs: [\'custom\'] } }', provider: 'src/custom/format.ts' },
+  { name: 'empty app with legacy pages', legacy: true, config: 'export default { imports: { dirs: [\'custom\'] } }', provider: 'custom/format.ts' },
 ] as const
 
 function fixture(input: typeof cases[number]) {
@@ -23,10 +25,13 @@ function fixture(input: typeof cases[number]) {
     '.ignore': '.nuxt\nnode_modules\n',
     [`${context}nuxt.config.ts`]: input.config,
     [input.provider]: 'export function format(value: number) { return "#" + value }',
-    [`${context}${context ? '' : 'app/'}pages/index.vue`]: '<script setup lang="ts">const label = format(1)</script><template>{{ format(2) }}</template>',
+    [`${context}${context || 'legacy' in input ? '' : 'app/'}pages/index.vue`]: '<script setup lang="ts">const label = format(1)</script><template>{{ format(2) }}</template>',
     [`${context}consumer.ts`]: 'export const value = format(3)',
   }
-  return { fx: makeFixture(files), files }
+  const fx = makeFixture(files)
+  if ('legacy' in input)
+    mkdirSync(join(fx.dir, 'app'))
+  return { fx, files }
 }
 
 it.each([false, true])('keeps unrelated literal directories outside Nuxt provider scopes, Nuxt=%s', async (nuxt) => {
