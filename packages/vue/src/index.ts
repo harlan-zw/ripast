@@ -73,6 +73,8 @@ export default adapter
 const DEFAULT_NUXT_AUTO_IMPORT_DIRS = [
   'composables',
   'utils',
+  'app/composables',
+  'app/utils',
   'components',
   'server/utils',
   'middleware',
@@ -109,6 +111,8 @@ function nuxtAutoImportScopes(cwd: string): Set<string> {
   const scopes = new Set([...dirs].map(dir => resolve(cwd, stripGlob(dir))))
   const contexts = new Set([cwd, ...rgFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
   for (const context of contexts) {
+    for (const dir of DEFAULT_NUXT_AUTO_IMPORT_DIRS)
+      scopes.add(resolve(context, dir))
     for (const provider of loadNuxtProviderPaths(context))
       scopes.add(provider)
   }
