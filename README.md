@@ -1,28 +1,22 @@
 <h1>ripast</h1>
 
-[![npm version](https://img.shields.io/npm/v/ripast?color=yellow)](https://npmjs.com/package/ripast)
-[![npm downloads](https://img.shields.io/npm/dm/ripast?color=yellow)](https://npm.chart.dev/ripast)
+[![npm version](https://img.shields.io/npm/v/@ripast/cli?color=yellow)](https://npmjs.com/package/@ripast/cli)
+[![npm downloads](https://img.shields.io/npm/dm/@ripast/cli?color=yellow)](https://npm.chart.dev/@ripast/cli)
 [![license](https://img.shields.io/github/license/harlan-zw/ripast?color=yellow)](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md)
 
 > AST refactoring for TypeScript, JavaScript, Vue, Nuxt, React, and Solid. Built for AI coding agents, with dry runs by default.
 
-<p align="center">
+<div align="center">
 <table>
 <tbody>
+<tr>
 <td align="center">
-<sub>Made possible by my <a href="https://github.com/sponsors/harlan-zw">Sponsor Program 💖</a><br> Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <a href="https://discord.gg/275MBUBvgP">Discord</a> for help</sub><br>
+<sub>Made possible by my <a href="https://github.com/sponsors/harlan-zw">Sponsor Program 💖</a><br> Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <a href="https://discord.gg/275MBUBvgP">Discord</a> for help</sub>
 </td>
+</tr>
 </tbody>
 </table>
-</p>
-
-## Why ripast?
-
-Renaming a symbol can affect imports, type references, JSX components, and Vue templates across a project.
-Text search finds the spelling, but a rename needs to distinguish references from unrelated names.
-
-Ripast gives coding agents CLI commands for these refactors, with a preview before writing changes.
-Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
+</div>
 
 ## Features
 
@@ -31,6 +25,14 @@ Use a plain edit for a small, local change, or `rg` for text inside strings and 
 - 🎯 **Vue and Nuxt support:** Update script references, template expressions, component tags, and Nuxt auto-imports.
 - 🛡️ **Dry runs:** Preview changes before writing them with `--apply`.
 - ✅ **Type checking:** Refuse supported refactors when verification finds new type errors. See [Verify](#verify) for scope.
+
+## Why ripast?
+
+Renaming a symbol can affect imports, type references, JSX components, and Vue templates across a project.
+Text search finds the spelling, but a rename needs to distinguish references from unrelated names.
+
+Ripast gives coding agents CLI commands for these refactors, with a preview before writing changes.
+Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
 
 ### Supported targets
 
@@ -126,6 +128,7 @@ ripast scan useStore --graph mermaid
 ```
 
 `--graph mermaid|dot` draws relative import/export edges between hit files for quick triage.
+
 </details>
 
 <details>
@@ -145,6 +148,7 @@ ripast rename useStore useAppStore --apply
 ripast rename useStore useAppStore --scope src/store.ts --apply
 ripast rename useStore useAppStore --all --apply
 ```
+
 </details>
 
 <details>
@@ -175,6 +179,7 @@ ripast replace getSiteConfig getSiteConfig --target-scope ../nuxt-site-config/sr
 `--target-import` sets its import path explicitly, including Nuxt aliases.
 Value and type exports retain their import kind. Existing imports from that path merge safely.
 Default discovery still selects direct declarations and keeps the relative import policy.
+
 </details>
 
 <details>
@@ -191,6 +196,7 @@ ripast rename useCounter useTally --tsconfig .nuxt/tsconfig.json --apply
 # Moving out of utils/composables/components adds explicit imports to consumers
 ripast move format --from utils/format.ts --to lib/format.ts --apply
 ```
+
 </details>
 
 <details>
@@ -203,6 +209,7 @@ It copies required imports and removes unused ones. If the symbol depends on a l
 ```bash
 ripast move helper --from src/utils/a.ts --to src/utils/helpers.ts --apply
 ```
+
 </details>
 
 <details>
@@ -214,6 +221,7 @@ The Vue adapter also updates component tags in PascalCase and kebab-case.
 ```bash
 ripast rename-file src/utils.ts src/lib/helpers.ts --apply
 ```
+
 </details>
 
 <details>
@@ -227,6 +235,7 @@ Omit `--apply` to preview the changes.
 ripast delete helper --from src/utils.ts
 ripast delete helper --from src/utils.ts --apply
 ```
+
 </details>
 
 <details>
@@ -251,6 +260,7 @@ ripast css-class-scan --sort count-asc
 # Find files introducing the most unique class tokens
 ripast css-class-scan --by file
 ```
+
 </details>
 
 <details>
@@ -264,6 +274,7 @@ ripast tree --exports local --glob '*.ts'
 ```
 
 In agent environments (`std-env`'s `isAgent`), defaults to a compact architecture summary.
+
 </details>
 
 <details>
@@ -277,6 +288,7 @@ ripast unused
 ripast unused --exports local
 ripast unused --exports all --json
 ```
+
 </details>
 
 <details>
@@ -293,6 +305,7 @@ ripast rename useStore useAppStore --apply --json
 #   "changes": [...], "regressions": []
 # }
 ```
+
 </details>
 
 ### Verify
