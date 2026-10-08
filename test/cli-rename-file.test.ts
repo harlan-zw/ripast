@@ -1,10 +1,56 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
+import { runRenameFile } from '@ripast/core'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
+
+it.skipIf(process.platform === 'win32')('rename-file SDK refuses a dangling target symlink', async () => {
+  const fixture = makeFixture({ 'source.ts': 'export const value = 42\n' })
+  try {
+    symlinkSync('missing.ts', resolve(fixture.dir, 'target.ts'))
+    await assert.rejects(runRenameFile('source.ts', 'target.ts', {
+      cwd: fixture.dir,
+      vue: false,
+      verify: false,
+    }), /target "target\.ts" already exists/)
+    assert.equal(readlinkSync(resolve(fixture.dir, 'target.ts')), 'missing.ts')
+    assert.equal(fixture.read('source.ts'), 'export const value = 42\n')
+  }
+  finally { fixture.cleanup() }
+})
+
+it.skipIf(process.platform === 'win32').each([false, true])('rename-file refuses a dangling target symlink with apply=%s', (apply) => {
+  const consumer = 'import { value } from "./source.ts"\nconsole.log(value)\n'
+  const fixture = makeFixture({
+    'source.ts': 'export const value = 42\n',
+    'consumer.ts': consumer,
+  })
+  try {
+    symlinkSync('missing.ts', resolve(fixture.dir, 'target.ts'))
+    const result = spawnSync(process.execPath, [
+      '--experimental-strip-types',
+      '--no-warnings',
+      resolve('packages/cli/src/cli.ts'),
+      'rename-file',
+      'source.ts',
+      'target.ts',
+      '--no-vue',
+      '--no-verify',
+      '--json',
+      ...(apply ? ['--apply'] : []),
+    ], { cwd: fixture.dir, encoding: 'utf8' })
+    assert.notEqual(result.status, 0, result.stdout)
+    assert.match(result.stderr, /target "target\.ts" already exists/)
+    assert.equal(lstatSync(resolve(fixture.dir, 'target.ts')).isSymbolicLink(), true)
+    assert.equal(readlinkSync(resolve(fixture.dir, 'target.ts')), 'missing.ts')
+    assert.equal(fixture.read('source.ts'), 'export const value = 42\n')
+    assert.equal(fixture.read('consumer.ts'), consumer)
+  }
+  finally { fixture.cleanup() }
+})
 
 it('rename-file preserves consumers when the destination directory cannot be created', () => {
   const consumer = 'import { value } from "./source.ts"\nconsole.log(value)\n'
