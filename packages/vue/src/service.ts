@@ -3,7 +3,7 @@ import type { LanguageService, LanguageServiceEnvironment, ProjectContext } from
 import type { TypeScriptProjectHost } from '@volar/typescript'
 import type { WorkspaceEdit } from 'vscode-languageserver-protocol'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
 import { applyTextEdits, offsetOfPosition } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
@@ -153,18 +153,20 @@ export function vueProjectConfigs(tsconfigPath: string): { tsconfigPath: string,
 
 function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService {
   const { commandLine, fileNames } = readVueProject(tsconfigPath)
+  // URI.fsPath lowercases Windows drive letters. Rebase keys onto the caller's cwd.
+  const normalizeFileName = (file: string): string => resolve(cwd, relative(cwd, resolve(cwd, file)))
   const overlays = new Map<string, string>()
   const roots = new Set(fileNames.map(file => resolve(cwd, file)))
   const overlayDirectories = new Set<string>()
   const sys: ts.System = {
     ...ts.sys,
-    fileExists: file => overlays.has(resolve(file)) || ts.sys.fileExists(file),
-    readFile: file => overlays.get(resolve(file)) ?? ts.sys.readFile(file),
-    directoryExists: directory => overlayDirectories.has(resolve(directory)) || ts.sys.directoryExists(directory),
+    fileExists: file => overlays.has(normalizeFileName(file)) || ts.sys.fileExists(file),
+    readFile: file => overlays.get(normalizeFileName(file)) ?? ts.sys.readFile(file),
+    directoryExists: directory => overlayDirectories.has(normalizeFileName(directory)) || ts.sys.directoryExists(directory),
   }
 
   const fileToUri = (fileName: string): URI => URI.file(resolve(cwd, fileName))
-  const uriToFile = (uri: URI): string => uri.fsPath
+  const uriToFile = (uri: URI): string => normalizeFileName(uri.fsPath)
 
   const language = createLanguage<URI>(
     [
@@ -206,7 +208,7 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
       stat(uri) {
         if (uri.scheme !== 'file')
           return undefined
-        const overlay = overlays.get(uri.fsPath)
+        const overlay = overlays.get(uriToFile(uri))
         if (overlay !== undefined)
           return { type: FileType.File, ctime: 0, mtime: projectVersion, size: overlay.length }
         try {
@@ -225,7 +227,7 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
       readFile(uri) {
         if (uri.scheme !== 'file')
           return undefined
-        const overlay = overlays.get(uri.fsPath)
+        const overlay = overlays.get(uriToFile(uri))
         if (overlay !== undefined)
           return overlay
         try {
@@ -278,7 +280,7 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
       }
     },
     setSnapshot: (fileName: string, text: string) => {
-      const path = resolve(cwd, fileName)
+      const path = normalizeFileName(fileName)
       overlays.set(path, text)
       if (path.endsWith('.vue'))
         roots.add(path)
@@ -305,7 +307,7 @@ export function workspaceEditToChanges(
   const seen = new Set<string>()
   const apply = (uriStr: string, edits: { range: { start: { line: number, character: number }, end: { line: number, character: number } }, newText: string }[]) => {
     const uri = URI.parse(uriStr)
-    const fileName = uri.fsPath
+    const fileName = vue.uriToFile(uri)
     if (filter && !filter(fileName))
       return
     if (seen.has(fileName))
@@ -347,5 +349,6 @@ export function workspaceEditToChanges(
 }
 
 export function workspaceRelativePath(fileName: string, cwd: string): string {
-  return fileName.startsWith(cwd) ? fileName.slice(cwd.length).replace(/^[/\\]/, '') : fileName
+  const rel = relative(cwd, fileName)
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) ? rel : fileName
 }

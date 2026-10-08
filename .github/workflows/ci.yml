@@ -37,9 +37,13 @@ jobs:
       - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
       - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
 
-  windows-launcher:
-    runs-on: windows-latest
+  platform:
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -51,7 +55,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm exec vitest run test/launcher-platform.test.ts
+      - run: pnpm exec vitest run test/launcher-platform.test.ts test/platform-paths.test.ts
       - run: pnpm -r --filter './packages/*' exec publint
       - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
       - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
