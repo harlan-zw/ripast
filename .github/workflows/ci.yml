@@ -7,25 +7,27 @@ on:
   pull_request:
     paths-ignore: ['**/*.md']
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - name: Install ripgrep
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -sSL https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz | tar xz -C "$RUNNER_TEMP"
-          mv "$RUNNER_TEMP/ripgrep-14.1.1-x86_64-unknown-linux-musl/rg" "$HOME/.local/bin/rg"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        run: sudo apt-get update && sudo apt-get install --yes ripgrep
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build
@@ -37,10 +39,13 @@ jobs:
 
   windows-launcher:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: pnpm

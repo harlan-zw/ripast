@@ -129,7 +129,7 @@ export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?:
       args.push('--fixed-strings')
     for (const g of globs)
       args.push('-g', g)
-    args.push(pattern, '.')
+    args.push('--', pattern, '.')
   }
   return select(runRipgrep(args, cwd, () => {
     if (!opts.listAll && opts.fixedStrings === false)
