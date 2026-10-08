@@ -22,7 +22,7 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 ## Features
 
 - ✂️ **Agent refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
-- 📉 **Lower agent overhead.** Latest completed pairs: 45% to 60% fewer tokens, 35% to 61% less time ([benchmarks](#agent-benchmarks)).
+- 📉 **Lower agent overhead.** Latest completed pairs: 60% to 74% fewer tokens, 15% to 55% less time ([benchmarks](#agent-benchmarks)).
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
 - 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
@@ -390,7 +390,41 @@ Licensed under the [MIT license](https://github.com/harlan-zw/ripast/blob/main/L
 
 ## Agent benchmarks
 
-### Latest batch, 9 October 2026
+### Matched batch, 9 October 2026
+
+Forty runs covered the same ten tasks with both models and both methods.
+Five tasks renamed TypeScript symbols. Five migrated static Vue class tokens.
+Each task supplied four fresh copies of identical captured source.
+Ripast completed **20/20** runs and their checks. Ordinary editing completed **19/20**.
+
+| Runner and model | Completed pairs | Fewer total tokens | Less total time | Median token reduction | Median time reduction |
+| --- | --- | --- | --- | --- | --- |
+| Codex, GPT-6 Luna, medium reasoning | 9 | 60.4% | 15.4% | 58.7% | 47.8% |
+| OpenCode, GLM 5.3 Flash | 10 | 73.9% | 55.4% | 71.2% | 56.3% |
+
+Total reductions compare summed tokens and time within each model, using only completed pairs.
+Medians give each completed task equal weight.
+Two Luna Ripast runs were slower: Harlanzw.com took 39.8 versus 17.6 seconds; NuxtSEO.com took 49.0 versus 24.2 seconds.
+The OpenCode Mdream.dev baseline used 312,498 tokens and affects the total token reduction.
+The Luna Unrouting baseline stopped after inspection, without edits or a successful check. Its pair is excluded.
+
+**Method.** One run per task, method, and model; three projects ran concurrently.
+Starting model alternated by task. Luna always ran Ripast first; OpenCode always ran ordinary editing first.
+Method order was not balanced within each model, so cache effects can bias timing.
+Independent checks compared expected source edits and baseline TypeScript diagnostics.
+Timing includes startup, model work, edits, and the requested check. Installation and Skill loading are excluded.
+Only the Ripast method received the Skill. Both runners executed without an OS sandbox in scratch copies.
+
+**Resources.** All 40 attempts used 2,460,704 total tokens, including cached input counted once.
+The batch took 8.7 minutes elapsed and 23.5 summed agent minutes. Dollar charges were not recorded.
+
+**Limits.** One repeat cannot establish timing variance. Source slices omit installed dependencies and generated Nuxt state.
+Full builds, auto-import refactors, moves, and import replacements remain unmeasured.
+Matched tasks improve comparison, but tool stacks, caches, token accounting, and provider load still differ.
+See [all 40 measurements and source hashes](./evals/results/2026-10-09-matched.json)
+and [commands to reproduce the batch](./evals/README.md#second-batch-and-codex).
+
+### Split batch, 9 October 2026
 
 Ten new repositories supplied five TypeScript symbol renames and five static Vue class migrations.
 Each project ran once with Ripast and once with ordinary editing tools, using the same assigned runner and model.

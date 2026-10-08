@@ -130,7 +130,9 @@ pnpm eval:projects --batch second --runner both --timeout 150
 
 The ten-case second batch produces 40 runs: ten tasks, two methods, two models.
 Each task captures its source once and supplies the same expected edits to both models.
-The model that starts alternates by task. Method order also alternates between model pairs.
+The model that starts alternates by task. The second model reverses method order.
+Codex always runs Ripast first. OpenCode always runs ordinary editing first.
+Method order is not balanced within each model. Cache effects can bias timing.
 Directories include the runner, such as `c12-codex-ripast`, to keep all four copies separate.
 The report keeps one row per task and runner. It does not pool the two models.
 This mode fixes differing task assignments. It still provides only one run per method and model.
@@ -153,3 +155,4 @@ In split mode, different models and assigned projects prevent a direct Codex ver
 In both mode, tasks match, but tool stacks, token accounting, and provider load still affect comparison.
 Keep failed attempts, timeouts, and harness setup failures visible in the report.
 Recorded second-batch measurements live in [the results file](./results/2026-10-09.json).
+The matched 40-run batch lives in [its separate results file](./results/2026-10-09-matched.json).
