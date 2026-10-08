@@ -31,9 +31,12 @@ export function readCssClassSourceFiles(opts: CssClassSourceOptions = {}): CssCl
 }
 
 export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
+  if (!map.size)
+    return []
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs()
-  return readSourceFiles(rgFilesMany([...map.keys()], { cwd, glob }), cwd)
+  // Escapes can encode any part of a class key. Parse those candidates before matching decoded values.
+  return readSourceFiles(rgFilesMany([...map.keys(), '\\'], { cwd, glob }), cwd)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {
@@ -301,7 +304,7 @@ function rewriteStringsInProgram(source: string, program: any, map: RenameMap, o
 function rewriteVue(file: CssClassSourceFile, map: RenameMap): string {
   let out = file.source
   const parsed = parseFile(file.abs, file.cwd)
-  if (parsed.program && mapIncludesAny(parsed.scriptSource, map))
+  if (parsed.program)
     out = rewriteScriptWithin(out, parsed.scriptStart, parsed.scriptEnd, parsed.scriptSource, parsed.program, map)
   out = rewriteVueTemplateClassAttrs(out, map)
   out = rewriteVueStyleBlocks(out, map)
