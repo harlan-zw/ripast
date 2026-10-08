@@ -88,6 +88,27 @@ it.each(['missing', 'malformed', 'bare-package', 'missing-export'])('refuses unr
   }
 })
 
+it('refuses deletion of a live provider whose generated global uses a bare package specifier', async () => {
+  const dir = fixture()
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true })
+    writeFileSync(join(dir, 'lib/value.ts'), 'export const value = 7')
+    writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const value: typeof import('ripast-live-provider').value } export {}`)
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    pkg.name = 'ripast-live-provider'
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg, null, 2))
+    mkdirSync(join(dir, 'node_modules/ripast-live-provider'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules/ripast-live-provider/package.json'), JSON.stringify({ name: 'ripast-live-provider', version: '1.0.0', main: '../../lib/value.ts', types: '../../lib/value.ts' }))
+    writeFileSync(join(dir, 'pages/index.vue'), '<template>{{ value(7) }}</template>')
+    const before = readFileSync(join(dir, 'lib/value.ts'), 'utf8')
+    await assert.rejects(() => runDelete('value', 'lib/value.ts', { cwd: dir, verify: false }), /reference/)
+    assert.equal(readFileSync(join(dir, 'lib/value.ts'), 'utf8'), before)
+  }
+  finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 it('deletes an inactive provider without capturing the active global binding', async () => {
   const dir = fixture()
   try {
