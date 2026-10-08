@@ -134,7 +134,7 @@ const CLASS_CALLEE_RE = /^(?:cva|cn|clsx|classNames|classnames|twJoin|twMerge)$/
 const CLASS_ATTR_RE_SCRIPT = /^(?:class|className)$/
 const CLASS_NAME_RE = /(?:^|[-_])(?:cls|class|classes|className|classList|activeClass|inactiveClass|exactActiveClass|ui|slots|variants|compoundVariants|defaultVariants)(?:$|[-_])/i
 
-function walkProgram(node: any, classContext: boolean, classObjectKeyContext: boolean, visit: (site: ScriptStringSite) => void): void {
+function walkProgram(node: any, classContext: boolean, classObjectKeyContext: boolean | 'classList', visit: (site: ScriptStringSite) => void): void {
   if (!node || typeof node !== 'object')
     return
 
@@ -173,7 +173,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
 
   if (node.type === 'VariableDeclarator') {
     walkProgram(node.id, false, false, visit)
-    walkProgram(node.init, classContext || isClassName(node.id), false, visit)
+    walkProgram(node.init, classContext || isClassName(node.id), nodeName(node.id) === 'classList' ? 'classList' : false, visit)
     return
   }
 
@@ -184,13 +184,13 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
       walkProgram(node.key, true, true, visit)
     else
       walkProgram(node.key, false, false, visit)
-    walkProgram(node.value, valueContext, false, visit)
+    walkProgram(node.value, classObjectKeyContext === 'classList' ? false : valueContext, nodeName(node.key) === 'classList' ? 'classList' : false, visit)
     return
   }
 
   if (node.type === 'JSXAttribute') {
     const attrContext = classContext || isClassName(node.name) || isJsxClassAttr(node.name)
-    walkProgram(node.value, attrContext, false, visit)
+    walkProgram(node.value, attrContext, nodeName(node.name) === 'classList' ? 'classList' : false, visit)
     return
   }
 

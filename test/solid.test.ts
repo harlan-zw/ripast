@@ -63,12 +63,12 @@ describe('solid TSX refactors', () => {
       const moved = solidSyntax(fx, 'src/components/Counter.tsx')
       assert.deepEqual(moved.declarations, ['Counter'])
       const importsByName = (a: { imported: string }, b: { imported: string }) => a.imported.localeCompare(b.imported)
-      assert.deepEqual(moved.imports.toSorted(importsByName), [
+      assert.deepEqual(moved.imports.slice().sort(importsByName), [
         { from: 'solid-js', imported: 'createSignal', local: 'createSignal' },
         { from: 'solid-js', imported: 'For', local: 'For' },
         { from: 'solid-js', imported: 'Show', local: 'Show' },
         { from: '../Counter.tsx', imported: 'CounterProps', local: 'CounterProps' },
-      ].toSorted(importsByName))
+      ].sort(importsByName))
       assert.deepEqual(solidSyntax(fx, 'src/App.tsx').imports, [{ from: './components/Counter', imported: 'Counter', local: 'ScoreCounter' }])
       assertSolidDiagnostics(fx)
     }

@@ -203,10 +203,26 @@ function findDeclarations(paths: string[], name: string, allowMultiple = false):
       if (decl.name === name)
         out.push({ _tag: 'TopLevel', filePath: path, source, pos: decl.nameStart })
     }
+    for (const statement of program.body) {
+      const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement
+      if (declaration?.type !== 'VariableDeclaration')
+        continue
+      for (const variable of declaration.declarations) {
+        if (variable.id.type === 'Identifier')
+          continue
+        for (const pos of bindingPositions(variable.id, name))
+          out.push({ _tag: 'TopLevel', filePath: path, source, pos })
+      }
+    }
     walk(program, {
       enter(node: any) {
-        if ((node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type)) && node.id?.name === name)
+        if (node.type === 'VariableDeclarator') {
+          for (const pos of bindingPositions(node.id, name))
+            locals.push({ _tag: 'Local', filePath: path, source, pos })
+        }
+        else if (NAMED_DECLARATION_TYPES.has(node.type) && node.id?.name === name) {
           locals.push({ _tag: 'Local', filePath: path, source, pos: node.id.start })
+        }
       },
     })
   }
@@ -216,4 +232,23 @@ function findDeclarations(paths: string[], name: string, allowMultiple = false):
   if (!allowMultiple && locals.length > new Set(locals.map(d => d.filePath)).size)
     throw new Error(`ripast rename: "${name}" has multiple declarations in one file. Pass --all to rename every occurrence.`)
   return locals
+}
+
+function bindingPositions(pattern: any, name: string): number[] {
+  if (!pattern)
+    return []
+  switch (pattern.type) {
+    case 'Identifier':
+      return pattern.name === name ? [pattern.start] : []
+    case 'ArrayPattern':
+      return pattern.elements.flatMap((element: any) => bindingPositions(element, name))
+    case 'ObjectPattern':
+      return pattern.properties.flatMap((property: any) => bindingPositions(property.value ?? property.argument, name))
+    case 'AssignmentPattern':
+      return bindingPositions(pattern.left, name)
+    case 'RestElement':
+      return bindingPositions(pattern.argument, name)
+    default:
+      return []
+  }
 }
