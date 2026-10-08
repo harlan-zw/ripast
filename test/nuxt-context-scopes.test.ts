@@ -84,3 +84,18 @@ for (const input of cases) {
     finally { fx.cleanup() }
   })
 }
+
+it('refuses factored configured Nuxt import providers without metadata', async () => {
+  const files = {
+    'package.json': '{"type":"module"}',
+    'nuxt.config.ts': 'const config = { imports: { dirs: [\'custom\'] } }\nexport default defineNuxtConfig(config)\n',
+    'custom/format.ts': 'export function format(value: number) { return "#" + value }',
+    'pages/index.vue': '<script setup lang="ts">const label = format(1)</script><template>{{ format(2) }}</template>',
+  }
+  const fx = makeFixture(files)
+  try {
+    await assert.rejects(runRename('format', 'pretty', { cwd: fx.dir, scope: 'custom/format.ts', verify: false }), /cannot resolve auto-import metadata/)
+    for (const [path, before] of Object.entries(files)) assert.equal(fx.read(path), before)
+  }
+  finally { fx.cleanup() }
+})

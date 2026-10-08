@@ -15,6 +15,7 @@ interface Reference {
   end: number
   free: boolean
   shorthand: boolean
+  vBindShorthand: boolean
 }
 
 export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImportRename']> = ({ cwd, from, to, sites }) => {
@@ -42,11 +43,17 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
       throw new Error(`ripast rename: cannot resolve auto-import metadata for "${from}" in ${context}. Run Nuxt prepare first.`)
     const ownsName = active.some(binding => binding._tag === 'Resolved' && binding.names.includes(from))
     const edits = ownsName
-      ? references.filter(reference => reference.free).map(reference => ({
-          start: reference.start,
-          end: reference.end,
-          replacement: reference.shorthand ? `${before.slice(reference.start, reference.end)}: ${to}` : to,
-        }))
+      ? references.filter(reference => reference.free).map((reference) => {
+          const replacement = reference.vBindShorthand
+            ? `${before.slice(reference.start, reference.end)}="${to}"`
+            : reference.shorthand ? `${before.slice(reference.start, reference.end)}: ${to}` : to
+          return {
+            start: reference.start,
+            end: reference.end,
+            replacement,
+            targetOffset: reference.vBindShorthand ? replacement.length - to.length - 1 : replacement.length - to.length,
+          }
+        })
       : []
     if (edits.length) {
       runtimeBinding ??= hasLibraryValue(to)
@@ -58,7 +65,7 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
       const freeTargets = new Set(renameReferences(path, after, new Set([to])).filter(reference => reference.free).map(reference => reference.start))
       let shift = 0
       for (const edit of edits) {
-        const targetStart = edit.start + shift + edit.replacement.length - to.length
+        const targetStart = edit.start + shift + edit.targetOffset
         if (!freeTargets.has(targetStart))
           throw new Error(`ripast rename: "${to}" would capture a Nuxt reference in ${relative(cwd, path)}. Use an explicit import alias first.`)
         shift += edit.replacement.length - (edit.end - edit.start)
@@ -110,7 +117,7 @@ function renameReferences(path: string, source: string, names: Set<string>): Ref
         const binding = shorthand ? checker.getShorthandAssignmentValueSymbol(parent) : checker.getSymbolAtLocation(node)
         const imported = binding?.declarations?.some(declaration => ts.isImportSpecifier(declaration) || ts.isImportClause(declaration) || ts.isNamespaceImport(declaration))
         if (!property && !label && !imported)
-          out.push({ name: node.text, start: node.getStart(file) + offset, end: node.end + offset, free: !binding, shorthand })
+          out.push({ name: node.text, start: node.getStart(file) + offset, end: node.end + offset, free: !binding, shorthand, vBindShorthand: false })
       }
       ts.forEachChild(node, visit)
     }
@@ -174,12 +181,14 @@ function renameReferences(path: string, source: string, names: Set<string>): Ref
           const start = descriptor.template!.loc.start.offset + node.loc.start.offset
           const shorthand = parent?.type === 8 && index !== undefined && typeof parent.children[index - 1] === 'string'
             && parent.children[index - 1].endsWith(`${raw}: `)
+          const vBindShorthand = descriptor.template!.content[node.loc.start.offset - 1] === ':'
           templateReferences.set(start, {
             name,
-            start,
+            start: start - Number(vBindShorthand),
             end: descriptor.template!.loc.start.offset + node.loc.end.offset,
             free: node.content === `_ctx.${name}` && !local && !normalBindings[name] && propsBindings?.[name] !== 'props' && propsBindings?.[name] !== 'props-aliased',
             shorthand,
+            vBindShorthand,
           })
         }
       }

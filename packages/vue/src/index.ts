@@ -133,7 +133,26 @@ function literalNuxtConfig(source: string): ts.Expression | undefined {
   if (!exported)
     return undefined
   const expression = exported.expression
-  return ts.isCallExpression(expression) ? expression.arguments[0] : expression
+  const variables = new Map<string, ts.Expression>()
+  for (const statement of file.statements) {
+    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const))
+      continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.initializer)
+        variables.set(declaration.name.text, declaration.initializer)
+    }
+  }
+  const resolve = (value: ts.Expression, seen = new Set<string>()): ts.Expression | undefined => {
+    if (!ts.isIdentifier(value) || seen.has(value.text))
+      return value
+    const initializer = variables.get(value.text)
+    if (!initializer)
+      return undefined
+    seen.add(value.text)
+    return resolve(initializer, seen)
+  }
+  const config = ts.isCallExpression(expression) ? expression.arguments[0] : expression
+  return config && resolve(config)
 }
 
 function configProperty(expression: ts.Expression | undefined, name: string): ts.Expression | undefined {

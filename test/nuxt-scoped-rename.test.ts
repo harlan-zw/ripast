@@ -207,6 +207,26 @@ it('preserves a prop named like the provider while renaming free script calls', 
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+it('preserves v-bind shorthand prop names while renaming Nuxt auto-imports', async () => {
+  const dir = fixture()
+  try {
+    writeFileSync(join(dir, 'pages/index.vue'), '<template><Child :format /></template>')
+    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify: false })
+    const page = result.changes.find(change => change.rel === 'pages/index.vue')!.after
+    const template = compileTemplate({ id: 'v-bind-shorthand', filename: 'page.vue', source: parse(page).descriptor.template!.content })
+    const props: object[] = []
+    const render = execute(template.code, {}, {
+      openBlock: () => {},
+      createBlock: (_component: unknown, value: object) => { props.push(value) },
+      resolveComponent: () => 'Child',
+    }).render as (context: object, cache: unknown[]) => unknown
+    const pretty = () => 'pretty'
+    render({ pretty }, [])
+    assert.equal((props[0] as { format: unknown }).format, pretty)
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 it('renames free JSX expressions while preserving JSX attributes and imported types', async () => {
   const dir = fixture()
   try {
