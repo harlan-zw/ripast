@@ -1,9 +1,45 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import ts from '@typescript/typescript6'
-import { aliasResolvesToTarget, loadNuxtPathAliases } from './nuxt-paths.ts'
+import { isGeneratedNuxtPath, loadNuxtPathAliases } from './nuxt-paths.ts'
 
 type NuxtBindingNames = { _tag: 'Resolved', names: string[] } | { _tag: 'Unknown' }
+
+export function nuxtConsumerContext(path: string, cwd: string): string {
+  let current = dirname(path)
+  while (current !== cwd) {
+    if (existsSync(join(current, '.nuxt')) || ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mts', 'nuxt.config.mjs'].some(name => existsSync(join(current, name))))
+      return current
+    const parent = dirname(current)
+    if (parent === current)
+      return cwd
+    current = parent
+  }
+  return cwd
+}
+
+/** Exact local providers extend scope without treating every app directory as a Nuxt source directory. */
+export function loadNuxtProviderPaths(cwd: string): Set<string> {
+  const out = new Set<string>()
+  for (const path of [join(cwd, '.nuxt/imports.d.ts'), join(cwd, '.nuxt/types/imports.d.ts')]) {
+    if (!existsSync(path))
+      continue
+    const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
+    const visit = (node: ts.Node): void => {
+      const module = ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)
+        ? node.argument.literal.text
+        : ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : undefined
+      if (module) {
+        const target = resolveBindingTarget(cwd, path, module)
+        if (target._tag === 'Resolved')
+          out.add(target.path)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+  }
+  return out
+}
 
 /** Match generated global names to the exact source export, including aliased globals. */
 export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: string): NuxtBindingNames {
@@ -16,7 +52,7 @@ export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: strin
   const providers = new Map<string, string>()
   const record = (name: string, specifier: string, path: string): void => {
     mapped = true
-    const target = resolveBindingTarget(cwd, path, specifier, fromAbs)
+    const target = resolveBindingTarget(cwd, path, specifier)
     if (target._tag === 'Unknown') {
       unresolved = true
       return
@@ -74,18 +110,25 @@ export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: strin
   return mapped && !unresolved ? { _tag: 'Resolved', names: [...names] } : { _tag: 'Unknown' }
 }
 
-function resolveBindingTarget(cwd: string, declarationPath: string, specifier: string, fromAbs: string): { _tag: 'Resolved', path: string } | { _tag: 'Unknown' } {
-  if (/^[~@#]/.test(specifier)) {
-    if (aliasResolvesToTarget(loadNuxtPathAliases(cwd), specifier, fromAbs))
-      return { _tag: 'Resolved', path: fromAbs }
-    return { _tag: 'Unknown' }
+function resolveBindingTarget(cwd: string, declarationPath: string, specifier: string): { _tag: 'Resolved', path: string } | { _tag: 'Unknown' } {
+  const bases: string[] = []
+  for (const alias of loadNuxtPathAliases(cwd)) {
+    const prefix = alias.wildcard ? alias.pattern.slice(0, -1) : alias.pattern
+    if (alias.wildcard ? specifier.startsWith(prefix) : specifier === prefix) {
+      for (const target of alias.targets)
+        bases.push(alias.wildcard ? resolve(target, specifier.slice(prefix.length)) : target)
+    }
   }
   // Bare specifiers may name workspace packages whose exports point into this project.
-  if (!specifier.startsWith('.') && !specifier.startsWith('/'))
+  if (!bases.length && (specifier.startsWith('.') || specifier.startsWith('/'))) {
+    bases.push(resolve(dirname(declarationPath), specifier))
+  }
+  if (!bases.length)
     return { _tag: 'Unknown' }
-  const base = resolve(dirname(declarationPath), specifier)
   const extensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
-  const targets = [base, ...extensions.map(ext => `${base}${ext}`), ...extensions.map(ext => join(base, `index${ext}`))]
+  const targets = new Set(bases.flatMap(base => [base, ...extensions.map(ext => `${base}${ext}`), ...extensions.map(ext => join(base, `index${ext}`))])
     .filter(path => existsSync(path) && statSync(path).isFile())
-  return targets.length === 1 ? { _tag: 'Resolved', path: targets[0]! } : { _tag: 'Unknown' }
+    .map(path => realpathSync(path)))
+  const target = [...targets][0]
+  return targets.size === 1 && target && !isGeneratedNuxtPath(cwd, target) ? { _tag: 'Resolved', path: target } : { _tag: 'Unknown' }
 }

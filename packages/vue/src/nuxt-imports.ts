@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import { rgFiles } from '@ripast/core/adapter'
 import { parse } from '@vue/compiler-sfc'
+import { loadNuxtBindingNames, nuxtConsumerContext } from './nuxt-bindings.ts'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
 
@@ -25,20 +26,40 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
   const byPath = new Map(existingChanges.map(change => [change.path, change]))
   const aliases = loadNuxtPathAliases(cwd)
   const out: FileChange[] = []
-  const neededSymbols = new Set(symbols)
+  const byContext = new Map<string, Map<string, string>>()
   for (const filePath of rgFiles('', { cwd, listAll: true })) {
     if (isGeneratedNuxtPath(cwd, filePath))
       continue
     if (filePath === fromAbs || filePath === toAbs)
       continue
+    const context = nuxtConsumerContext(filePath, cwd)
+    let names = byContext.get(context)
+    if (!names) {
+      names = new Map()
+      for (const symbol of symbols) {
+        const binding = loadNuxtBindingNames(context, symbol, fromAbs)
+        if (binding._tag === 'Unknown')
+          throw new Error(`ripast: cannot resolve Nuxt auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
+        for (const name of binding.names) {
+          if (names.has(name) && names.get(name) !== symbol)
+            throw new Error(`ripast: cannot resolve the Nuxt auto-import binding "${name}". Run Nuxt prepare first.`)
+          names.set(name, symbol)
+        }
+      }
+      byContext.set(context, names)
+    }
+    if (!names.size)
+      continue
     let current = byPath.get(filePath)?.after ?? readFileSync(filePath, 'utf8')
     const before = byPath.get(filePath)?.before ?? current
     const specifier = resolveBestImportSpecifier(filePath, toAbs, aliases, './placeholder')
     let touched = false
-    for (const [symbol, block] of unboundNuxtSymbols(filePath, current, neededSymbols)) {
+    for (const [symbol, block] of unboundNuxtSymbols(filePath, current, new Set(names.keys()))) {
+      const exported = names.get(symbol)!
+      const binding = exported === symbol ? symbol : `${exported} as ${symbol}`
       const next = filePath.endsWith('.vue')
-        ? insertVueScriptImport(current, symbol, specifier, noScriptError, block)
-        : insertTopLevelImport(current, symbol, specifier)
+        ? insertVueScriptImport(current, binding, specifier, () => noScriptError(exported), block)
+        : insertTopLevelImport(current, binding, specifier)
       if (next !== current) {
         current = next
         touched = true

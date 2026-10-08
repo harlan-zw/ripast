@@ -4,7 +4,7 @@ import { compileScript, compileTemplate, parse, registerTS } from '@vue/compiler
 type ScriptBlock = 'script' | 'scriptSetup'
 
 /** Resolve only consumer-local bindings. Nuxt supplies unresolved names at runtime. */
-export function unboundNuxtSymbols(path: string, source: string, symbols: Set<string>, purpose: 'Move' | 'Delete' = 'Move'): Map<string, ScriptBlock> {
+export function unboundNuxtSymbols(path: string, source: string, symbols: Set<string>, purpose: 'Move' | 'Delete' | 'Rename' = 'Move'): Map<string, ScriptBlock> {
   const needed = new Map<string, ScriptBlock>()
   if (!path.endsWith('.vue')) {
     const { file, checker } = inspectScript(path, source)

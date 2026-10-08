@@ -82,6 +82,15 @@ export interface FrameworkAdapter {
     scopes: Set<string>
   }) => string[]
 
+  /** Refuse a rename whose planned consumers still need the old implicit binding. */
+  validateAutoImportRename?: (ctx: {
+    cwd: string
+    symbol: string
+    fromAbs: string
+    changes: FileChange[]
+    scopes: Set<string>
+  }) => void
+
   /** Whether `filePath` is a framework-generated file (e.g. Nuxt's `.nuxt/`). */
   isGeneratedPath?: (cwd: string, filePath: string) => boolean
 
