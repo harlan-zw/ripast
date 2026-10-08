@@ -5,102 +5,98 @@ description: "Use Ripast for AST-aware renames, moves, usages, imports, and CSS 
 
 Ripast performs deterministic refactors across TS, JS, JSX, and Vue.
 Run from the target project root. Requires Node 22.13+.
-Missing `rg` uses slower Node file search. Programmatic regex searches still require `rg`.
+Follow the repository's worktree and approval rules first. Keep unrelated work separate.
 
-## Invocation
+## Known target: apply and check
 
-Choose one launcher for the task:
+If the task supplies an exact target and mapping, run the refactor immediately.
+Skip directory listings, file enumeration, scans, and declaration reads unless the target is uncertain.
+Use `--apply --profile agent`. Keep type verification enabled.
+Append the supplied check with `&&` in the same shell call. Do not invent check commands.
+Read the result once. If the check passes, finish without another search or check.
+
+Choose one launcher:
 
 - Project dependency: `pnpm exec ripast`.
 - Explicitly provided executable on PATH: `ripast`.
 - Otherwise: `pnpm dlx @ripast/cli`.
 
-The examples use `ripast`. Substitute your launcher.
-If an executable is provided, use it directly. Do not add installation or version probes before a known command.
-The CLI installs missing Vue/Nuxt adapters through pnpm, then npm as fallback.
-If pnpm is unavailable:
+Examples use `ripast`. Substitute your launcher.
+If an executable is provided, skip installation and version probes.
 
 ```bash
-npm exec --yes --package=@ripast/cli -- ripast <command> ...
+ripast rename useStore useAppStore --scope src/store.ts --apply --profile agent
+ripast css-class-rename font-semibold font-medium --apply --profile agent
 ```
+
+These are separate task examples. Run only the requested operation.
+Use `--scope` when the declaration file is known.
+For CSS, an exact old/new token needs no `css-class-scan` first.
+Use `--profile full` only when you need a diff. Applying with it prints file names, not a diff.
+
+## Unknown target: inspect first
+
+If the symbol or operation is uncertain, scan and inspect a dry run:
+
+```bash
+ripast scan useStore --profile agent
+ripast rename useStore useAppStore --scope src/store.ts --profile full
+```
+
+Mutations default to dry-run. Review the result, then apply once.
+Read `<launcher> <command> --help` only when a needed flag is unclear.
+If no files changed, resolve the target, root, or configuration before retrying.
+If diagnostics increased, inspect their cause. Do not disable verification to force success.
 
 ## Commands
 
 | Command | Use |
 | --- | --- |
-| `ripast scan <pattern>` | Classify occurrences before a rename. |
-| `ripast tree` | Show top-level declarations and imports. |
-| `ripast unused` | Find declarations without project references. |
-| `ripast rename <from> <to>` | Rename a symbol through the native TypeScript server. |
-| `ripast replace <from> <to>` | Replace an imported symbol with another project export. |
+| `ripast rename <from> <to>` | Rename a symbol and its references. |
+| `ripast replace <from> <to>` | Replace an imported binding with a project export. |
 | `ripast move <symbol> --from <a> --to <b>` | Move an export and update imports. |
-| `ripast delete <symbol> --from <file>` | Delete a declaration if no references remain. |
+| `ripast delete <symbol> --from <file>` | Delete a declaration without references. |
 | `ripast rename-file <old> <new>` | Rename a file and update importers, including Vue consumers. |
-| `ripast css-class-rename <from> <to>` | Rename a CSS class token. Use `--map <file.json>` for bulk changes. |
-| `ripast css-class-scan` | List class tokens before a migration. |
+| `ripast css-class-rename <from> <to>` | Migrate class tokens. Use `--map <file.json>` for bulk mappings. |
 | `ripast vue-template-wrap <selector> <wrapper>` | Wrap matching Vue elements. |
-| `ripast vue-template-unwrap <selector>` | Remove matching wrappers and keep their children. |
+| `ripast vue-template-unwrap <selector>` | Remove matching wrappers, preserving children. |
+| `ripast scan <pattern>` | Resolve uncertain occurrences. |
+| `ripast css-class-scan` | Discover class mappings when the target is unknown. |
+| `ripast tree` | Show declarations and imports. |
+| `ripast unused` | Find declarations without project references. |
 
-Run `<launcher> <command> --help` only when a needed flag is unclear.
+## Verification and scope
 
-## Apply changes
+Rename, replace, move, delete, and rename-file compare type diagnostics by default.
+New diagnostics block `--apply`. Agent output reports whether verification ran.
+`no new type diagnostics` means no increase within the selected verification scope.
+It does not prove a clean project build or passing tests.
+Use `--verify-mode touched|project|none` to select scope. Keep verification enabled.
+CSS and Vue template transforms have no type verification. Run their relevant project checks.
 
-Follow the repository's worktree and approval rules. Keep unrelated work separate.
+After applying, review the changed-file diff and run relevant checks.
+Batch known commands in one shell call. Inspect more files only if results expose uncertainty.
+Never repeat a successful check without another edit or new failure.
 
-If the user supplied an exact target and mapping, apply that operation once with verification enabled.
-Read the declaration only if its identity is uncertain. Do not enumerate every consumer before running Ripast.
+Use `replace --target-scope <file>` when several files export the replacement.
+Quote `--glob` patterns. CSS transforms affect strings, Vue classes, and CSS `@apply` sites.
+Use a file glob when the task limits files. A Vue glob also includes script strings in Vue files.
+Use `--no-vue` only when there are no Vue consumers or Nuxt auto-imports.
+Template commands accept `--scope <file>` and `--root-only`.
+Mutation `--json` includes complete before/after source. Select fields before printing large results.
 
-```bash
-ripast rename useStore useAppStore --scope src/store.ts --apply --profile agent
-```
-
-If the target or operation is unclear, scan first and inspect a dry run:
-
-```bash
-ripast scan useStore --profile agent
-ripast rename useStore useAppStore --scope src/store.ts --profile full
-ripast rename useStore useAppStore --scope src/store.ts --apply --profile agent
-```
-
-Mutating refactor commands default to dry-run. Pass `--apply` to write.
-Rename, replace, move, delete, and rename-file verify types by default.
-New type diagnostics block `--apply`. Read the reported errors before changing the operation.
-Use `--verify-mode touched|project|none` to choose the verification scope.
-Keep verification enabled. Do not disable it merely to make a command succeed.
-CSS and Vue template transforms have no typecheck verification. Run their relevant checks yourself.
-
-If the declaration file is known, use `rename --scope <file>` to disambiguate the symbol.
-If several files export the replacement, use `replace --target-scope <file>`.
-Use `--profile agent` for compact summaries. Use `--profile full` only when you need the diff.
-Mutation `--json` includes complete before/after file contents. Parse and select fields before printing large results.
-Quote `--glob` patterns. Use `--no-vue` only for a task with no Vue consumers or Nuxt auto-imports.
-Template commands accept `--scope <file>` and `--root-only` to limit matches.
+## Nuxt and adapters
 
 For Nuxt auto-imports, use the prepared generated configuration.
-If it is missing or stale, prepare it once:
-Pass `--tsconfig .nuxt/tsconfig.json` to rename, move, or rename-file:
+If it is missing or stale, run `pnpm exec nuxi prepare` once.
+Pass `--tsconfig .nuxt/tsconfig.json` to rename, move, or rename-file.
 
-```bash
-pnpm exec nuxi prepare
-ripast rename useCounter useTally --tsconfig .nuxt/tsconfig.json --apply --profile agent
-```
+The CLI installs missing Vue/Nuxt adapters through pnpm, then npm.
+If pnpm is unavailable, use `npm exec --yes --package=@ripast/cli -- ripast <command> ...`.
+Missing `rg` uses slower Node file search. Programmatic regex searches still require `rg`.
 
-After applying, review the changed-file diff and run the relevant project checks.
-Batch the operation, diff review, and checks in one shell call when they form one known sequence.
-Inspect additional files only if the result, diff, or checks expose uncertainty.
-Do not repeat a full-project search to rediscover references Ripast already changed.
-Once a check succeeds, repeat it only after another edit or a new failure.
-If no files changed, resolve the declaration, project root, or configuration before retrying.
+Use direct edits for small local changes, prose, strings, and comments.
+Svelte markup and arbitrary custom codemods remain unsupported.
 
-## When to use vs Edit
-
-Use Ripast for mechanical changes across files.
-Use a direct edit for one small change in a file you already understand.
-Use `rg` and direct edits for prose or patterns that only occur in strings and comments.
-Start with `scan` when the correct operation is unclear.
-
-Vue supports script references and template expressions through its adapter.
-Svelte markup and arbitrary custom codemods remain outside this surface.
-
-CLI flags and output contracts: [CLI source](https://github.com/harlan-zw/ripast/blob/cd3b3d9ae75a1b5bbecd032ea5becc01d663fa29/packages/cli/src/cli.ts).
-Adapter selection: [launcher](https://github.com/harlan-zw/ripast/blob/cd3b3d9ae75a1b5bbecd032ea5becc01d663fa29/packages/cli/bin/ripast.mjs).
+CLI flags and output contracts: [CLI source](https://github.com/harlan-zw/ripast/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/src/cli.ts).
+Adapter selection: [launcher](https://github.com/harlan-zw/ripast/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/bin/ripast.mjs).
