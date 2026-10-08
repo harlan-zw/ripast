@@ -21,11 +21,13 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 ## Features
 
-- 🤖 **Agent output:** JSON results and compact summaries let agents inspect changes without reading full diffs.
-- 🧠 **Symbol renames:** TypeScript resolves references, including shadowed names, type-only imports, and aliases.
-- 🎯 **Vue and Nuxt support:** Update script references, template expressions, component tags, and Nuxt auto-imports.
-- 🛡️ **Dry runs:** Preview changes before writing them with `--apply`.
-- ✅ **Type checking:** Refuse supported refactors when verification finds new type errors. See [Verify](#verify) for scope.
+- ✂️ **Agent refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
+- 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
+- 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
+- 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
+- 🪂 **Preview first.** Dry runs show the diff; [type checking](#verify) blocks supported refactors that introduce errors.
+
+[^benchmark]: Local medians across five runs, with 160 importers per symbol.
 
 ## Why ripast?
 
