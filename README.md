@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/ripast?color=yellow)](https://npm.chart.dev/ripast)
 [![license](https://img.shields.io/github/license/harlan-zw/ripast?color=yellow)](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md)
 
-> 🤖 The AST refactor toolkit for AI coding agents. Deterministic renames for TypeScript and frontend frameworks (Vue, Nuxt, React, Solid). Type-checked, framework-aware, dry-run by default.
+> AST refactoring for TypeScript, JavaScript, Vue, Nuxt, React, and Solid. Built for AI coding agents, with dry runs by default.
 
 <p align="center">
 <table>
@@ -16,22 +16,21 @@
 </table>
 </p>
 
+## Why ripast?
+
+Renaming a symbol can affect imports, type references, JSX components, and Vue templates across a project.
+Text search finds the spelling, but a rename needs to distinguish references from unrelated names.
+
+Ripast gives coding agents CLI commands for these refactors, with a preview before writing changes.
+Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
+
 ## Features
 
-- 🤖 **Built for agents**: Compact summaries, `--json` output, `--profile agent` auto-detect via `std-env`. Stop burning tokens reading 50 files to rename one symbol.
-- 🧠 **Semantic, not textual**: the native TypeScript 7 language server drives renames so shadowed identifiers, type-only imports, JSX/TSX refs, re-exports, and aliased imports all resolve correctly. No more partial renames.
-- 🎯 **JS Frameworks**: First-class TypeScript / JavaScript, React + Solid (JSX/TSX), and Vue + Nuxt SFCs. Volar bridge propagates renames into `<script>` blocks; template-AST post-pass rewrites `<MyButton>` / `<my-button>` tags and `v-if` / `:prop` expressions. Svelte on the roadmap.
-- 🛡️ **Dry-run by default**: Every mutating command prints a unified diff with a `N files, +A -R lines` header. Pass `--apply` to write.
-- ✅ **--verify catches regressions**: Post-transform typecheck refuses `--apply` if new diagnostics appear. Scoped to touched files for speed.
-- ⚡ **ripgrep-prefiltered**: Only files containing the token are parsed. On a 500-file fixture, median `rename` with verify runs in ~95ms and `move` in ~37ms.
-
-## What is ripast?
-
-A CLI of AST refactor primitives purpose-built for TypeScript and modern frontend frameworks: **React** and **Solid** (JSX/TSX), **Vue** and **Nuxt** (SFCs including `<template>`), plus plain TS/JS. `ripast` parses only the files ripgrep says contain the token, then uses the AST to decide what to change.
-
-Surgical text edits are slow and miss things: shadowed identifiers, type-only imports, JSX component refs, kebab-case Vue tags, re-exported types. AI coding agents (Claude Code, Cursor, Aider) hit this constantly: a rename that should be one CLI call becomes a 50-file read + multi-edit dance, eating tokens and risking partial renames.
-
-`ripast` operates on the AST, so renames respect scope, imported symbols can be replaced with project exports, moves rewrite all import sites, unused declarations can be deleted with reference checks, file renames update every importer (including `.vue` consumers), and verification fails closed when a transform introduces new type errors.
+- 🤖 **Agent output:** JSON results and compact summaries let agents inspect changes without reading full diffs.
+- 🧠 **Symbol renames:** TypeScript resolves references, including shadowed names, type-only imports, and aliases.
+- 🎯 **Vue and Nuxt support:** Update script references, template expressions, component tags, and Nuxt auto-imports.
+- 🛡️ **Dry runs:** Preview changes before writing them with `--apply`.
+- ✅ **Type checking:** Refuse supported refactors when verification finds new type errors. See [Verify](#verify) for scope.
 
 ### Supported targets
 
@@ -42,24 +41,83 @@ Surgical text edits are slow and miss things: shadowed identifiers, type-only im
 | Solid (JSX / TSX) | ✅ Full | Same JSX engine path as React. |
 | Vue 3 SFC | ✅ Full | `<script setup>` + `<template>` (interpolations, `v-if`, `v-for`, `:prop`) + component tag PascalCase ↔ kebab-case. |
 | Nuxt | ✅ Full | Vue SFCs plus auto-imported `composables/`, `utils/`, and `components/`. Moving a symbol out of Nuxt auto-import scope inserts explicit imports in consumers, or refuses when a Vue file has no script block to receive one. |
-| Svelte | 🚧 Roadmap | Script-block rename works via the TypeScript server; markup rewrites need `svelte/compiler` integration. |
+| Svelte | Planned | Svelte markup refactoring is not supported. |
 
-### Why not just...
+## Installation
 
-| Tool | Gap `ripast` fills |
+Requires Node 22.13+. These examples use [pnpm](https://pnpm.io/installation).
+
+From your project root, run a scan without installing globally:
+
+```bash
+pnpm dlx @ripast/cli scan useStore
+```
+
+This lists matching occurrences and their syntax, such as an identifier, string, or property.
+To use the `ripast` command in the examples below, install the CLI globally:
+
+```bash
+pnpm add -g @ripast/cli
+```
+
+The CLI installs `@ripast/vue` automatically when it detects Vue or Nuxt in your project.
+To provide the adapter yourself:
+
+```bash
+pnpm --package @ripast/cli --package @ripast/vue dlx ripast rename useStore useAppStore
+```
+
+Programmatic users install `@ripast/core` (and any adapters they need) directly:
+
+```bash
+pnpm add @ripast/core @ripast/vue
+```
+
+> [!TIP]
+> The CLI includes an [Agent Skill](./packages/cli/skills/ripast/SKILL.md). Install it with [skilld](https://github.com/harlan-zw/skilld):
+> ```bash
+> pnpm dlx skilld add @ripast/cli
+> ```
+
+Ripast uses `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) when it is available on `PATH`.
+If it is missing, Ripast searches files in Node instead. This can be slower.
+Both paths support fixed-string searches, file listing, globs, and standard ignore files.
+Programmatic regex searches still require `rg`.
+
+If `rg` is missing, install ripgrep for your system:
+
+| System | Command |
 | --- | --- |
-| `grep` + `sed` | No type awareness; touches strings in comments, partial matches, wrong scopes. No Vue template / kebab-case handling. |
-| `ast-grep` | Syntactic, not semantic; no symbol resolution, no type-only import tracking, shallow Vue SFC support. |
-| `jscodeshift` | Requires writing a transform script per task; no out-of-box "rename symbol X to Y"; no Vue parser. |
-| `ts-morph` (library) | The engine, not the cockpit. You'd have to write the script, the diff, the dry-run gate, the Vue bridge, the typecheck verify. |
-| LSP `rename` | Requires editor + language server protocol; no headless CLI; no JSON output mode. |
+| macOS with Homebrew | `brew install ripgrep` |
+| Ubuntu or Debian | `sudo apt-get install ripgrep` |
+| Windows with Winget | `winget install BurntSushi.ripgrep.MSVC` |
+
+Then run `rg --version` and retry. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
+
+Automatic adapter installation prefers `pnpm` and falls back to `npm` if `pnpm` is missing.
+The npm fallback uses a separate temporary prefix and preserves your project directory.
+The launcher needs a package manager only when a detected framework lacks an adapter.
+If both are missing, follow the [pnpm installation guide](https://pnpm.io/installation), then retry.
+You can install the CLI and adapters together to avoid this step:
+
+```bash
+pnpm add -g @ripast/cli @ripast/vue
+```
+
+For script-only `rename`, `move`, or `rename-file` commands, pass `--no-vue` to skip the adapter.
+
+## Usage
+
+Run commands from your project root. Commands preview changes by default; pass `--apply` to write.
+Use `--profile full` to see the full diff in an agent environment.
 
 ### What can ripast do?
 
 <details>
 <summary><b>🔍 Find every usage of a symbol</b></summary>
 
-Classify every occurrence (identifier vs string vs property vs JSX) before deciding the next move. Covers Vue SFC `<template>` interpolations and directive expressions.
+Find matching identifiers, strings, properties, and JSX references.
+The scan includes Vue template interpolations and directive expressions.
 
 ```bash
 ripast scan useStore
@@ -73,13 +131,14 @@ ripast scan useStore --graph mermaid
 <details>
 <summary><b>✏️ Rename a symbol across the repo</b></summary>
 
-Scope-aware rename via the native TypeScript 7 language server. TypeScript propagates to every reference (imports, JSX, type positions, aliased imports). Object property keys with the same spelling are NOT touched unless they reference the same symbol.
+Rename references using the native TypeScript 7 language server, including imports, JSX, types, and aliases.
+Property keys change only when they refer to the same symbol.
 
 ```bash
-# Dry-run (default) — prints diff + summary
+# Preview the changes
 ripast rename useStore useAppStore
 
-# Apply with typecheck verify (default)
+# Write changes after type checking
 ripast rename useStore useAppStore --apply
 
 # Ambiguous declarations? Pick one or rename all
@@ -91,7 +150,9 @@ ripast rename useStore useAppStore --all --apply
 <details>
 <summary><b>🔁 Replace an imported symbol with another export</b></summary>
 
-Replace references to an imported binding with a project export. `ripast` resolves the target export, rewrites the consumer import, prunes the old import, and preserves the call/body shape. This is for API migrations like swapping `eventHandler(...)` for `defineAdminApiHandler(...)`; it does not remove semantic body statements.
+Replace an imported binding with a project export, such as replacing `eventHandler(...)` with `defineAdminApiHandler(...)`.
+Ripast updates references and imports, then removes the old import.
+It preserves the call arguments and function body.
 
 New imports preserve the replaced relative import's extension policy.
 For package imports, they follow relative imports in the consumer, then nearby project files.
@@ -119,7 +180,9 @@ Default discovery still selects direct declarations and keeps the relative impor
 <details>
 <summary><b>🏔️ Refactor Nuxt auto-imports</b></summary>
 
-Nuxt-generated `.nuxt/*.d.ts` files let `ripast` treat auto-imported composables, utils, components, and pages like normal TypeScript symbols.
+Run `nuxi prepare` first to generate Nuxt's type declarations.
+Ripast uses these files to resolve auto-imported composables, utilities, and components used in pages and other consumers.
+If a move requires an explicit import in a Vue file without a script block, Ripast refuses it.
 
 ```bash
 # A composable used in pages with no explicit import
@@ -133,7 +196,9 @@ ripast move format --from utils/format.ts --to lib/format.ts --apply
 <details>
 <summary><b>📦 Move an exported declaration</b></summary>
 
-Move a top-level export and rewrite every import site. Splits multi-named imports, auto-splits `export const a = 1, b = 2`, copies transitive imports, prunes unused imports, preserves aliases. Refuses if the symbol depends on a local non-exported helper (would silently break).
+Move a top-level export and update its imports.
+Ripast splits declarations such as `export const a = 1, b = 2` and preserves aliases.
+It copies required imports and removes unused ones. If the symbol depends on a local, unexported helper, it refuses the move.
 
 ```bash
 ripast move helper --from src/utils/a.ts --to src/utils/helpers.ts --apply
@@ -143,7 +208,8 @@ ripast move helper --from src/utils/a.ts --to src/utils/helpers.ts --apply
 <details>
 <summary><b>📁 Rename a file and update every import</b></summary>
 
-Volar-driven, so `.vue` consumers get correct relative paths and PascalCase ↔ kebab-case component-name mapping.
+Update import paths when moving or renaming a file.
+The Vue adapter also updates component tags in PascalCase and kebab-case.
 
 ```bash
 ripast rename-file src/utils.ts src/lib/helpers.ts --apply
@@ -153,7 +219,9 @@ ripast rename-file src/utils.ts src/lib/helpers.ts --apply
 <details>
 <summary><b>🧹 Delete an unused declaration</b></summary>
 
-Delete one top-level declaration from a file only when semantic reference lookup finds no remaining usages. Prunes imports that were only used by the deleted declaration, then runs verify before applying. Omit `--apply` to inspect the diff first; if references remain, ripast prints their locations and refuses the delete.
+Delete a top-level declaration after checking for references, then remove imports used only by that declaration.
+If references remain, Ripast prints their locations and refuses the deletion.
+Omit `--apply` to preview the changes.
 
 ```bash
 ripast delete helper --from src/utils.ts
@@ -164,7 +232,8 @@ ripast delete helper --from src/utils.ts --apply
 <details>
 <summary><b>🎨 Migrate Tailwind / CSS class tokens</b></summary>
 
-Tokenizes every string literal, Vue template `class` / `:class` attribute, and `@apply` directive body. Preserves variant prefixes (`hover:`, `dark:md:`), `!` important markers, and arbitrary values.
+Rename class tokens in string literals, Vue `class` and `:class` attributes, and CSS `@apply` directives.
+Ripast preserves variant prefixes (`hover:`, `dark:md:`), `!` important markers, and arbitrary values.
 
 ```bash
 # Single pair
@@ -187,7 +256,7 @@ ripast css-class-scan --by file
 <details>
 <summary><b>🌳 Print a project declaration tree</b></summary>
 
-Skim the architecture before a refactor. `--exports exported` shows public surface, `--exports local` shows internals.
+List declarations by file. Use `--exports exported` for exports or `--exports local` for declarations without exports.
 
 ```bash
 ripast tree --exports exported
@@ -200,7 +269,8 @@ In agent environments (`std-env`'s `isAgent`), defaults to a compact architectur
 <details>
 <summary><b>🔎 Find unreferenced top-level declarations</b></summary>
 
-Report top-level declarations with no semantic project references. This is intentionally narrower than "all dead code"; exported APIs, framework conventions, side-effect modules, dynamic registries, and entrypoints can still be live.
+Report top-level declarations with no semantic project references.
+Review each result before deleting it. External callers, frameworks, dynamic registries, and entrypoints may still use these declarations.
 
 ```bash
 ripast unused
@@ -212,7 +282,8 @@ ripast unused --exports all --json
 <details>
 <summary><b>🤖 Drive from an AI agent</b></summary>
 
-`--json` emits machine-readable output. `--profile agent` (auto-detected) returns compact summaries instead of full diffs. Atomic apply: blocked-by-regression exits non-zero with diagnostics.
+`--json` emits machine-readable output. `--profile agent` returns compact summaries and is selected automatically in detected agent environments.
+If verification finds new type errors, the command refuses `--apply` and exits with a non-zero status.
 
 ```bash
 ripast rename useStore useAppStore --apply --json
@@ -224,91 +295,18 @@ ripast rename useStore useAppStore --apply --json
 ```
 </details>
 
-## Installation
-
-```bash
-npm i -g @ripast/cli
-# or one-shot
-npx -y @ripast/cli scan useStore
-```
-
-The CLI auto-installs framework adapters when it detects them in your project (`@ripast/vue` for Vue/Nuxt). To pre-bundle them and skip the re-exec:
-
-```bash
-npx -y -p @ripast/cli -p @ripast/vue ripast rename useStore useAppStore --apply
-```
-
-Programmatic users install `@ripast/core` (and any adapters they need) directly:
-
-```bash
-npm i @ripast/core @ripast/vue
-```
-
-> [!TIP]
-> The CLI includes an [Agent Skill](./packages/cli/skills/ripast/SKILL.md). Install it with [skilld](https://github.com/harlan-zw/skilld):
-> ```bash
-> pnpm dlx skilld add @ripast/cli
-> ```
-
-Requires Node 22.13+.
-Ripast uses `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) when it is available on `PATH`.
-If it is missing, Ripast searches files in Node instead. This can be slower.
-Both paths support fixed-string searches, file listing, globs, and standard ignore files.
-Programmatic regex searches still require `rg`.
-
-If `rg` is missing, install ripgrep for your system:
-
-| System | Command |
-| --- | --- |
-| macOS with Homebrew | `brew install ripgrep` |
-| Ubuntu or Debian | `sudo apt-get install ripgrep` |
-| Windows with Winget | `winget install BurntSushi.ripgrep.MSVC` |
-
-Then run `rg --version` and retry. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
-
-Automatic adapter installation prefers `pnpm` and falls back to `npm` if `pnpm` is missing.
-The npm fallback uses a separate temporary prefix and preserves your project directory.
-The launcher needs a package manager only when a detected framework lacks an adapter.
-If both are missing, follow the [pnpm installation guide](https://pnpm.io/installation), then retry.
-You can install the CLI and adapters together to avoid this step:
-
-```bash
-npm install -g @ripast/cli @ripast/vue
-```
-
-For script-only `rename`, `move`, or `rename-file` commands, pass `--no-vue` to skip the adapter.
-
-## Usage
-
-All mutating commands default to **dry-run** and print a unified diff. Pass `--apply` to write.
-
-```bash
-# Where is it used and how?
-ripast scan useStore --kind identifier-reference,import-specifier
-
-# Rename across the repo
-ripast rename useStore useAppStore --apply
-
-# Move an exported helper
-ripast move helper --from src/utils/a.ts --to src/utils/helpers.ts --apply
-
-# Rename a file and update every importer
-ripast rename-file src/utils.ts src/lib/helpers.ts --apply
-
-# Delete an unused top-level declaration
-ripast delete helper --from src/utils.ts --apply
-
-# Migrate a tailwind palette
-ripast css-class-rename --map tokens.json --apply
-```
-
 ### Verify
 
-`--verify` (on by default for `rename`, `replace`, `move`, and `delete`) runs a post-transform typecheck and refuses `--apply` if new diagnostics appear. Pass `--no-verify` to skip, or `--verify-mode touched|project|none` to choose scoped, full-project, or no diagnostics.
+`rename`, `replace`, `move`, `delete`, and `rename-file` enable verification by default.
+They compare type errors before and after the change, then refuse `--apply` if new errors appear.
+The default checks touched files. Use `--verify-mode project` to check the full project.
+Use `--no-verify` or `--verify-mode none` to skip verification. CSS class renames do not run a typecheck.
 
 ### Profiles
 
-`--profile auto|agent|full` controls output verbosity. `auto` uses `std-env`'s `isAgent` detection: agents get compact summaries, terminals get full diffs and trees.
+`--profile auto|agent|full` controls output verbosity.
+The default, `auto`, uses `std-env`'s `isAgent` detection.
+Agents get compact summaries; terminals get full diffs and trees.
 
 ## Commands
 
@@ -325,6 +323,8 @@ ripast css-class-rename --map tokens.json --apply
 | `ripast css-class-rename <from> <to> \| --map <file.json>` | Rename tailwind/CSS utility class tokens repo-wide. |
 | `ripast css-class-scan` | List class tokens; use `--sort count-asc` for rare tokens or `--by file` for files with the most unique classes. |
 
+Run `ripast --help` for all commands, or `ripast <command> --help` for its options.
+
 ## Programmatic API
 
 ```ts
@@ -338,13 +338,11 @@ const result = await runRename('useStore', 'useAppStore', { cwd: process.cwd() }
 const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cwd: process.cwd() })
 ```
 
-Exports cover `runRename`, `runReplace`, `runMove`, `runDelete`, `runRenameFile`, `runCssClassRename`, `runCssClassScan`, `scan`, `buildScanGraph`, `buildDeclarationTree`, `buildUnusedDeclarations`, plus formatters and the `writeChanges` helper.
-
-Each call starts the native TypeScript server. Startup takes a few milliseconds, so there is no batching API.
+The [core exports](./packages/core/src/index.ts) include refactors, scans, declaration trees, formatters, and the `writeChanges` helper.
 
 ## Recipes & limitations
 
-**Scoping with `--glob`.** Comma-separated globs are forwarded to ripgrep verbatim, including `!`-prefixed exclusions. Useful for keeping the default extension set while cutting generated noise:
+**Scoping with `--glob`.** Pass comma-separated patterns. Prefix a pattern with `!` to exclude matching files:
 
 ```bash
 ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**,!**/*.d.ts,!**/dist/**'
@@ -355,49 +353,19 @@ ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**,!**/*.d.ts,!**/dist/
 ```bash
 # After `nuxi prepare`
 ripast rename useFoo useBar --tsconfig .nuxt/tsconfig.json --apply
-ripast tree --exports exported --tsconfig .nuxt/tsconfig.json --glob '*.ts,*.vue,!.nuxt/**'
+ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 ```
 
-`components` (and friends) auto-detect `.nuxt/components.d.ts` for accurate manifest-sourced resolution; fall back to filesystem glob only when no manifest is present (run `nuxi prepare` first for best results).
-
-**Pre-commit guard.** Drop the snippet below into a `pre-commit` hook to catch incomplete manual renames before they land. It scans staged identifiers and refuses the commit if `ripast scan` reports references that look stale:
-
-```bash
-#!/usr/bin/env bash
-set -e
-# Tokens that look like old/new pairs in the staged diff (heuristic).
-candidates=$(git diff --cached -U0 | rg -No '\b[A-Za-z_][A-Za-z0-9_]{4,}\b' | sort -u)
-for name in $candidates; do
-  hits=$(ripast scan "$name" --profile agent 2>/dev/null | rg -c "^  " || true)
-  [ "$hits" -gt 0 ] || continue
-done
-```
-
-(Project-specific; treat as a template rather than a turnkey hook.)
+`ripast components` reads `.nuxt/components.d.ts` when available. Without it, the command discovers components from file paths.
 
 **Encoding.** ripast assumes UTF-8 + LF. CRLF and BOM files are untested; convert with `dos2unix` / strip BOM before running mutating commands.
-
-## When to reach for this vs Edit
-
-| Situation | Tool |
-| --- | --- |
-| Single site, or <5 matches in one file | Plain edit |
-| "Where is X used?" | `ripast scan` |
-| "Which top-level declarations have no project references?" | `ripast unused` |
-| Rename a symbol across the repo | `ripast rename` |
-| Replace one imported API with another project export | `ripast replace` |
-| Move a declaration to another file (update all imports) | `ripast move` |
-| Delete an unused top-level declaration | `ripast delete` |
-| Rename a file and update every import site | `ripast rename-file` |
-| Rename a tailwind/CSS utility class across the repo | `ripast css-class-rename` |
-| Pattern is only meaningful inside strings/comments | plain `rg` + edit |
 
 ## Credits
 
 - [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind rename, references, file renames, and `--verify`.
 - [Volar](https://github.com/volarjs/volar.js) + [@vue/language-tools](https://github.com/vuejs/language-tools): cross-`.vue` rename and diagnostics.
 - [oxc](https://github.com/oxc-project/oxc): fast parser for template-expression classification.
-- [ripgrep](https://github.com/BurntSushi/ripgrep): the candidate-file oracle.
+- [ripgrep](https://github.com/BurntSushi/ripgrep): finds candidate files before parsing.
 
 ## License
 
