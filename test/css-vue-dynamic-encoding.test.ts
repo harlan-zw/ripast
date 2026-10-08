@@ -22,7 +22,7 @@ async function classValue(source: string, active: boolean): Promise<string> {
 }
 
 describe('vue dynamic class encoding', () => {
-  it.each(['content-[`x`]', 'content-[' + '$' + '{x}]'])('refuses unsafe raw template replacement %s', async (replacement) => {
+  it.each(['content-[`x`]', 'content-[' + '$' + '{x}]', 'tail\\'])('refuses unsafe raw template replacement %s', async (replacement) => {
     const before = '<template><div :class="active ? String.raw`old-token` : \'flex\'" /></template>'
     const fx = makeFixture({ 'Page.vue': before }, false)
     try {

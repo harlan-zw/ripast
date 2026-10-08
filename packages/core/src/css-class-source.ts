@@ -325,7 +325,7 @@ function rewriteStringsInProgram(source: string, program: any, map: RenameMap, o
       if (rewritten === value)
         return
       // Raw tags expose source escapes. Refuse replacements that introduce template syntax.
-      if (templateKind === 'raw' && [...map.values()].some(replacement => /`|\$\{/.test(replacement)))
+      if (templateKind === 'raw' && ([...map.values()].some(replacement => /`|\$\{/.test(replacement)) || /(?:^|[^\\])(?:\\\\)*\\$/.test(rewritten)))
         return
       const range = templateContentRange(source, node, offset)
       if (!range)
