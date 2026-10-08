@@ -124,6 +124,22 @@ it('refuses a Nuxt rename that captures a consumer local destination binding', a
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+it('refuses a Nuxt rename that captures another provider global', async () => {
+  const { dir } = appFixture()
+  try {
+    writeFileSync(join(dir, 'app/utils/pretty.ts'), 'export function pretty(value: number) { return value * 10 }')
+    writeFileSync(join(dir, '.nuxt/types/imports.d.ts'), `declare global {
+const format: typeof import('../../app/utils/format').format
+const pretty: typeof import('../../app/utils/pretty').pretty
+} export {}`)
+    const source = '<script setup lang="ts">const label = format(7)</script><template>{{ label }}</template>'
+    writeFileSync(join(dir, 'app/pages/index.vue'), source)
+    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verify: false }), /another Nuxt auto-import provider.*pretty/)
+    assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 it('adds imports when renaming a standard Nuxt app composable file out of scope', async () => {
   const { dir } = appFixture()
   try {

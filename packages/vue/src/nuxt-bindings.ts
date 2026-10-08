@@ -4,6 +4,7 @@ import ts from '@typescript/typescript6'
 import { isGeneratedNuxtPath, loadNuxtPathAliases } from './nuxt-paths.ts'
 
 type NuxtBindingNames = { _tag: 'Resolved', names: string[] } | { _tag: 'Unknown' }
+type NuxtGlobalProvider = { _tag: 'Missing' } | { _tag: 'Resolved', path: string } | { _tag: 'Unknown' }
 
 export function nuxtConsumerContext(path: string, cwd: string): string {
   let current = dirname(path)
@@ -108,6 +109,65 @@ export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: strin
     }
   }
   return mapped && !unresolved ? { _tag: 'Resolved', names: [...names] } : { _tag: 'Unknown' }
+}
+
+/** Resolve one generated global to its provider, preserving an absent destination as distinct from invalid metadata. */
+export function loadNuxtGlobalProvider(cwd: string, name: string): NuxtGlobalProvider {
+  const paths = [join(cwd, '.nuxt/imports.d.ts'), join(cwd, '.nuxt/types/imports.d.ts')].filter(path => existsSync(path))
+  if (!paths.length)
+    return { _tag: 'Unknown' }
+  const providers = new Set<string>()
+  let matched = false
+  let unresolved = false
+  const record = (specifier: string, path: string): void => {
+    matched = true
+    const target = resolveBindingTarget(cwd, path, specifier)
+    if (target._tag === 'Unknown')
+      unresolved = true
+    else
+      providers.add(realpathSync(target.path))
+  }
+  const visit = (node: ts.Node, path: string): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name) {
+      matched = true
+      const nodeType = node.type
+      const declared = nodeType && ts.isTypeReferenceNode(nodeType) && ts.isIdentifier(nodeType.typeName)
+        && nodeType.typeName.text === 'UnwrapRef' && nodeType.typeArguments?.length === 1
+        ? nodeType.typeArguments[0]!
+        : nodeType
+      const indexed = declared && ts.isIndexedAccessTypeNode(declared) ? declared : undefined
+      const type = indexed?.objectType ?? declared
+      if (type && ts.isImportTypeNode(type) && type.isTypeOf && ts.isLiteralTypeNode(type.argument) && ts.isStringLiteral(type.argument.literal))
+        record(type.argument.literal.text, path)
+      else
+        unresolved = true
+    }
+    ts.forEachChild(node, child => visit(child, path))
+  }
+  for (const path of paths) {
+    const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
+    const host = ts.createCompilerHost({ noLib: true, noResolve: true })
+    host.getSourceFile = file => file === path ? source : undefined
+    const program = ts.createProgram([path], { noLib: true, noResolve: true }, host)
+    if (program.getSyntacticDiagnostics(source).length)
+      return { _tag: 'Unknown' }
+    for (const statement of source.statements) {
+      if (ts.isModuleDeclaration(statement) && ts.isIdentifier(statement.name) && statement.name.text === 'global')
+        visit(statement, path)
+      if (ts.isExportDeclaration(statement) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+        && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        for (const exported of statement.exportClause.elements) {
+          if (exported.name.text === name)
+            record(statement.moduleSpecifier.text, path)
+        }
+      }
+    }
+  }
+  if (!matched)
+    return { _tag: 'Missing' }
+  if (unresolved || providers.size !== 1)
+    return { _tag: 'Unknown' }
+  return { _tag: 'Resolved', path: [...providers][0]! }
 }
 
 function resolveBindingTarget(cwd: string, declarationPath: string, specifier: string): { _tag: 'Resolved', path: string } | { _tag: 'Unknown' } {
