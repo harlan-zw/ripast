@@ -83,12 +83,26 @@ export function rewriteToken(token: string, map: RenameMap): string {
 
 function splitVariantPrefix(token: string): { prefix: string, tail: string } {
   let depth = 0
+  let quote = ''
   let lastColon = -1
   for (let i = 0; i < token.length; i++) {
     const c = token[i]
+    if (depth && c === '\\') {
+      i++
+      continue
+    }
+    if (quote) {
+      if (c === quote)
+        quote = ''
+      continue
+    }
+    if (depth && (c === '\'' || c === '"')) {
+      quote = c
+      continue
+    }
     if (c === '[')
       depth++
-    else if (c === ']')
+    else if (c === ']' && depth)
       depth--
     else if (c === ':' && depth === 0)
       lastColon = i
