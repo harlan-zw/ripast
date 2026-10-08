@@ -52,6 +52,11 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   const fromOriginal = readFileSync(fromAbs, 'utf8')
   const fromSplit = timed(profile, 'split declarators', () => splitMultiDeclaratorIfNeeded(fromOriginal, fromAbs, symbol))
   const parsed = parseSource(fromAbs, fromSplit)
+  const importStyle = listImports(fromSplit, fromAbs, parsed.program).find(imp => isRelativeScriptImport(imp.specifier))?.specifier
+    ?? candidatePaths.filter(path => path !== fromAbs && !isVuePath(path)).flatMap((path) => {
+      return listImports(readFileSync(path, 'utf8'), path).filter(imp => isRelativeScriptImport(imp.specifier)).map(imp => imp.specifier)
+    })[0]
+    ?? './placeholder.ts'
 
   const decl = timed(profile, 'find export', () => findMovableExport(parsed.program, symbol))
   if (!decl)
@@ -78,13 +83,13 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     toAfter = addOrMergeImport(toAfter, toAbs, rebaseSpecifier(used.specifier, fromAbs, toAbs), used.spec)
   }
   if (localDeps.exported.length)
-    toAfter = addOrMergeImport(toAfter, toAbs, computeSpecifier(toAbs, fromAbs, './placeholder.ts'), { namedImports: localDeps.exported.map(name => ({ name })) })
+    toAfter = addOrMergeImport(toAfter, toAbs, computeSpecifier(toAbs, fromAbs, importStyle), { namedImports: localDeps.exported.map(name => ({ name })) })
   toAfter = appendStatement(toAfter, declText)
 
   let fromAfter = removeDeclaration(fromSplit, parsed.comments, decl)
   fromAfter = pruneUnusedImports(fromAfter, fromAbs)
   if (remainingReferences > 0)
-    fromAfter = addOrMergeImport(fromAfter, fromAbs, computeSpecifier(fromAbs, toAbs, './placeholder.ts'), { namedImports: [{ name: symbol }] })
+    fromAfter = addOrMergeImport(fromAfter, fromAbs, computeSpecifier(fromAbs, toAbs, importStyle), { namedImports: [{ name: symbol }] })
 
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
@@ -195,6 +200,22 @@ interface LocalSiblingDeps {
   exported: string[]
 }
 
+function isRelativeScriptImport(specifier: string): boolean {
+  return specifier.startsWith('.') && !/[?#]/.test(specifier)
+    && !/\.(?:json|vue|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
+}
+
+function isBindingReference(node: any, parent: any): boolean {
+  if (node.type === 'Identifier')
+    return !isPropertyNamePosition(node, parent)
+  if (node.type !== 'JSXIdentifier' || !parent)
+    return false
+  if (parent.type === 'JSXMemberExpression')
+    return parent.object === node
+  return (parent.type === 'JSXOpeningElement' || parent.type === 'JSXClosingElement')
+    && parent.name === node && !/^[a-z]/.test(node.name)
+}
+
 function findLocalSiblingDeps(program: any, decl: TopLevelDeclaration, selfName: string): LocalSiblingDeps {
   const siblings = new Map<string, 'exported' | 'local'>()
   for (const other of listTopLevelDeclarations(program)) {
@@ -208,12 +229,10 @@ function findLocalSiblingDeps(program: any, decl: TopLevelDeclaration, selfName:
   const seen = new Set<string>()
   walk(decl.node, {
     enter(node: any, parent: any) {
-      if (node.type !== 'Identifier')
+      if (!isBindingReference(node, parent))
         return
       const name = node.name
       if (name === selfName || seen.has(name) || locals.has(name))
-        return
-      if (isPropertyNamePosition(node, parent))
         return
       const sibling = siblings.get(name)
       if (!sibling)
@@ -236,8 +255,8 @@ interface UsedImport {
 function collectUsedImports(source: string, path: string, program: any, decl: TopLevelDeclaration, selfName: string): UsedImport[] {
   const referenced = new Set<string>()
   walk(decl.node, {
-    enter(node: any) {
-      if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') && node.name !== selfName)
+    enter(node: any, parent: any) {
+      if (isBindingReference(node, parent) && node.name !== selfName)
         referenced.add(node.name)
     },
   })
@@ -268,7 +287,7 @@ function countReferencesOutside(program: any, decl: TopLevelDeclaration, symbol:
   let count = 0
   walk(program, {
     enter(node: any, parent: any) {
-      if (node.type !== 'Identifier' || node.name !== symbol)
+      if (!isBindingReference(node, parent) || node.name !== symbol)
         return
       if (parent && IMPORT_SPECIFIER_PARENTS.has(parent.type))
         return
