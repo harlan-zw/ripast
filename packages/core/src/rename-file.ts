@@ -93,8 +93,14 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
 
     const regressions: Regression[] = []
     if (verifyMode !== 'none') {
-      if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue')))
-        regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, consumerNoSelf))
+      if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue'))) {
+        regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, [...consumerNoSelf, {
+          path: newAbs,
+          rel: relative(cwd, newAbs),
+          before: '',
+          after: selfChange?.after ?? readFileSync(oldAbs, 'utf8'),
+        }]))
+      }
       regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode))
     }
 

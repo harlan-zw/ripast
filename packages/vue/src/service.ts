@@ -1,10 +1,11 @@
-import type { FileChange } from '@ripast/core/adapter'
+import type { FileChange, TextEdit } from '@ripast/core/adapter'
 import type { LanguageService, LanguageServiceEnvironment, ProjectContext } from '@volar/language-service'
 import type { TypeScriptProjectHost } from '@volar/typescript'
 import type { WorkspaceEdit } from 'vscode-languageserver-protocol'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import process from 'node:process'
+import { applyTextEdits, offsetOfPosition } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
 import { createLanguage, createLanguageService, createUriMap, FileType } from '@volar/language-service'
 import { createLanguageServiceHost, resolveFileLanguageId } from '@volar/typescript'
@@ -104,7 +105,7 @@ function installFilteredConsoleWarn(): () => void {
   }
 }
 
-function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService {
+function readVueProject(tsconfigPath: string) {
   const commandLine = createParsedCommandLine(ts, ts.sys, tsconfigPath)
   // createParsedCommandLine doesn't add .vue files because it doesn't pass extraFileExtensions.
   // Reparse with the right extensions so commandLine.fileNames includes .vue.
@@ -124,6 +125,43 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
   const fileNames = reparsed.fileNames
   if (commandLine.options.allowNonTsExtensions === undefined)
     commandLine.options.allowNonTsExtensions = true
+  return { commandLine, fileNames }
+}
+
+export function vueProjectConfigs(tsconfigPath: string): { tsconfigPath: string, files: string[] }[] {
+  const projects: { tsconfigPath: string, files: string[] }[] = []
+  const seen = new Set<string>()
+  const visit = (path: string): void => {
+    path = resolve(path)
+    if (existsSync(path) && statSync(path).isDirectory())
+      path = resolve(path, 'tsconfig.json')
+    if (seen.has(path))
+      return
+    seen.add(path)
+    if (!existsSync(path))
+      throw new Error(`ripast: cannot inspect the referenced Vue project ${path}`)
+    const { commandLine, fileNames } = withFilteredConsoleWarn(() => readVueProject(path))
+    // Each project retains its own compiler options and path aliases.
+    if (fileNames.length || !commandLine.projectReferences?.length)
+      projects.push({ tsconfigPath: path, files: fileNames })
+    for (const reference of commandLine.projectReferences ?? [])
+      visit(reference.path)
+  }
+  visit(tsconfigPath)
+  return projects
+}
+
+function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService {
+  const { commandLine, fileNames } = readVueProject(tsconfigPath)
+  const overlays = new Map<string, string>()
+  const roots = new Set(fileNames.map(file => resolve(cwd, file)))
+  const overlayDirectories = new Set<string>()
+  const sys: ts.System = {
+    ...ts.sys,
+    fileExists: file => overlays.has(resolve(file)) || ts.sys.fileExists(file),
+    readFile: file => overlays.get(resolve(file)) ?? ts.sys.readFile(file),
+    directoryExists: directory => overlayDirectories.has(resolve(directory)) || ts.sys.directoryExists(directory),
+  }
 
   const fileToUri = (fileName: string): URI => URI.file(resolve(cwd, fileName))
   const uriToFile = (uri: URI): string => uri.fsPath
@@ -143,8 +181,8 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
       if (!includeFsFiles)
         return
       const fileName = uriToFile(uri)
-      if (existsSync(fileName) && statSync(fileName).isFile()) {
-        const text = readFileSync(fileName, 'utf8')
+      const text = sys.readFile(fileName)
+      if (text !== undefined) {
         language.scripts.set(uri, ts.ScriptSnapshot.fromString(text))
       }
       else {
@@ -158,7 +196,7 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
     getCurrentDirectory: () => cwd,
     getCompilationSettings: () => commandLine.options,
     getProjectReferences: () => commandLine.projectReferences,
-    getScriptFileNames: () => fileNames.map((f: string) => resolve(cwd, f)),
+    getScriptFileNames: () => [...roots],
     getProjectVersion: () => String(projectVersion),
   }
 
@@ -168,6 +206,9 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
       stat(uri) {
         if (uri.scheme !== 'file')
           return undefined
+        const overlay = overlays.get(uri.fsPath)
+        if (overlay !== undefined)
+          return { type: FileType.File, ctime: 0, mtime: projectVersion, size: overlay.length }
         try {
           const s = statSync(uri.fsPath)
           return {
@@ -184,6 +225,9 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
       readFile(uri) {
         if (uri.scheme !== 'file')
           return undefined
+        const overlay = overlays.get(uri.fsPath)
+        if (overlay !== undefined)
+          return overlay
         try {
           return readFileSync(uri.fsPath, 'utf8')
         }
@@ -209,9 +253,9 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
   const project: ProjectContext = {
     typescript: {
       configFileName: tsconfigPath,
-      sys: ts.sys,
+      sys,
       uriConverter: { asFileName: uriToFile, asUri: fileToUri },
-      ...createLanguageServiceHost(ts, ts.sys, language, fileToUri, projectHost),
+      ...createLanguageServiceHost(ts, sys, language, fileToUri, projectHost),
     },
   }
 
@@ -234,7 +278,16 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
       }
     },
     setSnapshot: (fileName: string, text: string) => {
-      language.scripts.set(URI.file(resolve(cwd, fileName)), ts.ScriptSnapshot.fromString(text))
+      const path = resolve(cwd, fileName)
+      overlays.set(path, text)
+      if (path.endsWith('.vue'))
+        roots.add(path)
+      for (let directory = dirname(path); !overlayDirectories.has(directory); directory = dirname(directory)) {
+        overlayDirectories.add(directory)
+        if (dirname(directory) === directory)
+          break
+      }
+      language.scripts.set(URI.file(path), ts.ScriptSnapshot.fromString(text))
       projectVersion++
     },
     dispose: () => service.dispose(),
@@ -246,6 +299,7 @@ export function workspaceEditToChanges(
   vue: VueService,
   cwd: string,
   filter?: (fileName: string) => boolean,
+  transformEdits?: (path: string, source: string, edits: TextEdit[]) => TextEdit[],
 ): FileChange[] {
   const out: FileChange[] = []
   const seen = new Set<string>()
@@ -261,7 +315,13 @@ export function workspaceEditToChanges(
     if (before === undefined)
       return
     const doc = TextDocument.create(uriStr, 'plaintext', 0, before)
-    const after = TextDocument.applyEdits(doc, edits as any)
+    const after = transformEdits
+      ? applyTextEdits(before, transformEdits(fileName, before, edits.map(edit => ({
+          start: offsetOfPosition(before, edit.range.start),
+          end: offsetOfPosition(before, edit.range.end),
+          replacement: edit.newText,
+        }))))
+      : TextDocument.applyEdits(doc, edits as any)
     if (after === before)
       return
     out.push({

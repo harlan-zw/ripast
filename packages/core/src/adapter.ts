@@ -1,4 +1,4 @@
-import type { FileChange } from './util.ts'
+import type { FileChange, TextEdit } from './util.ts'
 import type { Regression } from './verify.ts'
 import type { TemplateExpression } from './vue-template.ts'
 import { existsSync, readFileSync } from 'node:fs'
@@ -10,7 +10,9 @@ export { scan } from './scan.ts'
 export type { ScanHit, ScanOptions } from './scan.ts'
 
 export type ScanFn = typeof import('./scan.ts').scan
-export { parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+export { offsetOfPosition } from './ts-server.ts'
+export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+export type { TextEdit } from './util.ts'
 export type { FileChange } from './util.ts'
 export type { Regression } from './verify.ts'
 export { extractTemplateExpressions, hyphenateVueName, parseVueTemplateAst, rewriteTemplateReferences } from './vue-template.ts'
@@ -22,6 +24,12 @@ export interface RenameSite {
   filePath: string
   source: string
   pos: number
+}
+
+export interface AutoImportRenamePlan {
+  changes: FileChange[]
+  verificationChanges: FileChange[]
+  transformEdits: (path: string, source: string, edits: TextEdit[]) => TextEdit[]
 }
 
 export interface AddExplicitImportsContext {
@@ -47,6 +55,7 @@ export interface FrameworkAdapter {
     from: string,
     to: string,
     sites: RenameSite[],
+    autoImportPlan?: AutoImportRenamePlan,
   ) => Promise<FileChange[]>
 
   applyImportRewrite: (
@@ -72,6 +81,8 @@ export interface FrameworkAdapter {
   extractTemplateExpressions?: (source: string) => TemplateExpression[]
 
   autoImportScopes?: (cwd: string) => Set<string>
+
+  planAutoImportRename?: (ctx: { cwd: string, from: string, to: string, sites: RenameSite[] }) => AutoImportRenamePlan
 
   /** Return source consumers whose implicit binding may refer to this export. */
   inspectAutoImportConsumers?: (ctx: {
