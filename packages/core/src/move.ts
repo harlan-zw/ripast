@@ -10,7 +10,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
-import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, localBindingNames, localExportSpecifierNames, parseSource, removeDeclaration } from './declarations.ts'
+import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { addOrMergeImport, appendStatement, computeSpecifier, isImportEmpty, listImports, parseProgram, pruneUnusedImports, renderImport, rewriteImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
@@ -33,8 +33,6 @@ export interface MoveResult {
   scanned: number
   regressions: Regression[]
 }
-
-const IMPORT_SPECIFIER_PARENTS = new Set(['ImportSpecifier', 'ImportDefaultSpecifier', 'ImportNamespaceSpecifier'])
 
 export async function runMove(symbol: string, fromPath: string, toPath: string, opts: MoveOptions = {}): Promise<MoveResult> {
   const cwd = opts.cwd ?? process.cwd()
@@ -63,37 +61,47 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   if (!decl)
     throw new Error(`ripast move: no top-level export named "${symbol}" in ${fromPath} (supported: function, class, interface, type, enum, const with single declarator)`)
 
-  const localDeps = timed(profile, 'find local deps', () => findLocalSiblingDeps(parsed.program, decl, symbol))
-  if (localDeps.nonExported.length) {
-    throw new Error(
-      `ripast move: "${symbol}" depends on local non-exported symbol(s) [${localDeps.nonExported.join(', ')}] in ${fromPath}. `
-      + `Export them first, or move them together.`,
-    )
-  }
-
-  const usedImports = timed(profile, 'collect used imports', () => collectUsedImports(fromSplit, fromAbs, parsed.program, decl, symbol))
-  const declText = timed(profile, 'copy declaration', () => declarationText(fromSplit, parsed.comments, decl))
-  const remainingReferences = timed(profile, 'count remaining refs', () => countReferencesOutside(parsed.program, decl, symbol))
-
-  const toOriginal = existsSync(toAbs) ? readFileSync(toAbs, 'utf8') : ''
-  let toAfter = toOriginal
-  for (const used of usedImports) {
-    // An import of the target file itself: those names are declared there.
-    if (relativeImportTarget(fromAbs, used.specifier) === toAbs)
-      continue
-    toAfter = addOrMergeImport(toAfter, toAbs, rebaseSpecifier(used.specifier, fromAbs, toAbs), used.spec)
-  }
-  if (localDeps.exported.length)
-    toAfter = addOrMergeImport(toAfter, toAbs, computeSpecifier(toAbs, fromAbs, importStyle), { namedImports: localDeps.exported.map(name => ({ name })) })
-  toAfter = appendStatement(toAfter, declText)
-
-  let fromAfter = removeDeclaration(fromSplit, parsed.comments, decl)
-  fromAfter = pruneUnusedImports(fromAfter, fromAbs)
-  if (remainingReferences > 0)
-    fromAfter = addOrMergeImport(fromAfter, fromAbs, computeSpecifier(fromAbs, toAbs, importStyle), { namedImports: [{ name: symbol }] })
-
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
+    // Splitting a declaration changes offsets. Resolve against the exact source overlay.
+    server.open(fromAbs, fromSplit)
+    const referencedBindings = await timedAsync(profile, 'resolve declaration dependencies', () => referencedTopLevelBindings(server, fromAbs, fromSplit, parsed.program, decl))
+    const localDeps = timed(profile, 'find local deps', () => findLocalSiblingDeps(parsed.program, decl, referencedBindings))
+    if (localDeps.nonExported.length) {
+      throw new Error(
+        `ripast move: "${symbol}" depends on local non-exported symbol(s) [${localDeps.nonExported.join(', ')}] in ${fromPath}. `
+        + `Export them first, or move them together.`,
+      )
+    }
+
+    const usedImports = timed(profile, 'collect used imports', () => collectUsedImports(fromSplit, fromAbs, parsed.program, referencedBindings))
+    const declText = timed(profile, 'copy declaration', () => declarationText(fromSplit, parsed.comments, decl))
+    const remainingReferences = (await server.references(fromAbs, decl.nameStart)).filter(site => site.path === fromAbs && (site.start < decl.start || site.start >= decl.end)).length
+
+    const toOriginal = existsSync(toAbs) ? readFileSync(toAbs, 'utf8') : ''
+    let toAfter = toOriginal
+    const targetDeclarations = listTopLevelDeclarations(parseProgram(toAbs, toOriginal))
+    const sourceImports = listImports(fromSplit, fromAbs, parsed.program)
+    for (const used of usedImports) {
+      // Keep self imports for aliases, anonymous defaults, and namespace objects.
+      // Reuse an existing destination declaration only when its binding matches.
+      const spec = relativeImportTarget(fromAbs, used.specifier) === toAbs
+        ? await withoutDestinationBindings(server, fromAbs, toAbs, used, sourceImports, targetDeclarations)
+        : used.spec
+      if (spec.namedImports.length || spec.defaultImport || spec.namespaceImport)
+        toAfter = addOrMergeImport(toAfter, toAbs, rebaseSpecifier(used.specifier, fromAbs, toAbs), spec)
+    }
+    if (localDeps.namedImports.length || localDeps.defaultImport)
+      toAfter = addOrMergeImport(toAfter, toAbs, computeSpecifier(toAbs, fromAbs, importStyle), { namedImports: localDeps.namedImports.map(name => ({ name })), defaultImport: localDeps.defaultImport })
+    toAfter = appendStatement(toAfter, declText)
+
+    let fromAfter = removeDeclaration(fromSplit, parsed.comments, decl)
+    fromAfter = pruneUnusedImports(fromAfter, fromAbs)
+    if (remainingReferences > 0)
+      fromAfter = addOrMergeImport(fromAfter, fromAbs, computeSpecifier(fromAbs, toAbs, importStyle), { namedImports: [{ name: symbol }] })
+
+    // Consumer import queries still refer to their original documents.
+    server.open(fromAbs, fromOriginal)
     // Resolve bindings against the same text used to collect their offsets.
     // A new destination exists only in this overlay during the dry run.
     server.open(toAbs, toAfter)
@@ -217,7 +225,8 @@ function splitMultiDeclaratorIfNeeded(source: string, path: string, symbol: stri
 
 interface LocalSiblingDeps {
   nonExported: string[]
-  exported: string[]
+  namedImports: string[]
+  defaultImport?: string
 }
 
 function isRelativeScriptImport(specifier: string): boolean {
@@ -236,35 +245,47 @@ function isBindingReference(node: any, parent: any): boolean {
     && parent.name === node && !/^[a-z]/.test(node.name)
 }
 
-function findLocalSiblingDeps(program: any, decl: TopLevelDeclaration, selfName: string): LocalSiblingDeps {
-  const siblings = new Map<string, 'exported' | 'local'>()
+function findLocalSiblingDeps(program: any, decl: TopLevelDeclaration, referenced: Set<string>): LocalSiblingDeps {
+  const out: LocalSiblingDeps = { nonExported: [], namedImports: [] }
   for (const other of listTopLevelDeclarations(program)) {
-    if (other.nameStart === decl.nameStart)
+    if (other.nameStart === decl.nameStart || !referenced.has(other.name))
       continue
-    siblings.set(other.name, other.exported ? 'exported' : 'local')
+    if (!other.exported)
+      out.nonExported.push(other.name)
+    else if (other.isDefault)
+      out.defaultImport = other.name
+    else
+      out.namedImports.push(other.name)
   }
-  const locals = localBindingNames(decl.node)
-  const nonExported: string[] = []
-  const exported: string[] = []
-  const seen = new Set<string>()
+  return out
+}
+
+/** Resolve only candidate names seen in the declaration, so nested shadows stay local. */
+async function referencedTopLevelBindings(server: TsServer, path: string, source: string, program: any, decl: TopLevelDeclaration): Promise<Set<string>> {
+  const candidates = new Set<string>()
   walk(decl.node, {
     enter(node: any, parent: any) {
-      if (!isBindingReference(node, parent))
-        return
-      const name = node.name
-      if (name === selfName || seen.has(name) || locals.has(name))
-        return
-      const sibling = siblings.get(name)
-      if (!sibling)
-        return
-      seen.add(name)
-      if (sibling === 'local')
-        nonExported.push(name)
-      else
-        exported.push(name)
+      if (isBindingReference(node, parent))
+        candidates.add(node.name)
     },
   })
-  return { nonExported, exported }
+  const bindings = listTopLevelDeclarations(program).map(binding => ({ name: binding.name, offset: binding.nameStart }))
+  for (const imp of listImports(source, path, program)) {
+    bindings.push(...imp.named.map(binding => ({ name: binding.alias ?? binding.name, offset: binding.localStart })))
+    if (imp.defaultImport)
+      bindings.push({ name: imp.defaultImport.name, offset: imp.defaultImport.start })
+    if (imp.namespaceImport)
+      bindings.push({ name: imp.namespaceImport.name, offset: imp.namespaceImport.start })
+  }
+  const referenced = new Set<string>()
+  for (const binding of bindings) {
+    if (!candidates.has(binding.name) || binding.name === decl.name)
+      continue
+    const sites = await server.references(path, binding.offset)
+    if (sites.some(site => site.path === path && site.start >= decl.start && site.start < decl.end))
+      referenced.add(binding.name)
+  }
+  return referenced
 }
 
 interface UsedImport {
@@ -272,14 +293,31 @@ interface UsedImport {
   spec: ImportSpec
 }
 
-function collectUsedImports(source: string, path: string, program: any, decl: TopLevelDeclaration, selfName: string): UsedImport[] {
-  const referenced = new Set<string>()
-  walk(decl.node, {
-    enter(node: any, parent: any) {
-      if (isBindingReference(node, parent) && node.name !== selfName)
-        referenced.add(node.name)
-    },
-  })
+async function withoutDestinationBindings(server: TsServer, fromAbs: string, toAbs: string, used: UsedImport, imports: ImportInfo[], declarations: TopLevelDeclaration[]): Promise<ImportSpec> {
+  const alreadyDeclared = async (name: string, offset: number | undefined): Promise<boolean> => {
+    const declaration = declarations.find(declaration => declaration.name === name)
+    if (!declaration || offset === undefined)
+      return false
+    const sites = await server.definition(fromAbs, offset)
+    return sites.some(site => site.path === toAbs && site.start === declaration.nameStart)
+  }
+  const namedImports: ImportSpec['namedImports'] = []
+  for (const binding of used.spec.namedImports) {
+    const name = binding.alias ?? binding.name
+    const imported = imports.filter(imp => imp.specifier === used.specifier).flatMap(imp => imp.named).find(candidate => candidate.name === binding.name && (candidate.alias ?? candidate.name) === name)
+    if (!await alreadyDeclared(name, imported?.localStart))
+      namedImports.push(binding)
+  }
+  const defaultImport = used.spec.defaultImport
+  const defaultOffset = imports.find(imp => imp.specifier === used.specifier && imp.defaultImport?.name === defaultImport)?.defaultImport?.start
+  return {
+    ...used.spec,
+    namedImports,
+    defaultImport: defaultImport && await alreadyDeclared(defaultImport, defaultOffset) ? undefined : defaultImport,
+  }
+}
+
+function collectUsedImports(source: string, path: string, program: any, referenced: Set<string>): UsedImport[] {
   const out: UsedImport[] = []
   for (const imp of listImports(source, path, program)) {
     if (imp.sideEffectOnly)
@@ -301,22 +339,6 @@ function rebaseSpecifier(specifier: string, fromAbs: string, toAbs: string): str
     return specifier
   const target = resolve(dirname(fromAbs), specifier)
   return computeSpecifier(toAbs, target, specifier)
-}
-
-function countReferencesOutside(program: any, decl: TopLevelDeclaration, symbol: string): number {
-  let count = localExportSpecifierNames(program).has(symbol) ? 1 : 0
-  walk(program, {
-    enter(node: any, parent: any) {
-      if (!isBindingReference(node, parent) || node.name !== symbol)
-        return
-      if (parent && IMPORT_SPECIFIER_PARENTS.has(parent.type))
-        return
-      if (node.start >= decl.start && node.start < decl.end)
-        return
-      count++
-    },
-  })
-  return count
 }
 
 async function rewriteImportSites(server: TsServer, path: string, source: string, fromAbs: string, toAbs: string, symbol: string): Promise<string> {
