@@ -13,7 +13,7 @@ import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { applyTextEdits, parseSourceFile, rgFiles } from './util.ts'
+import { applyTextEdits, parseSourceFile, rgFiles, rgFilesMany } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface RenameOptions {
@@ -48,7 +48,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   const verifyMode = resolveVerifyMode(opts.verify)
   const vueEnabled = opts.vue ?? true
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles(from, { cwd, glob: opts.glob }))
+  const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }))
   const scriptCandidates = candidatePaths.filter(path => !isVue(path))
 
   const declarationPaths = opts.scope
@@ -67,6 +67,22 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     throw new Error(`ripast rename: "${from}" is declared in multiple files (${[...uniqueFiles].join(', ')}). Pass --scope <file> to pick one, or --all to rename every occurrence.`)
   }
 
+  if (from !== to) {
+    for (const path of scriptCandidates) {
+      const source = readFileSync(path, 'utf8')
+      if (!source.includes('\\u'))
+        continue
+      walk(parseSource(path, source).program, {
+        enter(node: any) {
+          if (node.type !== 'Identifier' || node.name !== from || !source.slice(node.start, node.end).includes('\\u'))
+            return
+          if (!declarations.some(declaration => declaration.filePath === path && declaration.pos === node.start))
+            throw new Error(`ripast rename: TypeScript cannot resolve escaped references to "${from}" in ${relative(cwd, path)}`)
+        },
+      })
+    }
+  }
+
   const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
   const scopes = vueAdapter?.autoImportScopes?.(cwd) ?? new Set<string>()
   const autoImportSites = declarations.filter(decl => decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))
@@ -80,6 +96,8 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     await timedAsync(profile, 'rename transform', async () => {
       for (const decl of declarations) {
         const edits = await server.rename(decl.filePath, decl.pos, to)
+        if (!edits.size && from !== to)
+          throw new Error(`ripast rename: TypeScript could not rename declaration "${from}" in ${relative(cwd, decl.filePath)}`)
         for (const [path, fileEdits] of edits) {
           const unique = editsByPath.get(path) ?? new Map<string, LspTextEdit>()
           for (const edit of fileEdits) {

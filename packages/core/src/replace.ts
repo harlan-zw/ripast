@@ -11,7 +11,7 @@ import { listTopLevelDeclarations, parseSource } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { applyTextEdits, rgFiles } from './util.ts'
+import { applyTextEdits, rgFilesMany } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
@@ -41,7 +41,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   const verifyMode = resolveVerifyMode(opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : rgFiles(to, { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+    : rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripast replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
@@ -49,7 +49,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   try {
     const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = rgFiles(from, { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
+    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     for (const path of candidatePaths) {
@@ -160,10 +160,15 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   const localName = from !== to && occupied.has(to) ? from : to
 
   const referenceReplacements = new Map<number, string>()
+  const bindingNames = new Set<number>()
   const qualifiedNames = new Set<number>()
   const reexports: { start: number, end: number }[] = []
   walk(program, {
     enter(node: any) {
+      if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') && node.name === from)
+        bindingNames.add(node.start)
+      if (node.type === 'Identifier' && node.name === from && source.slice(node.start, node.end).includes('\\u'))
+        throw new Error(`ripast replace: TypeScript cannot resolve escaped references to "${from}" in ${path}`)
       if ((node.type === 'MemberExpression' && !node.computed) || node.type === 'JSXMemberExpression')
         qualifiedNames.add(node.property.start)
       if (node.type === 'TSQualifiedName')
@@ -193,7 +198,7 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
         continue
       // References can follow the exported symbol through other local aliases,
       // namespaces, and re-exports. Only this imported local binding changes.
-      if (source.slice(ref.start, ref.end) !== from || qualifiedNames.has(ref.start) || reexports.some(range => ref.start >= range.start && ref.start < range.end))
+      if (!bindingNames.has(ref.start) || qualifiedNames.has(ref.start) || reexports.some(range => ref.start >= range.start && ref.start < range.end))
         continue
       edits.push({ start: ref.start, end: ref.end, replacement: referenceReplacements.get(ref.start) ?? localName })
       replaced = true

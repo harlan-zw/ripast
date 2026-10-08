@@ -172,3 +172,40 @@ it('rename all includes parameters beside local variable declarations', async ()
   }
   finally { fx.cleanup() }
 })
+
+it('replace refuses escaped references before removing their import', async () => {
+  const source = 'import { old } from "./old.ts"\nexport const result = \\u006fld\n'
+  const fx = makeFixture({
+    'old.ts': 'export const old = 1\n',
+    'better.ts': 'export const better = 2\n',
+    'consumer.ts': source,
+  })
+  try {
+    await assert.rejects(runReplace('old', 'better', { cwd: fx.dir, verify: false }), /cannot resolve escaped references/)
+    assert.equal(fx.read('consumer.ts'), source)
+  }
+  finally { fx.cleanup() }
+})
+
+it('rename refuses an escaped declaration when TypeScript returns no edits', async () => {
+  const source = 'export const \\u006fld = 3\n'
+  const fx = makeFixture({ 'consumer.ts': source })
+  try {
+    await assert.rejects(runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false }), /could not rename declaration/)
+    assert.equal(fx.read('consumer.ts'), source)
+    const unchanged = await runRename('old', 'old', { cwd: fx.dir, verify: false, vue: false })
+    assert.deepEqual(unchanged.changes, [])
+  }
+  finally { fx.cleanup() }
+})
+
+it('rename refuses escaped consumers before returning incomplete changes', async () => {
+  const source = 'import { old } from "./old.ts"\nexport const result = \\u006fld\n'
+  const fx = makeFixture({ 'old.ts': 'export const old = 3\n', 'consumer.ts': source })
+  try {
+    await assert.rejects(runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false }), /cannot resolve escaped references/)
+    assert.equal(fx.read('consumer.ts'), source)
+    assert.equal(fx.read('old.ts'), 'export const old = 3\n')
+  }
+  finally { fx.cleanup() }
+})
