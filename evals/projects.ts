@@ -8,8 +8,9 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { parseCodexEvents, runCodex } from './codex-runner.ts'
 import { parseEvents, summarize } from './core.ts'
-import { projectCases, renameIdentifiers, renameStaticClasses } from './project-cases.ts'
+import { projectCases, projectCasesBatchTwo, renameIdentifiers, renameStaticClasses } from './project-cases.ts'
 import { checkProject, diagnostics } from './project-check.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -106,7 +107,9 @@ function runAgent(project: string, prompt: string, env: NodeJS.ProcessEnv, timeo
 }
 
 async function main() {
-  const { values } = parseArgs({ options: { out: { type: 'string' }, preflight: { type: 'boolean', default: false }, case: { type: 'string' }, timeout: { type: 'string', default: '150' } } })
+  const { values } = parseArgs({ options: { out: { type: 'string' }, preflight: { type: 'boolean', default: false }, case: { type: 'string' }, timeout: { type: 'string', default: '150' }, batch: { type: 'string', default: 'first' }, runner: { type: 'string', default: 'opencode' } } })
+  if (!['first', 'second'].includes(values.batch) || !['opencode', 'codex', 'split'].includes(values.runner))
+    throw new Error('Use --batch first|second and --runner opencode|codex|split')
   const timeout = Number(values.timeout) * 1000
   if (!Number.isFinite(timeout) || timeout < 1000)
     throw new Error('--timeout requires positive seconds')
@@ -118,19 +121,22 @@ async function main() {
   mkdirSync(out, { recursive: true })
   const skill = readFileSync(join(root, 'packages/cli/skills/ripast/SKILL.md'), 'utf8')
   const providerFile = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'opencode/opencode.json')
-  const provider = (JSON.parse(readFileSync(providerFile, 'utf8')) as { provider?: unknown }).provider ?? {}
+  const provider = !values.preflight && values.runner !== 'codex' ? (JSON.parse(readFileSync(providerFile, 'utf8')) as { provider?: unknown }).provider ?? {} : {}
   const authFile = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'opencode/auth.json')
   const auth = existsSync(authFile) ? readFileSync(authFile, 'utf8') : null
   const cli = join(root, 'packages/cli/bin/ripast.mjs')
   const shell = (text: string) => `'${text.replaceAll('\'', '\'\\\'\'')}'`
-  const results: (Measurement & { caseName: string, issues: string[], tools: number, steps: number })[] = []
-  const metadata = { model, revision: git(root, ['rev-parse', 'HEAD']).trim(), started: new Date().toISOString(), skillHash: createHash('sha256').update(skill).digest('hex'), sourceMode: 'tracked HEAD source slices', concurrency: values.preflight ? 1 : 3 }
+  const results: (Measurement & { caseName: string, runner: string, model: string, issues: string[], tools: number, steps: number })[] = []
+  const harnessHashes = Object.fromEntries(['projects.ts', 'project-cases.ts', 'project-check.ts', 'core.ts', 'codex-runner.ts'].map(path => [path, createHash('sha256').update(readFileSync(join(root, 'evals', path))).digest('hex')]))
+  const metadata = { opencodeModel: model, codexModel: 'gpt-6-luna', codexReasoning: 'medium', runner: values.runner, batch: values.batch, revision: git(root, ['rev-parse', 'HEAD']).trim(), harnessHashes, started: new Date().toISOString(), skillHash: createHash('sha256').update(skill).digest('hex'), sourceMode: 'tracked HEAD source slices', concurrency: values.preflight ? 1 : 3 }
   console.log(`Results: ${out}`)
   writeFileSync(join(out, 'metadata.json'), JSON.stringify(metadata, null, 2))
-  const selected = projectCases.filter(c => !values.case || c.name === values.case)
+  const cases = values.batch === 'second' ? projectCasesBatchTwo : projectCases
+  const selected = cases.filter(c => !values.case || c.name === values.case)
   if (!selected.length)
     throw new Error('No project case matches')
   async function executeProject(c: ProjectCase, index: number) {
+    const runner = values.runner === 'split' ? (cases.indexOf(c) < Math.ceil(cases.length / 2) ? 'codex' : 'opencode') : values.runner
     const source = snapshot(c)
     writeFileSync(join(out, `${c.name}-source.json`), JSON.stringify({ ...source, initial: undefined, expected: undefined }, null, 2))
     const order: Arm[] = values.preflight ? ['ripast'] : index % 2 ? ['agent', 'ripast'] : ['ripast', 'agent']
@@ -164,10 +170,10 @@ async function main() {
             const result = spawnSync(process.execPath, [cli, ...args], { cwd: project, encoding: 'utf8', timeout, maxBuffer: 10_000_000 })
             return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', code: result.status, timedOut: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT', seconds: (performance.now() - started) / 1000 }
           })()
-        : await runAgent(project, prompt, env, timeout)
+        : runner === 'codex' ? await runCodex(project, prompt, env, timeout) : await runAgent(project, prompt, env, timeout)
       writeFileSync(join(dir, 'events.jsonl'), execution.stdout)
       writeFileSync(join(dir, 'stderr.log'), execution.stderr)
-      const transcript = values.preflight ? { usage: null, issues: [], tools: 0, steps: 0 } : parseEvents(execution.stdout)
+      const transcript = values.preflight ? { usage: null, issues: [], tools: 0, steps: 0 } : runner === 'codex' ? parseCodexEvents(execution.stdout) : parseEvents(execution.stdout)
       const issues = [...transcript.issues, ...checkProject(project, evidence)]
       if (execution.code !== 0 || execution.timedOut)
         issues.push(`Execution failed: ${execution.timedOut ? 'timeout' : execution.code}`)
@@ -175,11 +181,11 @@ async function main() {
         issues.push('No successful snapshot check')
       if (!values.preflight && (arm === 'ripast') !== existsSync(called))
         issues.push('Workflow adherence failed')
-      const result = { caseName: c.name, arm, passed: issues.length === 0, seconds: execution.seconds, tokens: transcript.usage?.total ?? null, issues, tools: transcript.tools, steps: transcript.steps }
+      const result = { caseName: c.name, runner: values.preflight ? 'cli' : runner, model: runner === 'codex' ? 'gpt-6-luna' : model, arm, passed: issues.length === 0, seconds: execution.seconds, tokens: transcript.usage?.total ?? null, issues, tools: transcript.tools, steps: transcript.steps }
       results.push(result)
       writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...result, transcript }, null, 2))
       writeFileSync(join(out, 'summary.json'), JSON.stringify(results, null, 2))
-      console.log(`${c.name} ${arm}: ${result.passed ? 'PASS' : 'FAIL'}, ${result.seconds.toFixed(1)}s, ${result.tokens ?? 'n/a'} tokens, ${source.changedFiles.length}/${Object.keys(source.initial).length} files${issues.length ? `, ${issues.slice(0, 5).join('; ')}` : ''}`)
+      console.log(`${c.name} ${result.runner} ${arm}: ${result.passed ? 'PASS' : 'FAIL'}, ${result.seconds.toFixed(1)}s, ${result.tokens ?? 'n/a'} tokens, ${source.changedFiles.length}/${Object.keys(source.initial).length} files${issues.length ? `, ${issues.slice(0, 5).join('; ')}` : ''}`)
     }
   }
   let next = 0
@@ -189,12 +195,12 @@ async function main() {
       await executeProject(selected[index]!, index)
     }
   }))
-  const lines = ['# Real project source evals', '', '| Project | Ripast pass | Agent pass | Ripast seconds | Agent seconds | Ripast tokens | Agent tokens |', '| --- | --- | --- | --- | --- | --- | --- |']
+  const lines = ['# Real project source evals', '', '| Project | Runner | Ripast pass | Agent pass | Ripast seconds | Agent seconds | Ripast tokens | Agent tokens |', '| --- | --- | --- | --- | --- | --- | --- | --- |']
   for (const c of selected) {
     const s = summarize(results.filter(r => r.caseName === c.name))
-    lines.push(`| ${c.name} | ${s.ripast.passed}/${s.ripast.runs} | ${s.agent.passed}/${s.agent.runs} | ${s.ripast.seconds?.toFixed(1) ?? 'n/a'} | ${s.agent.seconds?.toFixed(1) ?? 'n/a'} | ${s.ripast.tokens ?? 'n/a'} | ${s.agent.tokens ?? 'n/a'} |`)
+    lines.push(`| ${c.name} | ${results.find(r => r.caseName === c.name)?.runner} | ${s.ripast.passed}/${s.ripast.runs} | ${s.agent.passed}/${s.agent.runs} | ${s.ripast.seconds?.toFixed(1) ?? 'n/a'} | ${s.agent.seconds?.toFixed(1) ?? 'n/a'} | ${s.ripast.tokens ?? 'n/a'} | ${s.agent.tokens ?? 'n/a'} |`)
   }
-  lines.push('', 'Source slices from recorded local HEAD commits. No original project files change.', 'No dependencies or generated Nuxt state are copied. Type checks compare baseline diagnostics; these are not full project builds.', 'Vue tasks use ten files with static class tokens, plus up to ten unrelated files. Vue grading requires the exact expected diff.', `One run per arm. ${metadata.concurrency} projects run concurrently; each project alternates its two arms. Treat small timing differences as noise.`, 'Timing includes OpenCode startup, model work, refactoring, and the requested snapshot check.', 'The revised Skill is included in the Ripast prompt. Baseline gets ordinary editing tools. Skill loading and CLI installation are excluded.', ...results.filter(r => !r.passed).map(r => `${r.caseName} ${r.arm}: ${r.issues.slice(0, 8).join('; ')}`))
+  lines.push('', 'Source slices from recorded local HEAD commits. No original project files change.', 'No dependencies or generated Nuxt state are copied. Type checks compare baseline diagnostics; these are not full project builds.', 'Vue tasks use up to ten files with static class tokens, plus up to ten unrelated files. Vue grading requires the exact expected diff.', `One run per arm. ${metadata.concurrency} projects run concurrently; each project alternates its two arms. Treat small timing differences as noise.`, 'Timing includes runner startup, model work, refactoring, and the requested snapshot check.', 'The revised Skill is included in the Ripast prompt. Baseline gets ordinary editing tools. Skill loading and CLI installation are excluded.', 'Report comparisons within each runner. Different models and workloads prevent a direct Codex versus OpenCode speed claim.', ...results.filter(r => !r.passed).map(r => `${r.caseName} ${r.arm}: ${r.issues.slice(0, 8).join('; ')}`))
   writeFileSync(join(out, 'report.md'), `${lines.join('\n')}\n`)
   console.log(lines.join('\n'))
   if (results.some(r => !r.passed))
