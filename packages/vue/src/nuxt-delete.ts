@@ -2,7 +2,7 @@ import type { FrameworkAdapter } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import { isInsideAutoImportScope, rgFiles } from '@ripast/core/adapter'
-import { loadNuxtBindingNames, nuxtConsumerContext } from './nuxt-bindings.ts'
+import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath } from './nuxt-paths.ts'
 
@@ -21,19 +21,23 @@ function inspectConsumers(ctx: Parameters<NonNullable<FrameworkAdapter['inspectA
     const context = isInsideAutoImportScope(fromAbs, scopes) ? 'auto-import scope' : 'Nuxt context'
     throw new Error(`ripast ${purpose.toLowerCase()}: cannot resolve auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
   }
-  const byContext = new Map([[cwd, binding]])
+  const byContext = new Map([[nuxtImportMetadataPaths(cwd, fromAbs).join('|'), binding]])
   const consumers: string[] = []
   for (const path of files) {
     if (path === fromAbs || isGeneratedNuxtPath(cwd, path))
       continue
     const context = nuxtConsumerContext(path, cwd)
-    let local = byContext.get(context)
+    const key = nuxtImportMetadataPaths(context, path).join('|')
+    let local = byContext.get(key)
     if (!local) {
-      const resolved = loadNuxtBindingNames(context, symbol, fromAbs)
-      if (resolved._tag === 'Unknown')
+      const resolved = loadNuxtBindingNames(context, symbol, fromAbs, path)
+      if (resolved._tag === 'Unknown') {
+        if (!unboundNuxtSymbols(path, planned.get(path) ?? readFileSync(path, 'utf8'), new Set([symbol, ...binding.names]), purpose).size)
+          continue
         throw new Error(`ripast ${purpose.toLowerCase()}: cannot resolve auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
+      }
       local = resolved
-      byContext.set(context, local)
+      byContext.set(key, local)
     }
     if (purpose === 'Rename' && planned.has(path) && !local.names.includes(symbol)
       && unboundNuxtSymbols(path, readFileSync(path, 'utf8'), new Set([symbol]), purpose).size) {

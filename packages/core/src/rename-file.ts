@@ -112,7 +112,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
           after: selfChange?.after ?? readFileSync(oldAbs, 'utf8'),
         }]))
       }
-      regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode))
+      regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode, (consumer, specifier) => vueAdapter?.isPlannedImportTarget?.(cwd, consumer, specifier, newAbs) ?? false))
     }
 
     return {
@@ -176,6 +176,7 @@ async function verifyFileRename(
   consumerChanges: FileChange[],
   selfChange: { before: string, after: string } | null,
   verifyMode: VerifyMode,
+  isPlannedImportTarget: (consumer: string, specifier: string) => boolean,
 ): Promise<Regression[]> {
   const consumerTsChanges = consumerChanges.filter(c => TS_LIKE_RE.test(c.path))
   const moveIsTs = TS_LIKE_RE.test(oldAbs) && TS_LIKE_RE.test(newAbs)
@@ -204,7 +205,9 @@ async function verifyFileRename(
   const regressions = await findRegressions(server, changes, files)
   return regressions.filter(r => r.file !== oldAbs
     && !isUnresolvedNewPath(r, newAbs)
-    && !isUnresolvedRenamedSpecifier(r, newAbs, renamedSpecifiers))
+    && !isUnresolvedRenamedSpecifier(r, newAbs, renamedSpecifiers)
+    && !(r.code === CANNOT_FIND_MODULE_CODE && consumerTsChanges.some(change => change.path === r.file)
+      && isPlannedImportTarget(r.file, MODULE_IN_MESSAGE_RE.exec(r.message)?.[1] ?? '')))
 }
 
 const CANNOT_FIND_MODULE_CODE = 2307
