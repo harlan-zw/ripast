@@ -2,7 +2,7 @@ import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { loadAdapter } from './adapter.ts'
@@ -48,7 +48,8 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       : ''
     throw new Error(`ripast rename-file: source "${oldPath}" does not exist${hint}`)
   }
-  if (existsSync(newAbs))
+  // Inspect the entry itself: existsSync follows symlinks and misses dangling targets.
+  if (lstatSync(newAbs, { throwIfNoEntry: false }))
     throw new Error(`ripast rename-file: target "${newPath}" already exists`)
 
   const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)

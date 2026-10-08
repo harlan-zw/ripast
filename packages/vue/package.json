@@ -51,6 +51,7 @@
     "@typescript/typescript6": "^6.0.2",
     "@volar/language-service": "^2.4.28",
     "@volar/typescript": "^2.4.28",
+    "@vue/compiler-sfc": "^3.5.43",
     "@vue/language-core": "^3.3.12",
     "@vue/language-service": "^3.3.12",
     "volar-service-typescript": "^0.0.71",

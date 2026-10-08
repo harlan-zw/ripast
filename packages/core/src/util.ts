@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { createPatch } from 'diff'
 import { parseSync } from 'oxc-parser'
+import picomatch from 'picomatch'
 import { searchFiles } from './file-search.ts'
 
 export interface ParsedFile {
@@ -64,6 +65,40 @@ const EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vu
 // snapshots, etc.).
 const DEFAULT_EXCLUDES = ['!.claude/worktrees/**', '!**/.claude/worktrees/**']
 
+function discoverySelection(userGlobs: string[]) {
+  // Only a literal directory segment opts into dependencies. Broad source globs do not.
+  const normalizedGlobs = userGlobs.map((glob) => {
+    for (;;) {
+      const normalized = glob.replace(/(?<!\\)\{([^{}]*)\}/g, (match, body: string) => body.includes(',') ? match : body)
+      if (normalized === glob)
+        return glob
+      glob = normalized
+    }
+  })
+  const dependencyGlobs = normalizedGlobs.filter(glob => glob.startsWith('!') || /(?:^|\/)node_modules(?:\/|$)/.test(glob))
+  const explicitDependencies = dependencyGlobs.some(glob => !glob.startsWith('!'))
+  const globs = [...userGlobs, ...DEFAULT_EXCLUDES, ...explicitDependencies ? [] : ['!node_modules/**', '!**/node_modules/**']]
+  const rules = explicitDependencies
+    ? dependencyGlobs.map((glob) => {
+        const excluded = glob.startsWith('!')
+        const pattern = excluded ? glob.slice(1) : glob
+        return { excluded, matches: picomatch(pattern.replace(/^\//, ''), { dot: true, nonegate: true, noext: true, strictSlashes: true, basename: !pattern.includes('/') }) }
+      })
+    : []
+  const select = (paths: string[], cwd: string) => paths.filter((path) => {
+    const rel = relative(cwd, path).replace(/\\/g, '/')
+    if (!rel.split('/').includes('node_modules'))
+      return true
+    let included = false
+    for (const rule of rules) {
+      if (rule.matches(rel))
+        included = !rule.excluded
+    }
+    return included
+  })
+  return { globs, select }
+}
+
 function runRipgrep(args: string[], cwd: string, fallback: () => string[]): string[] {
   const result = spawnSync('rg', args, { cwd, encoding: 'utf8' })
   if (result.error) {
@@ -81,7 +116,7 @@ function runRipgrep(args: string[], cwd: string, fallback: () => string[]): stri
 export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {
   const cwd = opts.cwd ?? process.cwd()
   const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
-  const globs = [...userGlobs, ...DEFAULT_EXCLUDES]
+  const { globs, select } = discoverySelection(userGlobs)
   const args: string[] = []
   if (opts.listAll) {
     args.push('--files', '--hidden', '--no-messages')
@@ -96,11 +131,11 @@ export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?:
       args.push('-g', g)
     args.push(pattern, '.')
   }
-  return runRipgrep(args, cwd, () => {
+  return select(runRipgrep(args, cwd, () => {
     if (!opts.listAll && opts.fixedStrings === false)
       throw new Error('Regex searches require ripgrep. Install it: https://github.com/BurntSushi/ripgrep#installation')
     return searchFiles(cwd, globs, opts.listAll ? { _tag: 'Files' } : { _tag: 'Text', patterns: [pattern] })
-  })
+  }), cwd)
 }
 
 /**
@@ -112,12 +147,12 @@ export function rgFilesMany(patterns: string[], opts: { glob?: string | string[]
     return []
   const cwd = opts.cwd ?? process.cwd()
   const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
-  const globs = [...userGlobs, ...DEFAULT_EXCLUDES]
+  const { globs, select } = discoverySelection(userGlobs)
   const args: string[] = ['--files-with-matches', '--hidden', '--no-messages', '--fixed-strings']
   for (const g of globs) args.push('-g', g)
   for (const p of patterns) args.push('-e', p)
   args.push('.')
-  return runRipgrep(args, cwd, () => searchFiles(cwd, globs, { _tag: 'Text', patterns }))
+  return select(runRipgrep(args, cwd, () => searchFiles(cwd, globs, { _tag: 'Text', patterns })), cwd)
 }
 
 const SFC_SCRIPT_RE = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi

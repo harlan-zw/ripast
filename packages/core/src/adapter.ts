@@ -73,6 +73,25 @@ export interface FrameworkAdapter {
 
   autoImportScopes?: (cwd: string) => Set<string>
 
+  /** Return source consumers whose implicit binding may refer to this export. */
+  inspectAutoImportConsumers?: (ctx: {
+    cwd: string
+    symbol: string
+    fromAbs: string
+    files: string[]
+    scopes: Set<string>
+  }) => string[]
+
+  /** Refuse a rename whose planned consumers still need the old implicit binding. */
+  validateAutoImportRename?: (ctx: {
+    cwd: string
+    symbol: string
+    to: string
+    fromAbs: string
+    changes: FileChange[]
+    scopes: Set<string>
+  }) => void
+
   /** Whether `filePath` is a framework-generated file (e.g. Nuxt's `.nuxt/`). */
   isGeneratedPath?: (cwd: string, filePath: string) => boolean
 

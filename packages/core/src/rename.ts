@@ -114,6 +114,10 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
         removeVueLocalBindingChanges(changes, from)
         const fallbackChanges = timed(profile, 'nuxt rename fallback', () => applyNuxtBareIdentifierRename(vueAdapter, cwd, from, to, changes))
         mergeFileChanges(changes, fallbackChanges)
+        for (const decl of declarations) {
+          if (decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))
+            vueAdapter.validateAutoImportRename?.({ cwd, symbol: from, to, fromAbs: decl.filePath, changes, scopes })
+        }
       }
       if (scopes.size)
         vueAdapter.filterGeneratedChanges?.(cwd, changes)

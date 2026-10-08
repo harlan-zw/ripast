@@ -1,6 +1,10 @@
 import type { FileChange, ScanFn } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { relative } from 'node:path'
+import { rgFiles } from '@ripast/core/adapter'
+import { parse } from '@vue/compiler-sfc'
+import { loadNuxtBindingNames, nuxtConsumerContext } from './nuxt-bindings.ts'
+import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
 
 export interface ExplicitImportContext {
@@ -18,35 +22,46 @@ export interface ExplicitImportContext {
  * insert an explicit named import from `toAbs`.
  */
 export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[] {
-  const { cwd, symbols, toAbs, fromAbs, existingChanges, noScriptError, scan } = ctx
+  const { cwd, symbols, toAbs, fromAbs, existingChanges, noScriptError } = ctx
   const byPath = new Map(existingChanges.map(change => [change.path, change]))
-  const aliases = loadNuxtPathAliases(cwd)
-  const consumerSymbols = new Map<string, Set<string>>()
-  for (const symbol of symbols) {
-    const hits = scan(symbol, { cwd, kinds: ['identifier-reference'] })
-    for (const hit of hits) {
-      const abs = resolve(cwd, hit.file)
-      if (!consumerSymbols.has(abs))
-        consumerSymbols.set(abs, new Set())
-      consumerSymbols.get(abs)!.add(symbol)
-    }
-  }
   const out: FileChange[] = []
-  for (const [filePath, neededSymbols] of consumerSymbols) {
+  const byContext = new Map<string, Map<string, string>>()
+  for (const filePath of rgFiles('', { cwd, listAll: true })) {
     if (isGeneratedNuxtPath(cwd, filePath))
       continue
     if (filePath === fromAbs || filePath === toAbs)
       continue
+    const context = nuxtConsumerContext(filePath, cwd)
+    let names = byContext.get(context)
+    if (!names) {
+      names = new Map()
+      for (const symbol of symbols) {
+        const binding = loadNuxtBindingNames(context, symbol, fromAbs)
+        if (binding._tag === 'Unknown')
+          throw new Error(`ripast: cannot resolve Nuxt auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
+        for (const name of binding.names) {
+          if (names.has(name) && names.get(name) !== symbol)
+            throw new Error(`ripast: cannot resolve the Nuxt auto-import binding "${name}". Run Nuxt prepare first.`)
+          names.set(name, symbol)
+        }
+      }
+      byContext.set(context, names)
+    }
+    if (!names.size)
+      continue
     let current = byPath.get(filePath)?.after ?? readFileSync(filePath, 'utf8')
     const before = byPath.get(filePath)?.before ?? current
+    const localAliases = loadNuxtPathAliases(context)
+    // Conflicting inherited mappings cannot establish a portable alias.
+    const aliases = localAliases.filter(alias => localAliases.every(other => other.pattern !== alias.pattern || JSON.stringify(other.targets) === JSON.stringify(alias.targets)))
     const specifier = resolveBestImportSpecifier(filePath, toAbs, aliases, './placeholder')
     let touched = false
-    for (const symbol of neededSymbols) {
-      if (hasNamedImport(current, symbol))
-        continue
+    for (const [symbol, block] of unboundNuxtSymbols(filePath, current, new Set(names.keys()))) {
+      const exported = names.get(symbol)!
+      const binding = exported === symbol ? symbol : `${exported} as ${symbol}`
       const next = filePath.endsWith('.vue')
-        ? insertVueScriptImport(current, symbol, specifier, noScriptError)
-        : insertTopLevelImport(current, symbol, specifier)
+        ? insertVueScriptImport(current, binding, specifier, () => noScriptError(exported), block)
+        : insertTopLevelImport(current, binding, specifier)
       if (next !== current) {
         current = next
         touched = true
@@ -69,16 +84,18 @@ export function insertVueScriptImport(
   symbol: string,
   specifier: string,
   noScriptError: (symbol: string) => Error,
+  target?: 'script' | 'scriptSetup',
 ): string {
-  const match = source.match(/<script(?:\s[^>]*)?>/)
-  if (!match || match.index === undefined)
+  const { descriptor } = parse(source)
+  const block = target ? descriptor[target] : descriptor.scriptSetup ?? descriptor.script
+  if (!block || block.src)
     throw noScriptError(symbol)
-  const insertAt = match.index + match[0].length
-  const scriptEnd = source.indexOf('</script>', insertAt)
-  const scriptSource = scriptEnd >= 0 ? source.slice(insertAt, scriptEnd) : source.slice(insertAt)
+  const insertAt = block.loc.start.offset
+  const scriptEnd = block.loc.end.offset
+  const scriptSource = block.content
   const mergedScript = mergeNamedImport(scriptSource, symbol, specifier)
   if (mergedScript !== scriptSource)
-    return `${source.slice(0, insertAt)}${mergedScript}${scriptEnd >= 0 ? source.slice(scriptEnd) : ''}`
+    return `${source.slice(0, insertAt)}${mergedScript}${source.slice(scriptEnd)}`
   const rest = source[insertAt] === '\n' ? source.slice(insertAt + 1) : source.slice(insertAt)
   return `${source.slice(0, insertAt)}\nimport { ${symbol} } from '${specifier}'\n${rest}`
 }
@@ -96,11 +113,6 @@ export function insertTopLevelImport(source: string, symbol: string, specifier: 
   return `${importLine}${source}`
 }
 
-export function hasNamedImport(source: string, symbol: string): boolean {
-  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`\\bimport\\s*\\{[^}]*\\b${escaped}\\b[^}]*\\}\\s*from\\s*['"]`).test(source)
-}
-
 export function mergeNamedImport(source: string, symbol: string, specifier: string): string {
   const spec = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const importRe = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*(['"])${spec}\\2`)
@@ -108,7 +120,7 @@ export function mergeNamedImport(source: string, symbol: string, specifier: stri
   if (!match)
     return source
   const names = match[1].split(',').map(part => part.trim()).filter(Boolean)
-  if (names.some(name => name === symbol || name.startsWith(`${symbol} as `)))
+  if (names.includes(symbol))
     return source
   const replacement = `import { ${[...names, symbol].join(', ')} } from ${match[2]}${specifier}${match[2]}`
   return `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match[0].length)}`

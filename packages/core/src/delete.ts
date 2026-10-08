@@ -3,11 +3,13 @@ import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parse } from '@vue/compiler-sfc'
+import { detectFrameworks, loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
+import { isInsideAutoImportScope } from './nuxt.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
@@ -49,15 +51,32 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     )
   }
 
+  const nuxt = decl.exported && (detectFrameworks(cwd).includes('nuxt')
+    || ['.nuxt', 'nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mts', 'nuxt.config.mjs'].some(path => existsSync(join(cwd, path))))
+  const nuxtAdapter = nuxt ? await loadAdapter('nuxt') : null
+  let inspectedScopes = false
+  if (nuxt) {
+    if (!nuxtAdapter?.autoImportScopes || !nuxtAdapter.inspectAutoImportConsumers)
+      throw new Error('ripast delete: cannot inspect Nuxt auto-imports without @ripast/vue. Install @ripast/vue before deleting exported declarations.')
+    const scopes = nuxtAdapter.autoImportScopes(cwd)
+    inspectedScopes = isInsideAutoImportScope(fromAbs, scopes)
+    if (inspectedScopes) {
+      const consumers = nuxtAdapter.inspectAutoImportConsumers({ cwd, symbol, fromAbs, files: candidatePaths, scopes })
+      if (consumers.length)
+        throw new Error(`ripast delete: cannot prove "${symbol}" is unused through Nuxt auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
+    }
+  }
+
   const server = await startTsServer(cwd)
   try {
     const vueScripts = new Map<string, string>()
+    const scripts: { path: string, source: string, script: string, imports: ReturnType<typeof listImports> }[] = []
     for (const path of candidatePaths) {
       const source = readFileSync(path, 'utf8')
       let script = source
       let scriptPath = path
       if (!isVuePath(path)) {
-        server.open(path)
+        server.open(path, source)
       }
       else {
         const { descriptor, errors } = parse(source, { filename: path })
@@ -85,15 +104,24 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
         server.open(scriptPath, script)
         vueScripts.set(scriptPath, path)
       }
-      if (!decl.exported)
-        continue
-      for (const imp of listImports(script, scriptPath)) {
+      const imports = decl.exported ? listImports(script, scriptPath).filter(imp => imp.namespaceImport) : []
+      if (imports.length)
+        scripts.push({ path, source, script, imports })
+    }
+    // Open every script before caching namespace resolution. Excluded scripts
+    // can contribute ambient modules or augmentations to the same project.
+    const inspectedNamespaces = new Set<string>()
+    for (const { path, source, script, imports } of scripts) {
+      for (const imp of imports) {
         const namespace = imp.namespaceImport
         if (!namespace)
           continue
         // Probe the export through the namespace, including wildcard barrels.
         // Reflective and dynamic namespace usage cannot be proved unused.
         const importText = script.slice(imp.start, imp.end)
+        const inspectionKey = `${dirname(path)}\0${importText}`
+        if (inspectedNamespaces.has(inspectionKey))
+          continue
         const access = `${namespace.name}.${symbol}`
         const probe = `${importText}\n${access};\ntype __RipastNamespace = ${access};`
         const probePath = inspectionPath(path, 'ts')
@@ -116,10 +144,14 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
             throw new Error(`ripast delete: cannot resolve a namespace import at ${relative(cwd, path)}:${line}:${col}. Use a resolvable import first.`)
           }
         }
+        inspectedNamespaces.add(inspectionKey)
       }
     }
     const references: DeleteReference[] = []
     for (const ref of await server.references(fromAbs, decl.nameStart)) {
+      // Generated references stay live evidence unless consumer inspection already proved the provider unused.
+      if (nuxtAdapter?.isGeneratedPath?.(cwd, ref.path) && inspectedScopes)
+        continue
       if (ref.path === fromAbs && ref.start >= decl.start && ref.start < decl.end)
         continue
       references.push({ file: relative(cwd, vueScripts.get(ref.path) ?? ref.path), line: ref.line, col: ref.col })

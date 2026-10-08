@@ -1,7 +1,7 @@
 import type { FileChange, FrameworkAdapter } from '@ripast/core/adapter'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { extractTemplateExpressions, scan } from '@ripast/core/adapter'
+import { extractTemplateExpressions, rgFiles, scan } from '@ripast/core/adapter'
 import { URI } from 'vscode-uri'
 import {
   applyVueImportRewrite,
@@ -14,6 +14,8 @@ import { findComponentUsage, findComponentUsages } from './component-usages.ts'
 import { listComponents } from './components.ts'
 import { doctor } from './doctor.ts'
 import { finalizeVueFileRename } from './finalize-rename.ts'
+import { loadNuxtProviderPaths, nuxtConsumerContext } from './nuxt-bindings.ts'
+import { inspectNuxtAutoImportConsumers, validateNuxtAutoImportRename } from './nuxt-delete.ts'
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
 import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
 import { createVueService, workspaceEditToChanges } from './service.ts'
@@ -47,6 +49,8 @@ const adapter: FrameworkAdapter = {
     return nuxtAutoImportScopes(cwd)
   },
   isGeneratedPath: isGeneratedNuxtPath,
+  inspectAutoImportConsumers: inspectNuxtAutoImportConsumers,
+  validateAutoImportRename: validateNuxtAutoImportRename,
   filterGeneratedChanges: removeGeneratedNuxtChanges,
   addExplicitImports: ctx => addNuxtExplicitImports({ ...ctx, scan }),
   async finalizeFileRename(cwd, oldAbs, newAbs, existingChanges) {
@@ -100,7 +104,13 @@ function nuxtAutoImportScopes(cwd: string): Set<string> {
     }
     catch {}
   }
-  return new Set([...dirs].map(dir => resolve(cwd, stripGlob(dir))))
+  const scopes = new Set([...dirs].map(dir => resolve(cwd, stripGlob(dir))))
+  const contexts = new Set([cwd, ...rgFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
+  for (const context of contexts) {
+    for (const provider of loadNuxtProviderPaths(context))
+      scopes.add(provider)
+  }
+  return scopes
 }
 
 function extractConfiguredDirs(source: string): string[] {

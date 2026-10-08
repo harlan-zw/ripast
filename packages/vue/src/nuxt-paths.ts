@@ -1,13 +1,14 @@
 import type { FileChange } from '@ripast/core/adapter'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
+import ts from '@typescript/typescript6'
 
 const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs|vue)$/
 const WIN_SEP_RE = /\\/g
 
 export function isGeneratedNuxtPath(cwd: string, filePath: string): boolean {
   const rel = relative(cwd, filePath).replace(/\\/g, '/')
-  return rel === '.nuxt' || rel.startsWith('.nuxt/')
+  return rel.split('/').includes('.nuxt')
 }
 
 export function removeGeneratedNuxtChanges(cwd: string, changes: FileChange[]): void {
@@ -52,13 +53,10 @@ function readTsconfigPaths(tsconfigPath: string): PathAlias[] {
     if (visited.has(path) || !existsSync(path))
       return []
     visited.add(path)
-    let json: any
-    try {
-      json = JSON.parse(stripJsonComments(readFileSync(path, 'utf8')))
-    }
-    catch {
+    const parsed = ts.parseConfigFileTextToJson(path, readFileSync(path, 'utf8'))
+    if (parsed.error)
       return []
-    }
+    const json = parsed.config
     const out: PathAlias[] = []
     const co = json.compilerOptions ?? {}
     const baseUrl = co.baseUrl ? resolve(dirname(path), co.baseUrl) : dirname(path)
@@ -80,10 +78,6 @@ function readTsconfigPaths(tsconfigPath: string): PathAlias[] {
     }
     return out
   }
-}
-
-function stripJsonComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
 
 /**

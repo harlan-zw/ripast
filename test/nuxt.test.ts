@@ -244,6 +244,7 @@ describe('nuxt auto-imports', () => {
     const fx = makeNuxtFixture()
     try {
       fx.write('composables/useCounter.ts', `import { ref } from 'vue'\n\nexport function useCounter() {\n  return ref(useCounterStart())\n}\n\nexport function useCounterStart() {\n  return 1\n}\n`)
+      fx.write('.nuxt/imports.d.ts', `${fx.read('.nuxt/imports.d.ts')}\ndeclare global { const useCounterStart: typeof import('../composables/useCounter')['useCounterStart'] }\n`)
       fx.write('pages/sibling.vue', `<script setup lang="ts">\nconst counter = useCounter()\nconst start = useCounterStart()\n</script>\n<template>{{ counter }} {{ start }}</template>\n`)
       const result = await runRenameFile('composables/useCounter.ts', 'internal/composables/useCounter.ts', { cwd: fx.dir, verify: false })
       applyRenameFile(result)
@@ -261,6 +262,7 @@ describe('nuxt auto-imports', () => {
     try {
       fx.write('shared/constant.ts', 'export const ONE = 1\n')
       fx.write('composables/useThing.ts', `import { ONE } from '../shared/constant'\nexport function useThing() { return ONE }\n`)
+      fx.write('.nuxt/imports.d.ts', `${fx.read('.nuxt/imports.d.ts')}\ndeclare global { const useThing: typeof import('../composables/useThing')['useThing'] }\n`)
       fx.write('pages/thing.vue', `<script setup lang="ts">\nconst v = useThing()\n</script>\n<template>{{ v }}</template>\n`)
       const result = await runRenameFile('composables/useThing.ts', 'internal/composables/useThing.ts', { cwd: fx.dir, verify: false })
       applyRenameFile(result)
