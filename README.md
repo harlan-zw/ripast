@@ -41,67 +41,27 @@ Use a plain edit for a small, local change, or `rg` for text inside strings and 
 
 ## Installation
 
-Requires Node 22.13+. These examples use [pnpm](https://pnpm.io/installation).
+Requires Node 22.13+.
 
-From your project root, preview a rename without installing globally.
-Replace the example names and declaration path with a symbol from your project:
+1. Install Ripast:
 
-```bash
-pnpm dlx @ripast/cli rename useStore useAppStore --scope src/store.ts --profile full
-```
+   ```bash
+   npm install -g @ripast/cli
+   ```
 
-If the diff matches your intent, add `--apply` to write it.
-Supported refactors check type diagnostics before writing. See [verification scope](#verify).
+2. Install the [Ripast Agent Skill on skilld.dev](https://skilld.dev/gh/harlan-zw/ripast) in your project:
 
-> [!TIP]
-> Install the [Ripast Agent Skill](./packages/cli/skills/ripast/SKILL.md) with `pnpm dlx skilld add @ripast/cli`.
-> The Skill tells your agent when to use Ripast and how to run verified refactors.
+   ```bash
+   npx skilld add @ripast/cli
+   ```
 
-To use the `ripast` command in the examples below, install the CLI globally:
+3. Optionally install [ripgrep](https://github.com/BurntSushi/ripgrep#installation) for faster searches.
 
-```bash
-pnpm add -g @ripast/cli
-```
+4. Ask your coding agent:
 
-The CLI installs `@ripast/vue` automatically when it detects Vue or Nuxt in your project.
-To provide the adapter yourself:
-
-```bash
-pnpm --package @ripast/cli --package @ripast/vue dlx ripast rename useStore useAppStore
-```
-
-Programmatic users install `@ripast/core` (and any adapters they need) directly:
-
-```bash
-pnpm add @ripast/core @ripast/vue
-```
-
-Ripast uses `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) when it is available on `PATH`.
-If it is missing, Ripast searches files in Node instead. This can be slower.
-Both paths support fixed-string searches, file listing, globs, and standard ignore files.
-Programmatic regex searches still require `rg`.
-
-For faster searches, optionally install ripgrep:
-
-| System | Command |
-| --- | --- |
-| macOS with Homebrew | `brew install ripgrep` |
-| Ubuntu or Debian | `sudo apt-get install ripgrep` |
-| Windows with Winget | `winget install BurntSushi.ripgrep.MSVC` |
-
-Run `rg --version` to confirm installation. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
-
-Automatic adapter installation prefers `pnpm` and falls back to `npm` if `pnpm` is missing.
-The npm fallback uses a separate temporary prefix and preserves your project directory.
-The launcher needs a package manager only when a detected framework lacks an adapter.
-If both are missing, follow the [pnpm installation guide](https://pnpm.io/installation), then retry.
-You can install the CLI and adapters together to avoid this step:
-
-```bash
-pnpm add -g @ripast/cli @ripast/vue
-```
-
-For script-only `rename`, `move`, or `rename-file` commands, pass `--no-vue` to skip the adapter.
+   ```text
+   Find better names for functions.
+   ```
 
 ## Usage
 
@@ -362,7 +322,7 @@ const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cw
 
 The [core exports](./packages/core/src/index.ts) include refactors, scans, declaration trees, formatters, and the `writeChanges` helper.
 
-## Recipes & limitations
+## Limitations
 
 **Scoping with `--glob`.** Pass comma-separated patterns. Prefix a pattern with `!` to exclude matching files:
 
