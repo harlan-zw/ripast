@@ -194,14 +194,19 @@ export function pruneUnusedImports(source: string, path: string): string {
 export function addOrMergeImport(source: string, path: string, specifier: string, spec: ImportSpec): string {
   const program = parseProgram(path, source)
   const imports = listImports(source, path, program)
-  const existing = imports.find(i => i.specifier === specifier && i.isTypeOnly === !!spec.isTypeOnly && !i.sideEffectOnly)
+  const existing = imports.find(i => i.specifier === specifier && i.isTypeOnly === !!spec.isTypeOnly && !i.sideEffectOnly
+    && !(spec.namedImports.length && i.namespaceImport)
+    && !(spec.namespaceImport && i.named.length)
+    && !(spec.defaultImport && i.defaultImport && spec.defaultImport !== i.defaultImport.name)
+    && !(spec.namespaceImport && i.namespaceImport && spec.namespaceImport !== i.namespaceImport.name))
   if (existing) {
     const next: ImportInfo = { ...existing, named: [...existing.named] }
-    const have = new Set(existing.named.map(n => n.name))
+    const bindingKey = (binding: { name: string, alias?: string }): string => `${binding.name}\0${binding.alias ?? binding.name}`
+    const have = new Set(existing.named.map(bindingKey))
     for (const ni of spec.namedImports) {
-      if (have.has(ni.name))
+      if (have.has(bindingKey(ni)))
         continue
-      have.add(ni.name)
+      have.add(bindingKey(ni))
       next.named.push({ name: ni.name, alias: ni.alias, isTypeOnly: !existing.isTypeOnly && !!ni.isTypeOnly, localStart: -1 })
     }
     if (spec.defaultImport && !existing.defaultImport)
