@@ -1,6 +1,6 @@
 ---
 name: ripast
-description: "Use Ripast for AST-aware renames, moves, usages, imports, and CSS class migrations across TS, JS, and Vue. Trigger for mechanical changes spanning files."
+description: "AST refactors: renames, moves, imports, and CSS classes in TS/JS/Vue."
 ---
 
 Ripast performs deterministic refactors across TS, JS, JSX, and Vue.
