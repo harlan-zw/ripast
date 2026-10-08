@@ -15,7 +15,7 @@ export function visitClassTokens(input: string, visit: (bare: string) => void): 
 
 export function bareToken(token: string): string | null {
   const { tail } = splitVariantPrefix(token)
-  const bare = tail.startsWith('!') ? tail.slice(1) : tail
+  const bare = tail.replace(/^!|!$/g, '')
   if (!bare || NUMERIC_RE.test(bare))
     return null
   if (!hasTokenShape(bare))
@@ -25,9 +25,9 @@ export function bareToken(token: string): string | null {
 
 function hasTokenShape(token: string): boolean {
   const name = TOKEN_NAME_RE.exec(token)
-  if (!name)
+  if (!name && token[0] !== '[')
     return false
-  let end = name[0].length
+  let end = name?.[0].length ?? 0
   if (token[end] !== '[')
     return TOKEN_MODIFIER_RE.test(token.slice(end))
   let depth = 0
@@ -107,11 +107,12 @@ function visitTokenRanges(input: string, visit: (start: number, end: number) => 
 export function rewriteToken(token: string, map: RenameMap): string {
   const { prefix, tail } = splitVariantPrefix(token)
   const bang = tail.startsWith('!') ? '!' : ''
-  const bare = bang ? tail.slice(1) : tail
+  const suffix = tail.endsWith('!') ? '!' : ''
+  const bare = tail.slice(bang.length, suffix ? -1 : undefined)
   const replacement = map.get(bare)
   if (replacement === undefined)
     return token
-  return prefix + bang + replacement
+  return prefix + bang + replacement + suffix
 }
 
 function splitVariantPrefix(token: string): { prefix: string, tail: string } {
