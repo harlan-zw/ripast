@@ -67,4 +67,16 @@ describe('class expression contexts', () => {
     }
     finally { fx.cleanup() }
   })
+
+  it.each(['!important', ' !important', ' ! important', '!/* flag */important', '!IMPORTANT', ' !ImPoRtAnT'])('preserves attached or separated CSS important flag %s', async (flag) => {
+    const fx = makeFixture({ 'app.css': `.example { @apply flex${flag}; }` }, false)
+    try {
+      expect(runCssClassScan({ cwd: fx.dir })).toEqual([{ token: 'flex', count: 1, files: ['app.css'] }])
+      const result = await runCssClassRename(new Map([['flex', 'grid'], ['important', 'hidden']]), { cwd: fx.dir })
+      fx.write('app.css', result.changes[0].after)
+      expect(runCssClassScan({ cwd: fx.dir })).toEqual([{ token: 'grid', count: 1, files: ['app.css'] }])
+      expect(result.changes[0].after).toContain(`@apply grid${flag};`)
+    }
+    finally { fx.cleanup() }
+  })
 })

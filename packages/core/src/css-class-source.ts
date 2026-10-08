@@ -462,12 +462,14 @@ function visitCssApplyRanges(source: string, syntax: CssSyntax, visit: (start: n
       }
       continue
     }
-    const importantEnd = /[\s;}]/.test(source[i + 10] ?? ';') || source.startsWith('/*', i + 10) || (syntax.lineComments && source.startsWith('//', i + 10))
-    if (!depth && source.startsWith('!important', i) && /\s/.test(source[i - 1] ?? '') && importantEnd) {
-      visit(applyStart, i)
-      i += 9
-      applyStart = i + 1
-      continue
+    if (!depth && char === '!') {
+      const end = cssImportantEnd(source, i, syntax)
+      if (end !== undefined) {
+        visit(applyStart, i)
+        i = end - 1
+        applyStart = end
+        continue
+      }
     }
     if (char === '[') {
       depth++
@@ -482,6 +484,32 @@ function visitCssApplyRanges(source: string, syntax: CssSyntax, visit: (start: n
   }
   if (applyStart !== -1)
     visit(applyStart, source.length)
+}
+
+function cssImportantEnd(source: string, start: number, syntax: CssSyntax): number | undefined {
+  let cursor = start + 1
+  while (cursor < source.length) {
+    if (/\s/.test(source[cursor])) {
+      if (syntax.indented && /[\r\n]/.test(source[cursor]))
+        return undefined
+      cursor++
+    }
+    else if (source.startsWith('/*', cursor)) {
+      const end = source.indexOf('*/', cursor + 2)
+      if (end === -1)
+        return undefined
+      cursor = end + 2
+    }
+    else {
+      break
+    }
+  }
+  if (source.slice(cursor, cursor + 9).toLowerCase() !== 'important')
+    return undefined
+  const end = cursor + 9
+  if (end === source.length || /[\s;}]/.test(source[end]) || source.startsWith('/*', end) || (syntax.lineComments && source.startsWith('//', end)))
+    return end
+  return undefined
 }
 
 function mapIncludesAny(input: string, map: RenameMap): boolean {
