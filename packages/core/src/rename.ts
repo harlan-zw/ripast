@@ -132,14 +132,15 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     }
 
     const regressions: Regression[] = []
+    const verificationChanges = [...changes, ...autoImportPlan?.verificationChanges ?? []]
     if (verifyMode !== 'none') {
-      const scriptChanges = changes.filter(c => !isVue(c.path))
+      const scriptChanges = verificationChanges.filter(c => !isVue(c.path))
       const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path), opts.glob)
       regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, verifyFiles)))
     }
 
     if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
-      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes)
+      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, verificationChanges)
       regressions.push(...vueRegs)
     }
 

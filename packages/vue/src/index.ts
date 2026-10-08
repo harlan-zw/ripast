@@ -3,8 +3,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { extractTemplateExpressions, rgFiles, scan } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
-import { URI } from 'vscode-uri'
 import {
+  applyVueFileRenameEdits,
   applyVueImportRewrite,
   applyVueRename,
   hasVueFilesContaining,
@@ -20,7 +20,6 @@ import { inspectNuxtAutoImportConsumers, validateNuxtAutoImportRename } from './
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
 import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
 import { planNuxtAutoImportRename } from './nuxt-rename.ts'
-import { createVueService, workspaceEditToChanges } from './service.ts'
 
 export { parseComponent, parseComponentSource } from './component-parse.ts'
 export type { ParsedComponentShape, PropSig } from './component-parse.ts'
@@ -37,13 +36,8 @@ const adapter: FrameworkAdapter = {
   regressions: vueRegressions,
   extractTemplateExpressions,
   async applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs) {
-    const vue = createVueService(tsconfigPath, cwd)
-    try {
-      const edits = await vue.service.getFileRenameEdits(URI.file(oldAbs), URI.file(newAbs))
-      const changes = edits ? workspaceEditToChanges(edits, vue, cwd) : []
-      return rewriteUnportableAliasSpecifiers(cwd, changes, newAbs)
-    }
-    finally { vue.dispose() }
+    const changes = await applyVueFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
+    return rewriteUnportableAliasSpecifiers(cwd, changes, newAbs)
   },
   autoImportScopes(cwd) {
     if (!isNuxtProject(cwd))

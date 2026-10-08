@@ -135,3 +135,8 @@ function resolveBindingTarget(cwd: string, declarationPath: string, specifier: s
   const target = [...targets][0]
   return targets.size === 1 && target && !isGeneratedNuxtPath(cwd, target) ? { _tag: 'Resolved', path: target } : { _tag: 'Unknown' }
 }
+
+export function isNuxtBindingTarget(cwd: string, declarationPath: string, specifier: string, providers: Set<string>): boolean {
+  const target = resolveBindingTarget(cwd, declarationPath, specifier, loadNuxtPathAliases(cwd))
+  return target._tag === 'Resolved' && [...providers].some(provider => realpathSync(provider) === target.path)
+}

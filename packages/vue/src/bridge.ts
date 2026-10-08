@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { posToLineCol, rewriteTemplateReferences } from '@ripast/core/adapter'
 import { URI } from 'vscode-uri'
-import { createVueService, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
+import { createVueService, vueProjectConfigs, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
 import { hasVueFilesContaining, listVueFiles, listVueFilesContaining } from './vue-files.ts'
 
 export { hasVueFilesContaining }
@@ -16,50 +16,53 @@ export async function applyVueRename(
   sites: RenameSite[],
   autoImportPlan?: AutoImportRenamePlan,
 ): Promise<FileChange[]> {
-  const vue = createVueService(tsconfigPath, cwd)
-  try {
-    const byPath = new Map<string, FileChange>()
-    for (const site of sites) {
-      const uri = URI.file(resolve(cwd, site.filePath))
-      const { line, col } = posToLineCol(site.source, site.pos)
-      const edits = await vue.service.getRenameEdits(uri, { line: line - 1, character: col - 1 }, to)
-      if (!edits)
-        continue
-      const vueChanges = workspaceEditToChanges(edits, vue, cwd, fileName => fileName.endsWith('.vue'), autoImportPlan?.transformEdits)
-      for (const c of vueChanges) {
-        if (byPath.has(c.path))
+  const byPath = new Map<string, FileChange>()
+  for (const project of vueProjectConfigs(tsconfigPath)) {
+    const vue = createVueService(project.tsconfigPath, cwd)
+    try {
+      for (const site of sites) {
+        const uri = URI.file(resolve(cwd, site.filePath))
+        const { line, col } = posToLineCol(site.source, site.pos)
+        const edits = await vue.service.getRenameEdits(uri, { line: line - 1, character: col - 1 }, to)
+        if (!edits)
           continue
-        byPath.set(c.path, c)
+        const vueChanges = workspaceEditToChanges(edits, vue, cwd, fileName => fileName.endsWith('.vue'), autoImportPlan?.transformEdits)
+        for (const c of vueChanges) {
+          const existing = byPath.get(c.path)
+          if (existing && existing.after !== c.after)
+            throw new Error(`ripast: Vue projects disagree on edits for ${c.rel}. Use an explicit tsconfig.`)
+          byPath.set(c.path, c)
+        }
       }
     }
-    if (autoImportPlan)
-      return [...byPath.values()]
-    // Volar misses Vue template references: component tag usage and pure-template-only
-    // identifier refs (used in {{ }} but not in script). Sweep .vue consumers that
-    // mention `from` and apply a template-AST post-pass.
-    const consumerPaths = new Set<string>(byPath.keys())
-    for (const p of listVueFilesContaining(cwd, from)) consumerPaths.add(p)
-    for (const path of consumerPaths) {
-      const existing = byPath.get(path)
-      const before = existing?.before ?? safeReadFile(path)
-      if (before === undefined)
-        continue
-      const baseAfter = existing?.after ?? before
-      if (hasLocalScriptBinding(baseAfter, from))
-        continue
-      const rewritten = rewriteTemplateReferences(baseAfter, from, to)
-      if (rewritten === baseAfter)
-        continue
-      byPath.set(path, {
-        path,
-        rel: existing?.rel ?? workspaceRelativePath(path, cwd),
-        before,
-        after: rewritten,
-      })
-    }
-    return [...byPath.values()]
+    finally { vue.dispose() }
   }
-  finally { vue.dispose() }
+  if (autoImportPlan)
+    return [...byPath.values()]
+  // Volar misses Vue template references: component tag usage and pure-template-only
+  // identifier refs (used in {{ }} but not in script). Sweep .vue consumers that
+  // mention `from` and apply a template-AST post-pass.
+  const consumerPaths = new Set<string>(byPath.keys())
+  for (const p of listVueFilesContaining(cwd, from)) consumerPaths.add(p)
+  for (const path of consumerPaths) {
+    const existing = byPath.get(path)
+    const before = existing?.before ?? safeReadFile(path)
+    if (before === undefined)
+      continue
+    const baseAfter = existing?.after ?? before
+    if (hasLocalScriptBinding(baseAfter, from))
+      continue
+    const rewritten = rewriteTemplateReferences(baseAfter, from, to)
+    if (rewritten === baseAfter)
+      continue
+    byPath.set(path, {
+      path,
+      rel: existing?.rel ?? workspaceRelativePath(path, cwd),
+      before,
+      after: rewritten,
+    })
+  }
+  return [...byPath.values()]
 }
 
 function hasLocalScriptBinding(source: string, name: string): boolean {
@@ -91,16 +94,33 @@ export async function applyVueImportRewrite(
   fromAbs: string,
   toAbs: string,
 ): Promise<FileChange[]> {
-  const vue = createVueService(tsconfigPath, cwd)
-  try {
-    const oldUri = URI.file(fromAbs)
-    const newUri = URI.file(toAbs)
-    const edits = await vue.service.getFileRenameEdits(oldUri, newUri)
-    if (!edits)
-      return []
-    return workspaceEditToChanges(edits, vue, cwd, fileName => fileName.endsWith('.vue'))
+  return applyVueFileRenameEdits(tsconfigPath, cwd, fromAbs, toAbs, fileName => fileName.endsWith('.vue'))
+}
+
+export async function applyVueFileRenameEdits(
+  tsconfigPath: string,
+  cwd: string,
+  fromAbs: string,
+  toAbs: string,
+  filter?: (fileName: string) => boolean,
+): Promise<FileChange[]> {
+  const byPath = new Map<string, FileChange>()
+  for (const project of vueProjectConfigs(tsconfigPath)) {
+    const vue = createVueService(project.tsconfigPath, cwd)
+    try {
+      const edits = await vue.service.getFileRenameEdits(URI.file(fromAbs), URI.file(toAbs))
+      if (!edits)
+        continue
+      for (const change of workspaceEditToChanges(edits, vue, cwd, filter)) {
+        const existing = byPath.get(change.path)
+        if (existing && existing.after !== change.after)
+          throw new Error(`ripast: Vue projects disagree on edits for ${change.rel}. Use an explicit tsconfig.`)
+        byPath.set(change.path, change)
+      }
+    }
+    finally { vue.dispose() }
   }
-  finally { vue.dispose() }
+  return [...byPath.values()]
 }
 
 export async function vueRegressions(
@@ -109,47 +129,73 @@ export async function vueRegressions(
   pendingChanges: FileChange[],
 ): Promise<Regression[]> {
   const vueFiles = listVueFiles(cwd)
-  if (!vueFiles.length)
+  const pendingVue = pendingChanges.filter(change => change.path.endsWith('.vue'))
+  if (!vueFiles.length && !pendingVue.length)
     return []
-  const vue = createVueService(tsconfigPath, cwd)
-  try {
-    const baselinePairs = await withFilteredConsoleWarn(() => Promise.all(
-      vueFiles.map(async file => [file, await collectDiagKeys(vue, file)] as const),
-    ))
-    const baseline = new Map(baselinePairs)
-    for (const c of pendingChanges) {
-      vue.setSnapshot(c.path, c.after)
-    }
-    const checkSet = [...new Set<string>([...vueFiles, ...pendingChanges.filter(c => c.path.endsWith('.vue')).map(c => c.path)])]
-    const postPairs = await withFilteredConsoleWarn(() => Promise.all(
-      checkSet.map(async file => [file, await getDiags(vue, file)] as const),
-    ))
-    const out: Regression[] = []
-    for (const [file, post] of postPairs) {
-      const before = baseline.get(file) ?? new Set()
-      for (const d of post) {
-        const key = diagKey(d)
-        if (before.has(key))
+  const projects = vueProjectConfigs(tsconfigPath)
+  for (const change of pendingVue) {
+    if (projects.some(project => project.files.includes(change.path)))
+      continue
+    if (projects.length !== 1)
+      throw new Error(`ripast: cannot select a Vue project for ${change.rel}. Use an explicit tsconfig.`)
+    projects[0].files.push(change.path)
+  }
+  const out: Regression[] = []
+  for (const project of projects) {
+    const selected = new Set(project.files)
+    const files = [...new Set([...vueFiles, ...pendingVue.map(change => change.path)])].filter(file => selected.has(file))
+    if (!files.length)
+      continue
+    const vue = createVueService(project.tsconfigPath, cwd)
+    try {
+      const baselinePairs = await withFilteredConsoleWarn(() => Promise.all(
+        files.map(async file => [file, await collectDiagKeys(vue, file)] as const),
+      ))
+      const baseline = new Map(baselinePairs)
+      for (const c of pendingChanges) {
+        if (c.path.endsWith('.vue') && !selected.has(c.path))
           continue
-        if (d.severity !== 1)
-          continue
-        out.push({
-          file,
-          line: d.range.start.line + 1,
-          col: d.range.start.character + 1,
-          code: typeof d.code === 'number' ? d.code : 0,
-          message: typeof d.message === 'string' ? d.message : String(d.message),
-        })
+        vue.setSnapshot(c.path, c.after)
+      }
+      const postPairs = await withFilteredConsoleWarn(() => Promise.all(
+        files.map(async file => [file, await getDiags(vue, file)] as const),
+      ))
+      for (const [file, post] of postPairs) {
+        const before = baseline.get(file) ?? new Map<string, number>()
+        const seen = new Map<string, number>()
+        for (const d of post) {
+          const key = diagKey(d)
+          if (d.severity !== 1)
+            continue
+          const count = (seen.get(key) ?? 0) + 1
+          seen.set(key, count)
+          if (count <= (before.get(key) ?? 0))
+            continue
+          out.push({
+            file,
+            line: d.range.start.line + 1,
+            col: d.range.start.character + 1,
+            code: typeof d.code === 'number' ? d.code : 0,
+            message: typeof d.message === 'string' ? d.message : String(d.message),
+          })
+        }
       }
     }
-    return out
+    finally { vue.dispose() }
   }
-  finally { vue.dispose() }
+  return out
 }
 
-async function collectDiagKeys(vue: ReturnType<typeof createVueService>, fileName: string): Promise<Set<string>> {
+async function collectDiagKeys(vue: ReturnType<typeof createVueService>, fileName: string): Promise<Map<string, number>> {
   const diags = await getDiags(vue, fileName)
-  return new Set(diags.map(diagKey))
+  const counts = new Map<string, number>()
+  for (const diagnostic of diags) {
+    if (diagnostic.severity !== 1)
+      continue
+    const key = diagKey(diagnostic)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return counts
 }
 
 async function getDiags(vue: ReturnType<typeof createVueService>, fileName: string): Promise<{ range: { start: { line: number, character: number } }, severity?: number, code?: string | number, message: string }[]> {
@@ -158,5 +204,5 @@ async function getDiags(vue: ReturnType<typeof createVueService>, fileName: stri
 }
 
 function diagKey(d: { range: { start: { line: number, character: number } }, code?: string | number, message: string }): string {
-  return `${d.range.start.line}:${d.range.start.character}:${d.code ?? ''}:${d.message}`
+  return `${d.code ?? ''}:${d.message}`
 }

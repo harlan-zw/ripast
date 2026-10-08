@@ -7,6 +7,7 @@ import { compileScript, compileTemplate, parse, registerTS } from '@vue/compiler
 import { loadNuxtBindingNames, nuxtConsumerContext } from './nuxt-bindings.ts'
 import { inspectScript, inspectSetup } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath } from './nuxt-paths.ts'
+import { nuxtRenameVerificationChanges } from './nuxt-rename-verification.ts'
 
 interface Reference {
   name: string
@@ -68,6 +69,7 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
   }
   return {
     changes,
+    verificationChanges: nuxtRenameVerificationChanges(cwd, new Set([...bindings.keys(), ...sites.map(site => nuxtConsumerContext(site.filePath, cwd))]), providers, from, to),
     transformEdits(path, source, semanticEdits) {
       const plan = plans.get(path)
       if (!plan)

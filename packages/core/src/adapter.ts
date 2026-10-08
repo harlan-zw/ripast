@@ -28,6 +28,7 @@ export interface RenameSite {
 
 export interface AutoImportRenamePlan {
   changes: FileChange[]
+  verificationChanges: FileChange[]
   transformEdits: (path: string, source: string, edits: TextEdit[]) => TextEdit[]
 }
 
