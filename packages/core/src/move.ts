@@ -5,9 +5,11 @@ import type { VerifyMode } from './project.ts'
 import type { TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
+import { parse as parseSfc } from '@vue/compiler-sfc'
 import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
 import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, localBindingNames, parseSource, removeDeclaration } from './declarations.ts'
@@ -458,9 +460,18 @@ async function importResolvesTo(server: TsServer, path: string, imp: ImportInfo,
 
 async function findUnsupportedModuleConsumer(server: TsServer, paths: string[], fromAbs: string): Promise<string | null> {
   for (const path of paths) {
-    if (isVuePath(path))
-      continue
-    const program = parseProgram(path, readFileSync(path, 'utf8'))
+    const source = readFileSync(path, 'utf8')
+    let script = source
+    let scriptPath = path
+    if (isVuePath(path)) {
+      const { descriptor } = parseSfc(source, { filename: path })
+      const blocks = [descriptor.script, descriptor.scriptSetup].filter(block => block !== null)
+      script = blocks.map(block => block.content).join('\n')
+      const extension = blocks.some(block => block.lang === 'tsx' || block.lang === 'jsx') ? 'tsx' : 'ts'
+      scriptPath = `${path}.${randomUUID()}.${extension}`
+      server.open(scriptPath, script)
+    }
+    const program = parseProgram(scriptPath, script)
     const modules: any[] = []
     walk(program, {
       enter(node: any) {
@@ -477,7 +488,7 @@ async function findUnsupportedModuleConsumer(server: TsServer, paths: string[], 
         if (relativeImportTarget(path, module.value) === fromAbs)
           return path
       }
-      else if ((await server.definition(path, module.start + 1)).some(definition => definition.path === fromAbs)) {
+      else if ((await server.definition(scriptPath, module.start + 1)).some(definition => definition.path === fromAbs)) {
         return path
       }
     }

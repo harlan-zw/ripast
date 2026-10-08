@@ -110,3 +110,20 @@ it('move refuses ambiguous emitted and source modules', async () => {
   }
   finally { fx.cleanup() }
 })
+
+it.each([
+  ['setup namespace', 'import * as source from \'./source.ts\'; const result = source.helper() + source.other', 'script setup'],
+  ['setup dynamic', 'const source = await import(\'./source.ts\'); const result = source.helper() + source.other', 'script setup'],
+  ['normal namespace', 'import * as source from \'./source.ts\'; const result = source.helper() + source.other', 'script'],
+  ['normal dynamic', 'const source = await import(\'./source.ts\'); const result = source.helper() + source.other', 'script'],
+])('move refuses unsupported Vue %s imports', async (_, script, tag) => {
+  const fx = makeFixture({
+    'source.ts': 'export function helper() { return 42 }\nexport const other = 1\n',
+    'target.ts': '',
+    'consumer.vue': `<${tag} lang="ts">${script}</script><template>{{ result }}</template>`,
+  })
+  try {
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false }), /consumer\.vue.*Use named imports first/)
+  }
+  finally { fx.cleanup() }
+})
