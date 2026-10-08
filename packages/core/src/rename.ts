@@ -125,7 +125,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
             changes.push(change)
         }
         for (const decl of autoImportSites)
-          vueAdapter.validateAutoImportRename?.({ cwd, symbol: from, fromAbs: decl.filePath, changes, scopes })
+          vueAdapter.validateAutoImportRename?.({ cwd, symbol: from, to, fromAbs: decl.filePath, changes, scopes })
       }
       if (scopes.size)
         vueAdapter.filterGeneratedChanges?.(cwd, changes)
