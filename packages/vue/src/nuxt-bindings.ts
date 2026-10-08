@@ -1,3 +1,4 @@
+import type { PathAlias } from './nuxt-paths.ts'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import ts from '@typescript/typescript6'
@@ -21,6 +22,7 @@ export function nuxtConsumerContext(path: string, cwd: string): string {
 /** Exact local providers extend scope without treating every app directory as a Nuxt source directory. */
 export function loadNuxtProviderPaths(cwd: string): Set<string> {
   const out = new Set<string>()
+  let aliases: PathAlias[] | undefined
   for (const path of [join(cwd, '.nuxt/imports.d.ts'), join(cwd, '.nuxt/types/imports.d.ts')]) {
     if (!existsSync(path))
       continue
@@ -30,7 +32,7 @@ export function loadNuxtProviderPaths(cwd: string): Set<string> {
         ? node.argument.literal.text
         : ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : undefined
       if (module) {
-        const target = resolveBindingTarget(cwd, path, module)
+        const target = resolveBindingTarget(cwd, path, module, aliases ??= loadNuxtPathAliases(cwd))
         if (target._tag === 'Resolved')
           out.add(target.path)
       }
@@ -50,9 +52,10 @@ export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: strin
   let mapped = false
   let unresolved = false
   const providers = new Map<string, string>()
+  let aliases: PathAlias[] | undefined
   const record = (name: string, specifier: string, path: string): void => {
     mapped = true
-    const target = resolveBindingTarget(cwd, path, specifier)
+    const target = resolveBindingTarget(cwd, path, specifier, aliases ??= loadNuxtPathAliases(cwd))
     if (target._tag === 'Unknown') {
       unresolved = true
       return
@@ -110,9 +113,9 @@ export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: strin
   return mapped && !unresolved ? { _tag: 'Resolved', names: [...names] } : { _tag: 'Unknown' }
 }
 
-function resolveBindingTarget(cwd: string, declarationPath: string, specifier: string): { _tag: 'Resolved', path: string } | { _tag: 'Unknown' } {
+function resolveBindingTarget(cwd: string, declarationPath: string, specifier: string, aliases: PathAlias[]): { _tag: 'Resolved', path: string } | { _tag: 'Unknown' } {
   const bases: string[] = []
-  for (const alias of loadNuxtPathAliases(cwd)) {
+  for (const alias of aliases) {
     const prefix = alias.wildcard ? alias.pattern.slice(0, -1) : alias.pattern
     if (alias.wildcard ? specifier.startsWith(prefix) : specifier === prefix) {
       for (const target of alias.targets)
