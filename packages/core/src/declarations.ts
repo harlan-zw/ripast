@@ -31,6 +31,7 @@ export interface ParsedSource {
 
 const KIND_BY_TYPE: Record<string, DeclarationKind> = {
   FunctionDeclaration: 'function',
+  TSDeclareFunction: 'function',
   ClassDeclaration: 'class',
   TSInterfaceDeclaration: 'interface',
   TSTypeAliasDeclaration: 'type',

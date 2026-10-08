@@ -80,12 +80,12 @@ async function findReplacementTarget(server: TsServer, paths: string[], symbol: 
       matches.push({ filePath: path, importName: symbol, isTypeOnly: decl.kind === 'interface' || decl.kind === 'type', declarationFiles: [path] })
       continue
     }
-    // Automatic discovery keeps its existing direct-declaration policy.
-    // Select a named barrel explicitly with targetScope.
-    if (!targetScope)
-      continue
+    // Automatic discovery includes same-file export lists.
+    // Select module re-exports explicitly with targetScope.
     for (const statement of program.body) {
       if (statement.type !== 'ExportNamedDeclaration' || statement.declaration)
+        continue
+      if (!targetScope && statement.source)
         continue
       const specifier = statement.specifiers.find((item: { exported: { name?: string, value?: string } }) => (item.exported.name ?? item.exported.value) === symbol)
       if (!specifier)

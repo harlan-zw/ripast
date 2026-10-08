@@ -252,23 +252,33 @@ function findDeclarations(paths: string[], name: string, allowMultiple = false):
       if (node?.type === 'VariableDeclaration') {
         for (const declarator of node.declarations) addPattern(declarator.id, 'TopLevel')
       }
+      if (node?.type === 'TSModuleDeclaration')
+        addPattern(node.id, 'TopLevel')
     }
     walk(program, {
       enter(node: any) {
-        if (node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type) || node.type === 'FunctionExpression' || node.type === 'ClassExpression')
+        if (node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type) || node.type === 'FunctionExpression' || node.type === 'ClassExpression' || node.type === 'TSModuleDeclaration' || node.type === 'TSImportEqualsDeclaration')
           addPattern(node.id, 'Local')
+        if (node.type === 'TSTypeParameter')
+          addPattern(node.name, 'Local', parameters)
+        if (node.type === 'TSMappedType')
+          addPattern(node.key, 'Local', parameters)
+        if (node.type === 'ImportSpecifier' || node.type === 'ImportDefaultSpecifier' || node.type === 'ImportNamespaceSpecifier')
+          addPattern(node.local, 'Local', parameters)
         for (const parameter of node.params ?? []) addPattern(parameter, 'Local', parameters)
         if (node.type === 'CatchClause')
           addPattern(node.param, 'Local', parameters)
       },
     })
   }
+  if (allowMultiple)
+    return [...new Map([...parameters, ...locals, ...out].map(declaration => [`${declaration.filePath}:${declaration.pos}`, declaration])).values()]
   // Keep top-level renames from changing unrelated local shadows.
   if (out.length)
     return out
-  if (allowMultiple || !locals.length)
+  if (!locals.length)
     locals.push(...parameters)
-  if (!allowMultiple && locals.length > new Set(locals.map(d => d.filePath)).size)
+  if (locals.length > new Set(locals.map(d => d.filePath)).size)
     throw new Error(`ripast rename: "${name}" has multiple declarations in one file. Pass --all to rename every occurrence.`)
   return locals
 }
