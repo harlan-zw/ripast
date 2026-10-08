@@ -1,7 +1,7 @@
 import type { FileChange, FrameworkAdapter } from '@ripast/core/adapter'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { extractTemplateExpressions, rgFiles, scan } from '@ripast/core/adapter'
+import { extractTemplateExpressions, findFiles, scan } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
 import {
   applyVueFileRenameEdits,
@@ -93,7 +93,7 @@ function isNuxtProject(cwd: string): boolean {
 
 function nuxtAutoImportScopes(cwd: string): Set<string> {
   const scopes = new Set<string>()
-  const contexts = new Set([cwd, ...rgFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
+  const contexts = new Set([cwd, ...findFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
   for (const context of contexts) {
     const configPath = ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mjs', 'nuxt.config.mts']
       .map(name => join(context, name))

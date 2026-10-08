@@ -6,7 +6,7 @@ import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifierRanges, parseSource } from './declarations.ts'
 import { listImports } from './imports.ts'
 import { startTsServer } from './ts-server.ts'
-import { parseFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+import { findFiles, findFilesMany, parseFile, posToLineCol } from './util.ts'
 import { extractTemplateExpressions } from './vue-template.ts'
 
 export interface ScanHit {
@@ -73,7 +73,7 @@ export interface UnusedDeclarations {
 
 export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
+  const files = findFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
   const hits: ScanHit[] = []
   for (const f of files) {
     const file = parseFile(f, cwd)
@@ -103,7 +103,7 @@ export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
 
 export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGraph {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
+  const files = findFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
   const hitsByFile = new Map<string, ScanHit[]>()
   const parsed = files.map((f) => {
     const file = parseFile(f, cwd)
@@ -162,7 +162,7 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
 
 export function buildDeclarationTree(opts: ScanOptions & { exports?: ExportFilter } = {}): DeclarationTree {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+  const files = findFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
   const exportFilter = opts.exports ?? 'all'
   return buildDeclarationTreeForPaths(cwd, files, exportFilter)
 }
@@ -199,7 +199,7 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
 export async function buildUnusedDeclarations(opts: ScanOptions & { exports?: ExportFilter } = {}): Promise<UnusedDeclarations> {
   const cwd = opts.cwd ?? process.cwd()
   const exportFilter = opts.exports ?? 'local'
-  const candidates = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+  const candidates = findFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
     .filter(path => !path.endsWith('.vue'))
   const tree = buildDeclarationTreeForPaths(cwd, candidates, exportFilter)
   const treeByFile = new Map(tree.files.map(file => [resolve(cwd, file.file), file]))

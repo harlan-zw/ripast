@@ -13,7 +13,7 @@ import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { applyTextEdits, parseSourceFile, rgFiles, rgFilesMany } from './util.ts'
+import { applyTextEdits, findFiles, findFilesMany, parseSourceFile } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface RenameOptions {
@@ -48,7 +48,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   const verifyMode = resolveVerifyMode(opts.verify)
   const vueEnabled = opts.vue ?? true
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }))
+  const candidatePaths = timed(profile, 'candidate files', () => findFilesMany([from, '\\u'], { cwd, glob: opts.glob }))
   const scriptCandidates = candidatePaths.filter(path => !isVue(path))
 
   const declarationPaths = opts.scope
@@ -179,12 +179,12 @@ const isVue = isVuePath
 // After a rename, the server's file set is bounded by the project it discovers.
 // A symbol re-exported through a package barrel and consumed from a file
 // outside that set (sibling test dirs, other packages) keeps the old name and
-// the server never sees it. Re-scan with rg and flag any file that still
+// the server never sees it. Search candidate files again and flag any file that still
 // imports the old name but was not rewritten.
 function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined): string[] {
   const rewritten = new Set(changes.map(c => c.path))
   const stale: string[] = []
-  for (const path of rgFiles(from, { cwd, glob })) {
+  for (const path of findFiles(from, { cwd, glob })) {
     if (rewritten.has(path))
       continue
     let text: string

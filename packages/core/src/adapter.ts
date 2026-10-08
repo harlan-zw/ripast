@@ -11,7 +11,7 @@ export type { ScanHit, ScanOptions } from './scan.ts'
 
 export type ScanFn = typeof import('./scan.ts').scan
 export { offsetOfPosition } from './ts-server.ts'
-export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+export { applyTextEdits, findFiles, findFilesMany, parseFile, parseSourceFile, posToLineCol } from './util.ts'
 export type { TextEdit } from './util.ts'
 export type { FileChange } from './util.ts'
 export type { Regression } from './verify.ts'

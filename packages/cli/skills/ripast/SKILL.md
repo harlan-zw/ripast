@@ -93,7 +93,8 @@ Pass `--tsconfig .nuxt/tsconfig.json` to rename, move, or rename-file.
 
 The CLI installs missing Vue/Nuxt adapters through pnpm, then npm.
 If pnpm is unavailable, use `npm exec --yes --package=@ripast/cli -- ripast <command> ...`.
-Missing `rg` uses slower Node file search. Programmatic regex searches still require `rg`.
+Git working trees use tracked files only, including local edits. Stage new files with `git add` before scanning them.
+Missing Git or a folder outside Git uses Node file search. Programmatic regex searches require a Git working tree.
 
 Use direct edits for small local changes, prose, strings, and comments.
 Svelte markup and arbitrary custom codemods remain unsupported.

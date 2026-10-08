@@ -18,7 +18,7 @@ import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { applyTextEdits, mergeFileChanges, rgFiles } from './util.ts'
+import { applyTextEdits, findFiles, mergeFileChanges } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface MoveOptions {
@@ -48,7 +48,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   if (fromAbs === toAbs)
     throw new Error('ripast move: source and destination must be different files')
   // Imports may spell identifiers with Unicode escapes. Inspect every script.
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, listAll: true }))
+  const candidatePaths = timed(profile, 'candidate files', () => findFiles('', { cwd, listAll: true }))
 
   const fromOriginal = readFileSync(fromAbs, 'utf8')
   const fromSplit = timed(profile, 'split declarators', () => splitMultiDeclaratorIfNeeded(fromOriginal, fromAbs, symbol))

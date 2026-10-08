@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import process from 'node:process'
-import { hyphenateVueName, parseSourceFile, parseVueTemplateAst, posToLineCol, rgFilesMany } from '@ripast/core/adapter'
+import { findFilesMany, hyphenateVueName, parseSourceFile, parseVueTemplateAst, posToLineCol } from '@ripast/core/adapter'
 
 export type UsageForm
   = | 'tag-pascal'
@@ -53,7 +53,7 @@ interface AliasIndex {
   byTag: Map<string, string>
   /** Set of canonical names for resolveComponent('X') / :is="'X'" string-literal lookups. */
   byString: Set<string>
-  /** All alias strings used for ripgrep prefilter. */
+  /** All alias strings used to find candidate files. */
   search: string[]
 }
 
@@ -76,7 +76,7 @@ function buildAliasIndex(names: string[]): AliasIndex {
 
 function candidateFiles(cwd: string, alias: AliasIndex, glob?: string | string[]): string[] {
   const globs = glob ? (Array.isArray(glob) ? glob : [glob]) : DEFAULT_GLOB
-  return rgFilesMany(alias.search, { cwd, glob: globs })
+  return findFilesMany(alias.search, { cwd, glob: globs })
 }
 
 function readOrEmpty(abs: string): string {

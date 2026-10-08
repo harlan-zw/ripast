@@ -41,7 +41,6 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: node --experimental-strip-types scripts/release.ts plan "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-      - run: sudo apt-get install --yes ripgrep
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build

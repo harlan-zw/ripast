@@ -23,7 +23,7 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 - ✂️ **Agent refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
 - 📉 **Lower agent overhead.** Latest Codex comparisons: **59.9% fewer total tokens**, **60.5% less time** across four completed pairs ([results and limits](#agent-benchmarks)).
-- 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
+- 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [Git](https://git-scm.com), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
 - 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
 - 🪂 **Preview first.** Dry runs show the diff; [type checking](#verify) blocks supported refactors that introduce errors.
@@ -76,20 +76,15 @@ Programmatic users install `@ripast/core` (and any adapters they need) directly:
 pnpm add @ripast/core @ripast/vue
 ```
 
-Ripast uses `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) when it is available on `PATH`.
-If it is missing, Ripast searches files in Node instead. This can be slower.
-Both paths support fixed-string searches, file listing, globs, and standard ignore files.
-Programmatic regex searches still require `rg`.
+Ripast uses `git grep` and `git ls-files` to discover tracked files in Git working trees.
+Searches read current file contents, including local edits. Untracked files are excluded, even with explicit globs.
+Stage new files with `git add` before scanning them. Submodules and nested repositories need separate runs.
+Globs filter tracked paths. Ignore files do not exclude tracked files.
+Ripgrep is not required.
 
-For faster searches, optionally install ripgrep:
-
-| System | Command |
-| --- | --- |
-| macOS with Homebrew | `brew install ripgrep` |
-| Ubuntu or Debian | `sudo apt-get install ripgrep` |
-| Windows with Winget | `winget install BurntSushi.ripgrep.MSVC` |
-
-Run `rg --version` to confirm installation. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
+If Git is missing or the folder is outside Git, Ripast searches files in Node instead.
+This fallback can be slower. It supports fixed-string searches, file listing, globs, and standard ignore files.
+Programmatic regex searches require Git and a Git working tree. They use Git extended regular expressions.
 
 Automatic adapter installation prefers `pnpm` and falls back to `npm` if `pnpm` is missing.
 The npm fallback uses a separate temporary prefix and preserves your project directory.
@@ -387,7 +382,7 @@ ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 - [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind rename, references, file renames, and `--verify`.
 - [Volar](https://github.com/volarjs/volar.js) + [@vue/language-tools](https://github.com/vuejs/language-tools): cross-`.vue` rename and diagnostics.
 - [oxc](https://github.com/oxc-project/oxc): fast parser for template-expression classification.
-- [ripgrep](https://github.com/BurntSushi/ripgrep): finds candidate files before parsing.
+- [Git](https://git-scm.com): finds tracked candidate files before parsing.
 
 ## License
 

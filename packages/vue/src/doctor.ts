@@ -1,7 +1,7 @@
 import type { DoctorAdapter, DoctorContext, DoctorFinding } from '@ripast/core/adapter'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { hyphenateVueName, parseVueTemplateAst, posToLineCol, rgFiles } from '@ripast/core/adapter'
+import { findFiles, hyphenateVueName, parseVueTemplateAst, posToLineCol } from '@ripast/core/adapter'
 import { listComponents } from './components.ts'
 
 const NUXT_ENTRY_PATTERNS = [
@@ -345,7 +345,7 @@ function buildUnionKnownSet(roots: string[], cwd: string): Set<string> {
 }
 
 function findPhantomComponents(cwd: string): DoctorFinding[] {
-  const files = rgFiles('', { cwd, glob: ['*.vue'], listAll: true })
+  const files = findFiles('', { cwd, glob: ['*.vue'], listAll: true })
   const appRoots = listAppRoots(cwd)
   const knownByRoot = new Map<string, Set<string>>()
   if (appRoots.length)

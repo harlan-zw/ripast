@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { rgFiles } from './util.ts'
+import { findFiles } from './util.ts'
 
 export type VerifyMode = 'none' | 'touched' | 'project'
 
@@ -26,9 +26,9 @@ export function isVuePath(path: string): boolean {
   return path.endsWith('.vue')
 }
 
-/** Every script file under `cwd` (respecting ignores), for project-wide verification. */
+/** Candidate script files under `cwd`, for project-wide verification. */
 export function projectScriptFiles(cwd: string, glob?: string | string[]): string[] {
-  return rgFiles('', { cwd, glob, listAll: true }).filter(path => !isVuePath(path))
+  return findFiles('', { cwd, glob, listAll: true }).filter(path => !isVuePath(path))
 }
 
 /** Files to verify for a change set: the candidates plus every changed script file. */

@@ -2,9 +2,9 @@ import type { FileChange } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { basename, relative } from 'node:path'
 import {
+  findFiles,
   hyphenateVueName,
   isInsideAutoImportScope,
-  rgFiles,
   scan,
 } from '@ripast/core/adapter'
 import { addNuxtExplicitImports, extractTopLevelExportNames } from './nuxt-imports.ts'
@@ -110,7 +110,7 @@ function rewriteResolveComponentSites(
   newAbs: string,
   warnings: string[],
 ): FileChange[] {
-  const candidates = new Set(rgFiles('resolveComponent', { cwd }))
+  const candidates = new Set(findFiles('resolveComponent', { cwd }))
   if (!candidates.size)
     return []
   const byPath = new Map(changes.map(change => [change.path, change]))
@@ -156,7 +156,7 @@ function addExplicitComponentImports(
   const tokens = new Set([oldName, newName, hyphenateVueName(oldName), hyphenateVueName(newName)])
   const candidates = new Set<string>()
   for (const token of tokens) {
-    for (const path of rgFiles(token, { cwd, glob: '*.vue' }))
+    for (const path of findFiles(token, { cwd, glob: '*.vue' }))
       candidates.add(path)
   }
   if (!candidates.size)
@@ -199,8 +199,8 @@ function rewriteIsAttributeSites(
   const oldKebab = hyphenateVueName(oldName)
   const newKebab = hyphenateVueName(newName)
   const candidates = new Set([
-    ...rgFiles(oldName, { cwd, glob: '*.vue' }),
-    ...rgFiles(oldKebab, { cwd, glob: '*.vue' }),
+    ...findFiles(oldName, { cwd, glob: '*.vue' }),
+    ...findFiles(oldKebab, { cwd, glob: '*.vue' }),
   ])
   if (!candidates.size)
     return []

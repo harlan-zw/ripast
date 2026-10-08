@@ -1,6 +1,6 @@
 import process from 'node:process'
 import { walk } from 'oxc-walker'
-import { parseFile, posToLineCol, rgFiles } from './util.ts'
+import { findFiles, parseFile, posToLineCol } from './util.ts'
 
 export interface NamedReexport {
   /** Name in the source module. '*' for `export *`. */
@@ -39,7 +39,7 @@ export interface DoctorIndex {
 
 export function buildDoctorIndex(opts: { cwd?: string, glob?: string | string[] } = {}): DoctorIndex {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+  const files = findFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
   const out: DoctorIndexFile[] = []
   for (const abs of files) {
     const file = parseFile(abs, cwd)

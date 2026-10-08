@@ -13,7 +13,7 @@ import { listImports, pruneUnusedImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { posToLineCol, rgFiles } from './util.ts'
+import { findFiles, posToLineCol } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface DeleteOptions {
@@ -38,7 +38,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   const verifyMode = resolveVerifyMode(opts.verify)
   const fromAbs = resolve(cwd, fromPath)
   // Escaped identifiers and namespace use need not contain the symbol's text.
-  const candidatePaths = rgFiles('', { cwd, listAll: true })
+  const candidatePaths = findFiles('', { cwd, listAll: true })
 
   const before = readFileSync(fromAbs, 'utf8')
   const parsed = parseSource(fromAbs, before)

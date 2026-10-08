@@ -5,7 +5,7 @@ import { parse as parseSfc } from '@vue/compiler-sfc'
 import { decode } from 'html-entities'
 import { parseSync } from 'oxc-parser'
 import { completeClassBounds, rewriteClassString, visitClassTokens } from './css-class-token.ts'
-import { applyTextEdits, parseFile, rgFiles, rgFilesMany } from './util.ts'
+import { applyTextEdits, findFiles, findFilesMany, parseFile } from './util.ts'
 
 export interface CssClassSourceOptions {
   cwd?: string
@@ -29,7 +29,7 @@ function defaultCssClassGlobs(): string[] {
 export function readCssClassSourceFiles(opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs()
-  return readSourceFiles(rgFiles('', { cwd, glob, fixedStrings: false, listAll: true }), cwd)
+  return readSourceFiles(findFiles('', { cwd, glob, fixedStrings: false, listAll: true }), cwd)
 }
 
 export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
@@ -38,7 +38,7 @@ export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSour
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs()
   // Escapes and static expressions can split a class key across source text.
-  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&', '+', '`'], { cwd, glob }), cwd)
+  return readSourceFiles(findFilesMany([...map.keys(), '\\', '&', '+', '`'], { cwd, glob }), cwd)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {

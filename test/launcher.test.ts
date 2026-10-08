@@ -68,7 +68,7 @@ it('installs an adapter when its import entry is missing', () => {
   finally { fx.cleanup() }
 })
 
-it('built CLI renames a symbol without ripgrep when Vue work is disabled', () => {
+it('built CLI renames a symbol without Git when Vue work is disabled', () => {
   const fx = makeFixture({
     'package.json': '{"dependencies":{"vue":"*"}}',
     'source.ts': 'export const target = 1',

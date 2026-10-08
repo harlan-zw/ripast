@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -20,6 +21,13 @@ export interface Fixture {
   write: (rel: string, content: string) => string
   read: (rel: string) => string
   cleanup: () => void
+}
+
+export function makeGitFixture(files: Record<string, string> = {}, includeTsconfig = true): Fixture {
+  const fixture = makeFixture(files, includeTsconfig)
+  execFileSync('git', ['init', '--quiet'], { cwd: fixture.dir })
+  execFileSync('git', ['add', '--all'], { cwd: fixture.dir })
+  return fixture
 }
 
 export function prepareLauncher(fx: Fixture): string {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { symlinkSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { it, vi } from 'vitest'
-import { rgFiles, rgFilesMany } from '../packages/core/src/adapter.ts'
+import { findFiles, findFilesMany } from '../packages/core/src/adapter.ts'
 import { scan } from '../packages/core/src/index.ts'
 import vueAdapter from '../packages/vue/src/index.ts'
 import { makeFixture } from './helpers.ts'
@@ -13,9 +13,9 @@ it.each([
   ['nested repositories', { '.git/config': '', '.gitignore': 'blocked/\n', 'sub/.git/config': '', 'sub/blocked/a.ts': 'target' }, ['*.ts'], ['sub/blocked/a.ts']],
   ['literal extglobs', { 'a.ts': 'target', '@(a|b).ts': 'target' }, ['@(a|b).ts'], ['@(a|b).ts']],
   ['literal brace alternatives', { 'a1.ts': 'target', 'a1..3.ts': 'target', 'a{1..3}.ts': 'target' }, ['a{1..3}.ts'], ['a1..3.ts']],
-] as const)('fallback preserves ripgrep selection for %s', (_name, files, glob, expected) => {
+] as const)('node search preserves glob selection for %s', (_name, files, glob, expected) => {
   const fx = makeFixture(files, false)
-  const run = () => rgFiles('target', { cwd: fx.dir, glob: [...glob] }).map(path => relative(fx.dir, path)).sort()
+  const run = () => findFiles('target', { cwd: fx.dir, glob: [...glob] }).map(path => relative(fx.dir, path)).sort()
   try {
     assert.deepEqual(run(), expected)
     vi.stubEnv('PATH', fx.dir)
@@ -28,10 +28,10 @@ it.each([
 })
 
 it.each([
-  ['single-pattern search', (cwd: string) => rgFiles('target', { cwd })],
-  ['file listing', (cwd: string) => rgFiles('', { cwd, listAll: true })],
-  ['batch search', (cwd: string) => rgFilesMany(['target', 'other'], { cwd })],
-] as const)('%s works without ripgrep and matches its file selection', (_name, run) => {
+  ['single-pattern search', (cwd: string) => findFiles('target', { cwd })],
+  ['file listing', (cwd: string) => findFiles('', { cwd, listAll: true })],
+  ['batch search', (cwd: string) => findFilesMany(['target', 'other'], { cwd })],
+] as const)('%s works outside Git and without Git on PATH', (_name, run) => {
   const fx = makeFixture({
     '.git/config': '',
     '.gitignore': 'ignored.ts\nignored-dir/\nnode_modules/\n',
@@ -78,9 +78,9 @@ it('fallback honors ordered globs, braces, binary filtering, and symlink exclusi
     const opts = { cwd: fx.dir, glob: ['src/*.{ts,js}', '!*.spec.ts', 'src/restored.spec.ts'] }
     const paths = (files: string[]) => files.map(path => relative(fx.dir, path)).sort()
     const expected = ['src/a.ts', 'src/b.js', 'src/restored.spec.ts']
-    assert.deepEqual(paths(rgFiles('target', opts)), expected)
+    assert.deepEqual(paths(findFiles('target', opts)), expected)
     vi.stubEnv('PATH', fx.dir)
-    assert.deepEqual(paths(rgFiles('target', opts)), expected)
+    assert.deepEqual(paths(findFiles('target', opts)), expected)
   }
   finally {
     vi.unstubAllEnvs()
@@ -97,7 +97,7 @@ it('fallback respects parent ignore rules when called from a subdirectory', () =
   }, false)
   try {
     vi.stubEnv('PATH', fx.dir)
-    assert.deepEqual(rgFiles('target', { cwd: resolve(fx.dir, 'src') }), [resolve(fx.dir, 'src/visible.ts')])
+    assert.deepEqual(findFiles('target', { cwd: resolve(fx.dir, 'src') }), [resolve(fx.dir, 'src/visible.ts')])
   }
   finally {
     vi.unstubAllEnvs()
@@ -105,7 +105,7 @@ it('fallback respects parent ignore rules when called from a subdirectory', () =
   }
 })
 
-it('scan and the Vue adapter work without ripgrep', () => {
+it('scan and the Vue adapter work without Git', () => {
   const fx = makeFixture({
     'source.ts': 'export const target = 1',
     'View.vue': '<template>{{ target }}</template>',
@@ -122,10 +122,10 @@ it('scan and the Vue adapter work without ripgrep', () => {
   }
 })
 
-it('empty batch search needs no ripgrep', () => {
+it('empty batch search needs no Git', () => {
   vi.stubEnv('PATH', '')
   try {
-    assert.deepEqual(rgFilesMany([]), [])
+    assert.deepEqual(findFilesMany([]), [])
   }
   finally { vi.unstubAllEnvs() }
 })
@@ -151,9 +151,9 @@ it.each(['direct', 'include', 'repository'] as const)('fallback matches %s Git e
     vi.stubEnv('GIT_CONFIG_GLOBAL', '')
     const paths = (files: string[]) => files.map(path => relative(fx.dir, path)).sort()
     const expected = source === 'direct' ? ['upper/yes.ts', 'visible.ts'] : ['UPPER/no.ts', 'global-dir/no.ts', 'upper/yes.ts', 'visible.ts']
-    assert.deepEqual(paths(rgFiles('target', { cwd: fx.dir })), expected)
+    assert.deepEqual(paths(findFiles('target', { cwd: fx.dir })), expected)
     vi.stubEnv('PATH', fx.dir)
-    assert.deepEqual(paths(rgFiles('target', { cwd: fx.dir })), expected)
+    assert.deepEqual(paths(findFiles('target', { cwd: fx.dir })), expected)
   }
   finally {
     vi.unstubAllEnvs()
@@ -161,11 +161,11 @@ it.each(['direct', 'include', 'repository'] as const)('fallback matches %s Git e
   }
 })
 
-it('fallback refuses regex searches rather than changing regex semantics', () => {
+it('fallback refuses regex searches without Git', () => {
   const fx = makeFixture({}, false)
   vi.stubEnv('PATH', fx.dir)
   try {
-    assert.throws(() => rgFiles('target.*', { cwd: fx.dir, fixedStrings: false }), /Regex searches require ripgrep/)
+    assert.throws(() => findFiles('target.*', { cwd: fx.dir, fixedStrings: false }), /Regex searches require Git/)
   }
   finally {
     vi.unstubAllEnvs()
@@ -174,5 +174,5 @@ it('fallback refuses regex searches rather than changing regex semantics', () =>
 })
 
 it('missing working directory remains an error', () => {
-  assert.throws(() => rgFiles('target', { cwd: '/ripast-missing-directory-for-test' }), /ENOENT/)
+  assert.throws(() => findFiles('target', { cwd: '/ripast-missing-directory-for-test' }), /ENOENT/)
 })

@@ -11,7 +11,7 @@ import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffse
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { applyTextEdits, rgFilesMany } from './util.ts'
+import { applyTextEdits, findFilesMany } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
@@ -41,7 +41,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   const verifyMode = resolveVerifyMode(opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+    : findFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripast replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
@@ -49,7 +49,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   try {
     const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
+    const candidatePaths = findFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     for (const path of candidatePaths) {

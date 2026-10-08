@@ -2,7 +2,7 @@ import type { FileChange, ScanFn } from '@ripast/core/adapter'
 import type { PathAlias } from './nuxt-paths.ts'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { rgFiles } from '@ripast/core/adapter'
+import { findFiles } from '@ripast/core/adapter'
 import { parse } from '@vue/compiler-sfc'
 import { loadNuxtBindingNames, nuxtConsumerContext } from './nuxt-bindings.ts'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
@@ -19,7 +19,7 @@ export interface ExplicitImportContext {
 }
 
 /**
- * Walk every consumer file that references one of `symbols` (via rg scan) and
+ * Walk every consumer file that references one of `symbols` (via file search) and
  * insert an explicit named import from `toAbs`.
  */
 export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[] {
@@ -28,7 +28,7 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
   const out: FileChange[] = []
   const byContext = new Map<string, Map<string, string>>()
   const aliasesByContext = new Map<string, PathAlias[]>()
-  for (const filePath of rgFiles('', { cwd, listAll: true })) {
+  for (const filePath of findFiles('', { cwd, listAll: true })) {
     if (isGeneratedNuxtPath(cwd, filePath))
       continue
     if (filePath === fromAbs || filePath === toAbs)

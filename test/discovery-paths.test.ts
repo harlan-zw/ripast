@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { buildDeclarationTree, buildScanGraph, scan } from '@ripast/core'
-import { rgFilesMany } from '@ripast/core/adapter'
+import { findFilesMany } from '@ripast/core/adapter'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
@@ -10,7 +10,7 @@ it('scan preserves line breaks in source file names', () => {
   const fx = makeFixture({ [file]: 'export const target = 1\n' }, false)
   try {
     assert.deepEqual(scan('target', { cwd: fx.dir }).map(hit => hit.file), [file])
-    assert.deepEqual(rgFilesMany(['target'], { cwd: fx.dir }), [join(fx.dir, file)])
+    assert.deepEqual(findFilesMany(['target'], { cwd: fx.dir }), [join(fx.dir, file)])
   }
   finally { fx.cleanup() }
 })

@@ -5,7 +5,7 @@ Each run gets a fresh TypeScript project and the same task.
 
 ## Run
 
-Use Linux or macOS, Node 22.13 or newer, pnpm, ripgrep, and an authenticated OpenCode installation.
+Use Linux or macOS, Node 22.13 or newer, pnpm, Git, and an authenticated OpenCode installation.
 Run these commands from the repository root:
 
 ```sh

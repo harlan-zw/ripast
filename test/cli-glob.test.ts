@@ -2,15 +2,15 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { it } from 'vitest'
-import { makeFixture } from './helpers.ts'
+import { makeGitFixture } from './helpers.ts'
 
 it.each([
   ['brace alternates', '{app,server}/**/*.ts,extra/**/*.ts,!server/generated/**', ['app/main.ts', 'extra/main.ts', 'server/main.ts']],
   ['character classes', 'characters/[a,].ts,app/**/*.ts', ['app/main.ts', 'characters/,.ts', 'characters/a.ts']],
   ['escaped commas', 'literal\\,name/*.ts,app/**/*.ts', ['app/main.ts', 'literal,name/main.ts']],
   ['brace exclusions', '**/*.ts,!{server,extra}/**,!characters/**,!literal\\,name/**', ['app/main.ts', 'outside/main.ts']],
-])('forwards %s and top-level comma globs to ripgrep', (_name, glob, files) => {
-  const fixture = makeFixture({
+])('selects tracked files with %s and top-level comma globs', (_name, glob, files) => {
+  const fixture = makeGitFixture({
     'app/main.ts': 'export const target = 1\n',
     'server/main.ts': 'export const target = 2\n',
     'server/generated/ignore.ts': 'export const target = 3\n',

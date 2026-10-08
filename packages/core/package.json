@@ -25,7 +25,6 @@
     "codemod",
     "typescript",
     "tailwind",
-    "ripgrep",
     "ai-agent",
     "claude-code",
     "cursor"
