@@ -1,15 +1,19 @@
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
+import { parse } from '@vue/compiler-sfc'
+import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { pruneUnusedImports } from './imports.ts'
-import { projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { rgFiles } from './util.ts'
 import { findRegressions } from './verify.ts'
+import { extractTemplateExpressions } from './vue-template.ts'
 
 export interface DeleteOptions {
   cwd?: string
@@ -48,13 +52,59 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
 
   const server = await startTsServer(cwd)
   try {
-    for (const path of candidatePaths)
-      server.open(path)
+    const vueScripts = new Map<string, string>()
+    for (const path of candidatePaths) {
+      if (!isVuePath(path)) {
+        server.open(path)
+        continue
+      }
+      const source = readFileSync(path, 'utf8')
+      const { descriptor, errors } = parse(source, { filename: path })
+      if (errors.length)
+        throw new Error(`ripast delete: cannot inspect ${relative(cwd, path)} because its Vue source has parse errors.`)
+      const blocks = [descriptor.script, descriptor.scriptSetup].filter(block => block !== null)
+      let virtualPath = `${path}.${randomUUID()}.ts`
+      while (existsSync(virtualPath))
+        virtualPath = `${path}.${randomUUID()}.ts`
+      const text = source.replace(/[^\r\n]/g, ' ').split('')
+      for (const block of blocks) {
+        for (let i = 0; i < block.content.length; i++)
+          text[block.loc.start.offset + i] = block.content[i]!
+      }
+      // Only project template member accesses. Named imports already count as
+      // references, including bindings used exclusively by the template.
+      for (const expression of extractTemplateExpressions(source)) {
+        const program = parseSource(virtualPath, expression.code).program
+        walk(program, {
+          enter(node: any) {
+            if (node.type !== 'MemberExpression' || node.object.type !== 'Identifier')
+              return
+            const name = node.computed ? node.property.value : node.property.name
+            if (name !== symbol)
+              return
+            const start = expression.offsetInSource + node.start
+            const end = expression.offsetInSource + node.end
+            let prefix = start - 1
+            while (prefix >= 0 && /[\r\n]/.test(text[prefix]!))
+              prefix--
+            text[prefix] = ';'
+            for (let i = start; i < end; i++)
+              text[i] = source[i]!
+            let suffix = end
+            while (suffix < text.length && /[\r\n]/.test(text[suffix]!))
+              suffix++
+            text[suffix] = ';'
+          },
+        })
+      }
+      server.open(virtualPath, text.join(''))
+      vueScripts.set(virtualPath, path)
+    }
     const references: DeleteReference[] = []
     for (const ref of await server.references(fromAbs, decl.nameStart)) {
       if (ref.path === fromAbs && ref.start >= decl.start && ref.start < decl.end)
         continue
-      references.push({ file: relative(cwd, ref.path), line: ref.line, col: ref.col })
+      references.push({ file: relative(cwd, vueScripts.get(ref.path) ?? ref.path), line: ref.line, col: ref.col })
     }
     references.sort((a, b) => `${a.file}\0${a.line}\0${a.col}`.localeCompare(`${b.file}\0${b.line}\0${b.col}`))
     if (references.length) {
