@@ -88,3 +88,31 @@ it('doctor accepts a bare changed flag before JSON output', () => {
   }
   finally { fixture.cleanup() }
 })
+
+it.each([
+  { args: ['rename', 'answer', 'value', '--no-vue'], message: 'verification: no new type diagnostics', status: 0 },
+  { args: ['rename', 'answer', 'taken', '--no-vue'], message: 'verification: type diagnostics increased', status: 1 },
+  { args: ['rename', 'answer', 'value', '--no-vue', '--verify-mode', 'none'], message: 'verification: not run', status: 0 },
+  { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue'], message: 'verification: no new type diagnostics', status: 0 },
+  { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue', '--verify-mode', 'none'], message: 'verification: not run', status: 0 },
+  { args: ['css-class-rename', 'font-semibold', 'font-medium'], message: 'verification: not run', status: 0 },
+])('agent output reports verification for $args', ({ args, message, status }) => {
+  const fixture = makeFixture({
+    'source.ts': 'export const answer = 42\nexport const taken = 7\n',
+    'View.vue': '<template><div class="font-semibold"></div></template>\n',
+  })
+  try {
+    const result = spawnSync(process.execPath, [
+      '--experimental-strip-types',
+      '--no-warnings',
+      cli,
+      ...args,
+      '--apply',
+      '--profile',
+      'agent',
+    ], { cwd: fixture.dir, encoding: 'utf8' })
+    assert.equal(result.status, status, result.stderr)
+    assert.ok(result.stdout.includes(message), result.stdout)
+  }
+  finally { fixture.cleanup() }
+})

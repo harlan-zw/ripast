@@ -377,6 +377,7 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
     process.stdout.write(`${profileHeader()}\n`)
     process.stdout.write(`changes: ${r.changes.length}/${r.scanned} files, +${s.linesAdded} -${s.linesRemoved} lines\n`)
     process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
+    process.stdout.write(`verification: ${verify ? (r.regressions.length ? 'type diagnostics increased' : 'no new type diagnostics') : 'not run'}\n`)
     if (r.changes.length) {
       process.stdout.write(`files:\n`)
       for (const c of r.changes)
@@ -499,6 +500,7 @@ const renameFileCmd = defineCommand({
       if (selfChangeDisplay)
         process.stdout.write(`self: rewrote moved file's own relative imports\n`)
       process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
+      process.stdout.write(`verification: ${verify ? (r.regressions.length ? 'type diagnostics increased' : 'no new type diagnostics') : 'not run'}\n`)
       if (displayChanges.length) {
         process.stdout.write(`files:\n`)
         for (const c of displayChanges)
