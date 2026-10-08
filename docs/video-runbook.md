@@ -77,12 +77,13 @@ If the agent UI has no reliable token display, show the final total after comple
 ## Camera and layout
 
 - Start with a 1440 × 1080 composition at 30 fps for the Twitter feed.
-- Start with the task and both code panes already visible.
+- Open with Ripast's full wordmark. Keep the splash under two seconds.
 - Put ordinary editing on the left and Ripast on the right.
 - Label both panes. Use the same font size and crop scale.
 - Crop to the command, changed code, and check result.
-- Hide sidebars, tabs, unrelated output, and editor chrome.
-- Use changed identifiers at 56 px or larger. Crop surrounding syntax when it reduces readability.
+- Use compact terminal chrome. Hide sidebars, tabs, and unrelated output.
+- Highlight TypeScript and shell syntax with Rangi. Use the archived brand lab's code colours.
+- Use changed identifiers at 50 px or larger. Abbreviate surrounding syntax when it reduces readability.
 - Use labels at 36 px or larger. Keep method notes readable.
 - Use Ripast's [existing palette](../branding/README.md).
 - Use one shared start and the same playback speed for both recordings.
@@ -90,6 +91,9 @@ If the agent UI has no reliable token display, show the final total after comple
 - Show elapsed time explicitly. Do not imply playback time equals execution time after speeding footage up.
 
 Prefer a fixed, tight crop. Add a small zoom only if it makes the changed identifier easier to read.
+Keep the same wordmark through the splash, comparison header, and closing card.
+Use eased transforms for scene changes. Stagger terminal entrances by 30 to 80 milliseconds.
+Keep elapsed-time counters linear. Let completed identifiers settle with a short transition.
 Use silence by default. The video must make sense without audio.
 
 ## Cut structure
@@ -99,10 +103,10 @@ Choose one compression factor for the entire paired recording.
 
 | Beat | Screen content | Purpose |
 | --- | --- | --- |
-| First frame | Task, two panes, method labels | Explain the comparison before the viewer scrolls |
+| Splash, under 2 seconds | Full wordmark and product tagline | Introduce Ripast's identity |
 | Comparison | Commands and edits, shared clock | Show the work and time difference |
 | Result | Matching final diff and passed checks | Prove the task completed |
-| Close, 2 to 3 seconds | One scoped result and one command or project URL | Give one next action |
+| Close, 3 to 4 seconds | Wordmark, qualified results, and project URL | Give one next action |
 
 If using C12's full recorded totals, 6× compression turns 48.2 seconds into about 8 seconds.
 Show `6× playback` throughout that comparison.
