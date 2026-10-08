@@ -13,6 +13,18 @@ export function visitClassTokens(input: string, visit: (bare: string) => void): 
   })
 }
 
+export function completeClassBounds(input: string, startSafe: boolean, endSafe: boolean): { start: number, end: number } {
+  let start = 0
+  let end = input.length
+  visitTokenRanges(input, (tokenStart, tokenEnd) => {
+    if (!startSafe && tokenStart === 0)
+      start = tokenEnd
+    if (!endSafe && tokenEnd === input.length)
+      end = tokenStart
+  })
+  return { start, end: Math.max(start, end) }
+}
+
 export function bareToken(token: string): string | null {
   const { tail } = splitVariantPrefix(token)
   const bare = tail.replace(/^!|!$/g, '')
