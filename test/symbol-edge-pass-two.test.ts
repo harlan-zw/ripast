@@ -131,3 +131,83 @@ it('rename finds mapped type key declarations', async () => {
   }
   finally { fx.cleanup() }
 })
+
+it('rename preserves unrelated escaped local variable shadows', async () => {
+  const fx = makeFixture({
+    'old.ts': 'export const old = 3\n',
+    'consumer.ts': 'import { old } from "./old.ts"\nexport const result = old\nexport function shadow() { const \\u006fld = 2; return \\u006fld }\n',
+  })
+  try {
+    const result = await runRename('old', 'better', { cwd: fx.dir, vue: false })
+    assert.deepEqual(result.regressions, [])
+    writeChanges(result.changes)
+    const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
+    assert.equal(consumer.result, 3)
+    assert.equal(consumer.shadow(), 2)
+  }
+  finally { fx.cleanup() }
+})
+
+it('replace preserves unrelated escaped local variable shadows', async () => {
+  const fx = makeFixture({
+    'old.ts': 'export const old = 3\n',
+    'better.ts': 'export const better = 4\n',
+    'consumer.ts': 'import { old } from "./old.ts"\nexport const result = old\nexport function shadow() { const \\u006fld = 2; return \\u006fld }\n',
+  })
+  try {
+    const result = await runReplace('old', 'better', { cwd: fx.dir })
+    assert.deepEqual(result.regressions, [])
+    writeChanges(result.changes)
+    const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
+    assert.equal(consumer.result, 4)
+    assert.equal(consumer.shadow(), 2)
+  }
+  finally { fx.cleanup() }
+})
+
+it.each(['rename', 'replace'] as const)('%s refuses escaped imported references outside an unrelated shadow block', async (operation) => {
+  const source = 'import { old } from "./old.ts"\nexport function run() { { const \\u006fld = 2; } return \\u006fld }\n'
+  const fx = makeFixture({ 'old.ts': 'export const old = 3\n', 'better.ts': 'export const better = 4\n', 'consumer.ts': source })
+  try {
+    const action = operation === 'rename' ? runRename('old', 'better', { cwd: fx.dir, vue: false }) : runReplace('old', 'better', { cwd: fx.dir })
+    await assert.rejects(action, /cannot resolve escaped references/)
+    assert.equal(fx.read('consumer.ts'), source)
+  }
+  finally { fx.cleanup() }
+})
+
+it('rename refuses escaped type references beside an unrelated value shadow', async () => {
+  const source = 'import type { Old } from "./old.ts"\nexport function run() { const \\u004fld = 2; const value: \\u004fld = { value: 1 }; return value }\n'
+  const fx = makeFixture({ 'old.ts': 'export interface Old { value: number }\n', 'consumer.ts': source })
+  try {
+    await assert.rejects(runRename('Old', 'Better', { cwd: fx.dir, vue: false }), /cannot resolve escaped references/)
+    assert.equal(fx.read('consumer.ts'), source)
+  }
+  finally { fx.cleanup() }
+})
+
+it.each(['rename', 'replace'] as const)('%s preserves plain references bound to an escaped shadow declaration', async (operation) => {
+  const fx = makeFixture({
+    'old.ts': 'export const old = 3\n',
+    'better.ts': 'export const better = 4\n',
+    'consumer.ts': 'import { old } from "./old.ts"\nexport const result = old\nexport function shadow() { const \\u006fld = 2; return old }\n',
+  })
+  try {
+    const result = operation === 'rename' ? await runRename('old', 'better', { cwd: fx.dir, vue: false, verify: false }) : await runReplace('old', 'better', { cwd: fx.dir, verify: false })
+    writeChanges(result.changes)
+    const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
+    assert.equal(consumer.result, operation === 'rename' ? 3 : 4)
+    assert.equal(consumer.shadow(), 2)
+  }
+  finally { fx.cleanup() }
+})
+
+it('rename refuses escaped destructuring keys that can track a renamed property', async () => {
+  const source = 'export const old = 1\nconst object = { old }\nexport function run() { const { \\u006fld } = object; return \\u006fld }\n'
+  const fx = makeFixture({ 'consumer.ts': source })
+  try {
+    await assert.rejects(runRename('old', 'better', { cwd: fx.dir, vue: false, verify: false }), /cannot resolve escaped references/)
+    assert.equal(fx.read('consumer.ts'), source)
+  }
+  finally { fx.cleanup() }
+})

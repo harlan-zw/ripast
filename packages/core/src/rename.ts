@@ -8,7 +8,7 @@ import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
-import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource } from './declarations.ts'
+import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
@@ -72,11 +72,14 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
       const source = readFileSync(path, 'utf8')
       if (!source.includes('\\u'))
         continue
-      walk(parseSource(path, source).program, {
+      const program = parseSource(path, source).program
+      const selectedPositions = new Set(declarations.filter(declaration => declaration.filePath === path).map(declaration => declaration.pos))
+      const unrelated = unrelatedVariableIdentifierOffsets(program, from, selectedPositions)
+      walk(program, {
         enter(node: any) {
           if (node.type !== 'Identifier' || node.name !== from || !source.slice(node.start, node.end).includes('\\u'))
             return
-          if (!declarations.some(declaration => declaration.filePath === path && declaration.pos === node.start))
+          if (!selectedPositions.has(node.start) && !unrelated.has(node.start))
             throw new Error(`ripast rename: TypeScript cannot resolve escaped references to "${from}" in ${relative(cwd, path)}`)
         },
       })

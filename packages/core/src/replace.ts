@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
-import { listTopLevelDeclarations, parseSource } from './declarations.ts'
+import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
@@ -163,11 +163,12 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   const bindingNames = new Set<number>()
   const qualifiedNames = new Set<number>()
   const reexports: { start: number, end: number }[] = []
+  const unrelated = source.includes('\\u') ? unrelatedVariableIdentifierOffsets(program, from, new Set(bindings.map(binding => binding.offset))) : new Set<number>()
   walk(program, {
     enter(node: any) {
       if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') && node.name === from)
         bindingNames.add(node.start)
-      if (node.type === 'Identifier' && node.name === from && source.slice(node.start, node.end).includes('\\u'))
+      if (node.type === 'Identifier' && node.name === from && source.slice(node.start, node.end).includes('\\u') && !unrelated.has(node.start))
         throw new Error(`ripast replace: TypeScript cannot resolve escaped references to "${from}" in ${path}`)
       if ((node.type === 'MemberExpression' && !node.computed) || node.type === 'JSXMemberExpression')
         qualifiedNames.add(node.property.start)

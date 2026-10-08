@@ -1,5 +1,5 @@
 import { parseSync } from 'oxc-parser'
-import { walk } from 'oxc-walker'
+import { isReferenceIdentifier, ScopeTracker, walk } from 'oxc-walker'
 
 // Top-level declarations as data, from oxc. Positions are offsets into the
 // source the program was parsed from.
@@ -43,6 +43,30 @@ export const NAMED_DECLARATION_TYPES = new Set(Object.keys(KIND_BY_TYPE))
 export function parseSource(path: string, source: string): ParsedSource {
   const result = parseSync(path, source)
   return { program: result.program, comments: (result.comments ?? []).map((c: any) => ({ start: c.start, end: c.end })) }
+}
+
+/** Offsets bound to simple variable declarations outside the selected rename or replacement bindings. */
+export function unrelatedVariableIdentifierOffsets(program: any, name: string, selectedPositions: ReadonlySet<number>): Set<number> {
+  const tracker = new ScopeTracker({ preserveExitedScopes: true })
+  walk(program, { scopeTracker: tracker })
+  tracker.freeze()
+  const offsets = new Set<number>()
+  walk(program, {
+    scopeTracker: tracker,
+    enter(node: any, parent: any) {
+      if (node.type !== 'Identifier' || node.name !== name)
+        return
+      const declaration = tracker.getDeclaration(name)
+      if (declaration?.type !== 'Variable' || selectedPositions.has(declaration.node.start))
+        return
+      // A destructuring identifier can also reference a property of the selected symbol.
+      if (!declaration.variableNode.declarations.some(declarator => declarator.id === declaration.node))
+        return
+      if (node.start === declaration.node.start || isReferenceIdentifier(node, parent, { mode: 'value' }))
+        offsets.add(node.start)
+    },
+  })
+  return offsets
 }
 
 export function listTopLevelDeclarations(program: any): TopLevelDeclaration[] {
