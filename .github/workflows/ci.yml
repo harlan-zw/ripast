@@ -33,6 +33,7 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm eval --preflight
       - run: pnpm -r --filter './packages/*' exec publint
       - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
       - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"

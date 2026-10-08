@@ -13,6 +13,6 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["packages/**/*", "test/**/*", "bench/**/*", "packages/*/build.config.ts"],
+  "include": ["packages/**/*", "test/**/*", "bench/**/*", "evals/**/*.ts", "packages/*/build.config.ts"],
   "exclude": ["node_modules", "**/dist", "test/fixtures"]
 }
