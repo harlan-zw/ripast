@@ -68,14 +68,14 @@ The two batches contain 16 tasks and 14 completed pairs.
 Their runner groups have different models and project assignments. Keep each group's percentages separate.
 
 The retained JSON proves totals and checks. It is not screen-recording footage.
-If reconstructing a view from transcripts, label it `Illustrated replay from recorded results`.
+If reconstructing a view from transcripts, disclose that method in the accompanying post or benchmark notes.
 Do not invent per-command durations, token growth, cursors, or thinking text.
 
 For a fresh capture, record the actual agent UI and retain the full uncut recording.
 Retained C12 transcripts also support a tool-call comparison.
 The baseline has three shell calls and one two-file edit. Ripast has one shell call, including its check.
 Show calls in transcript order. Mark abbreviated commands. Do not invent per-call timestamps.
-If timestamps are absent, use editorial reveals and label the command timing as illustrated.
+If timestamps are absent, use editorial reveals. Document their timing as illustrated in the production notes.
 Count tool calls when each call appears. Count final tokens only after completion.
 If the agent UI has no reliable token display, show the final total after completion.
 
@@ -98,6 +98,7 @@ If the agent UI has no reliable token display, show the final total after comple
 Prefer a fixed, tight crop. Add a small zoom only if it makes the changed identifier easier to read.
 Keep the same wordmark through the splash, comparison header, and closing card.
 Centre the wordmark above the terminals. Omit the comparison headline and model subtitle.
+Keep the comparison footer clear. Put source-slice and replay details in the accompanying evidence.
 For the call-stack version, replace symbol snippets with a Typecheck step after the commands.
 Start its checkmark grey. Turn it green when the diagnostic comparison completes.
 Use `No new diagnostics` to describe a comparison against existing source-slice errors.
