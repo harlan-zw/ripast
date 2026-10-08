@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process'
+import type { Buffer } from 'node:buffer'
+import { execFileSync, spawn } from 'node:child_process'
 import { cpSync, mkdirSync, readFileSync, renameSync, symlinkSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
@@ -25,6 +26,42 @@ function checkProject(cwd: string) {
     encoding: 'utf8',
     timeout: 30000,
   })
+}
+
+async function withNextServer(cwd: string, check: (url: string) => Promise<void>): Promise<void> {
+  const server = spawn(process.execPath, [require.resolve('next/dist/bin/next'), 'start', '--hostname', '127.0.0.1', '--port', '0'], {
+    cwd,
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const exited = new Promise<void>(resolve => server.once('close', () => resolve()))
+  try {
+    const url = await new Promise<string>((resolve, reject) => {
+      let output = ''
+      const timer = setTimeout(() => reject(new Error(`Next server startup timed out: ${output}`)), 30000)
+      const fail = (error: Error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+      const read = (chunk: Buffer) => {
+        output += chunk.toString()
+        const address = /http:\/\/127\.0\.0\.1:\d+/.exec(output)?.[0]
+        if (address && output.includes('Ready in')) {
+          clearTimeout(timer)
+          resolve(address)
+        }
+      }
+      server.stdout.on('data', read)
+      server.stderr.on('data', read)
+      server.once('error', fail)
+      server.once('exit', code => fail(new Error(`Next server exited with ${code}: ${output}`)))
+    })
+    await check(url)
+  }
+  finally {
+    server.kill()
+    await exited
+  }
 }
 
 describe('next App Router fixture', () => {
@@ -101,6 +138,14 @@ describe('next App Router fixture', () => {
       expect(html).toContain('<h1>Count: 2</h1>')
       expect(html).toContain('<button class="rounded p-2">Count: 2</button>')
       expect(html).toContain('href="/api/status"')
+      await withNextServer(fx.dir, async (url) => {
+        const page = await fetch(url, { signal: AbortSignal.timeout(10000) })
+        expect(page.status).toBe(200)
+        expect(await page.text()).toContain('<h1>Count: 2</h1>')
+        const response = await fetch(`${url}/api/status`, { signal: AbortSignal.timeout(10000) })
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ label: 'Count: 2' })
+      })
     }
     finally { fx.cleanup() }
   }, 180000)

@@ -55,6 +55,7 @@
   "dependencies": {
     "@vue/compiler-sfc": "^3.5.43",
     "diff": "^9.0.0",
+    "html-entities": "^2.6.0",
     "ignore": "^7.0.12",
     "magic-string": "^1.4.2",
     "oxc-parser": "^0.152.0",
