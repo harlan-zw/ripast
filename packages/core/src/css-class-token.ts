@@ -2,7 +2,8 @@ export type RenameMap = ReadonlyMap<string, string>
 
 const CLASS_TOKEN_SEPARATOR_RE = /[\s'"`;{}]/
 const NUMERIC_RE = /^[\d.-]+$/
-const TOKEN_SHAPE_RE = /^[\w-]+(?:\[[^\]]*\])?(?:\/[\w.-]+)?$/
+const TOKEN_NAME_RE = /^[\w-]+/
+const TOKEN_MODIFIER_RE = /^(?:\/[\w.-]+)?$/
 
 export function visitClassTokens(input: string, visit: (bare: string) => void): void {
   visitTokenRanges(input, (start, end) => {
@@ -17,9 +18,41 @@ export function bareToken(token: string): string | null {
   const bare = tail.startsWith('!') ? tail.slice(1) : tail
   if (!bare || NUMERIC_RE.test(bare))
     return null
-  if (!TOKEN_SHAPE_RE.test(bare))
+  if (!hasTokenShape(bare))
     return null
   return bare
+}
+
+function hasTokenShape(token: string): boolean {
+  const name = TOKEN_NAME_RE.exec(token)
+  if (!name)
+    return false
+  let end = name[0].length
+  if (token[end] !== '[')
+    return TOKEN_MODIFIER_RE.test(token.slice(end))
+  let depth = 0
+  let quote = ''
+  for (; end < token.length; end++) {
+    const char = token[end]
+    if (char === '\\') {
+      end++
+      continue
+    }
+    if (quote) {
+      if (char === quote)
+        quote = ''
+      continue
+    }
+    if (char === '\'' || char === '"') {
+      quote = char
+      continue
+    }
+    if (char === '[')
+      depth++
+    else if (char === ']' && --depth === 0)
+      return TOKEN_MODIFIER_RE.test(token.slice(end + 1))
+  }
+  return false
 }
 
 export function rewriteClassString(input: string, map: RenameMap): string {
