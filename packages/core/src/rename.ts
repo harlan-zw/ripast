@@ -196,6 +196,7 @@ function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], 
 function findDeclarations(paths: string[], name: string, allowMultiple = false): Declaration[] {
   const out: Declaration[] = []
   const locals: Declaration[] = []
+  const parameters: Declaration[] = []
   for (const path of paths) {
     const source = readFileSync(path, 'utf8')
     const { program } = parseSource(path, source)
@@ -203,16 +204,52 @@ function findDeclarations(paths: string[], name: string, allowMultiple = false):
       if (decl.name === name)
         out.push({ _tag: 'TopLevel', filePath: path, source, pos: decl.nameStart })
     }
+    const addPattern = (pattern: any, tag: Declaration['_tag'], list = tag === 'TopLevel' ? out : locals): void => {
+      if (!pattern)
+        return
+      if (pattern.type === 'Identifier') {
+        if (pattern.name === name) {
+          if (!list.some(decl => decl.filePath === path && decl.pos === pattern.start))
+            list.push({ _tag: tag, filePath: path, source, pos: pattern.start })
+        }
+      }
+      else if (pattern.type === 'ObjectPattern') {
+        for (const property of pattern.properties ?? []) addPattern(property.value ?? property.argument, tag, list)
+      }
+      else if (pattern.type === 'ArrayPattern') {
+        for (const element of pattern.elements ?? []) addPattern(element, tag, list)
+      }
+      else if (pattern.type === 'AssignmentPattern') {
+        addPattern(pattern.left, tag, list)
+      }
+      else if (pattern.type === 'RestElement') {
+        addPattern(pattern.argument, tag, list)
+      }
+      else if (pattern.type === 'TSParameterProperty') {
+        addPattern(pattern.parameter, tag, list)
+      }
+    }
+    for (const statement of program.body ?? []) {
+      const node = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement
+      if (node?.type === 'VariableDeclaration') {
+        for (const declarator of node.declarations) addPattern(declarator.id, 'TopLevel')
+      }
+    }
     walk(program, {
       enter(node: any) {
-        if ((node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type)) && node.id?.name === name)
-          locals.push({ _tag: 'Local', filePath: path, source, pos: node.id.start })
+        if (node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type) || node.type === 'FunctionExpression' || node.type === 'ClassExpression')
+          addPattern(node.id, 'Local')
+        for (const parameter of node.params ?? []) addPattern(parameter, 'Local', parameters)
+        if (node.type === 'CatchClause')
+          addPattern(node.param, 'Local', parameters)
       },
     })
   }
   // Keep top-level renames from changing unrelated local shadows.
   if (out.length)
     return out
+  if (allowMultiple || !locals.length)
+    locals.push(...parameters)
   if (!allowMultiple && locals.length > new Set(locals.map(d => d.filePath)).size)
     throw new Error(`ripast rename: "${name}" has multiple declarations in one file. Pass --all to rename every occurrence.`)
   return locals
