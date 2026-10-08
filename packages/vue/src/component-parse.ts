@@ -283,8 +283,11 @@ function extractEmits(callNode: any): { emits: string[], unresolved: boolean } {
             out.push(literal.literal.value)
         }
         // event: [payload]
-        else if (member.type === 'TSPropertySignature' && member.key?.type === 'Identifier') {
-          out.push(member.key.name)
+        else if (member.type === 'TSPropertySignature' && !member.computed) {
+          if (member.key?.type === 'Identifier')
+            out.push(member.key.name)
+          else if (member.key?.type === 'Literal' && typeof member.key.value === 'string')
+            out.push(member.key.value)
         }
       }
       return { emits: out, unresolved: false }

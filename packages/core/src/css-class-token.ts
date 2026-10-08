@@ -1,19 +1,15 @@
 export type RenameMap = ReadonlyMap<string, string>
 
-const CLASS_TOKEN_SPLIT_RE = /([\\:]?[\s'"`;{}]+)/g
+const CLASS_TOKEN_SEPARATOR_RE = /[\s'"`;{}]/
 const NUMERIC_RE = /^[\d.-]+$/
 const TOKEN_SHAPE_RE = /^[\w-]+(?:\[[^\]]*\])?(?:\/[\w.-]+)?$/
 
 export function visitClassTokens(input: string, visit: (bare: string) => void): void {
-  const parts = input.split(CLASS_TOKEN_SPLIT_RE)
-  for (let i = 0; i < parts.length; i += 2) {
-    const tok = parts[i]
-    if (!tok)
-      continue
-    const bare = bareToken(tok)
+  visitTokenRanges(input, (start, end) => {
+    const bare = bareToken(input.slice(start, end))
     if (bare)
       visit(bare)
-  }
+  })
 }
 
 export function bareToken(token: string): string | null {
@@ -27,19 +23,52 @@ export function bareToken(token: string): string | null {
 }
 
 export function rewriteClassString(input: string, map: RenameMap): string {
-  const parts = input.split(CLASS_TOKEN_SPLIT_RE)
-  let changed = false
-  for (let i = 0; i < parts.length; i++) {
-    const tok = parts[i]
-    if (!tok)
+  let output = ''
+  let cursor = 0
+  visitTokenRanges(input, (start, end) => {
+    const token = input.slice(start, end)
+    const replacement = rewriteToken(token, map)
+    if (replacement !== token) {
+      output += input.slice(cursor, start) + replacement
+      cursor = end
+    }
+  })
+  return cursor ? output + input.slice(cursor) : input
+}
+
+function visitTokenRanges(input: string, visit: (start: number, end: number) => void): void {
+  let start = 0
+  let depth = 0
+  let quote = ''
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i]
+    if (depth && char === '\\') {
+      i++
       continue
-    const next = rewriteToken(tok, map)
-    if (next !== tok) {
-      parts[i] = next
-      changed = true
+    }
+    if (quote) {
+      if (char === quote)
+        quote = ''
+      continue
+    }
+    if (depth && (char === '\'' || char === '"')) {
+      quote = char
+      continue
+    }
+    if (char === '[') {
+      depth++
+    }
+    else if (char === ']' && depth) {
+      depth--
+    }
+    else if (!depth && CLASS_TOKEN_SEPARATOR_RE.test(char)) {
+      if (start < i)
+        visit(start, i)
+      start = i + 1
     }
   }
-  return changed ? parts.join('') : input
+  if (start < input.length)
+    visit(start, input.length)
 }
 
 export function rewriteToken(token: string, map: RenameMap): string {

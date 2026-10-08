@@ -359,7 +359,10 @@ export function unwrapTemplateElements(source: string, selector: TemplateSelecto
   const ast = parseTemplate(source)
   if (!ast)
     return source
-  const matches = collectMatches(ast, selector, true, opts)
+  // Apply disjoint outer edits first. Revisit nested matches after their parents
+  // have been removed, so a parent replacement cannot overwrite a child edit.
+  const matches = collectMatches(ast, selector, false, opts)
+  const hasNestedMatches = collectMatches(ast, selector, true, opts).length > matches.length
   if (!matches.length)
     return source
   const edits: TextEdit[] = []
@@ -402,7 +405,8 @@ export function unwrapTemplateElements(source: string, selector: TemplateSelecto
       edits.push({ start, end, replacement: inner })
     }
   }
-  return applyTextEdits(source, edits)
+  const output = applyTextEdits(source, edits)
+  return hasNestedMatches ? unwrapTemplateElements(output, selector, opts) : output
 }
 
 export function extractTemplateExpressions(source: string): TemplateExpression[] {
@@ -416,42 +420,42 @@ export function extractTemplateExpressions(source: string): TemplateExpression[]
   const tmpl = descriptor.template
   if (!tmpl?.ast)
     return []
-  const templateOffset = tmpl.loc.start.offset
   const out: TemplateExpression[] = []
-  visit(tmpl.ast, out, templateOffset)
+  visit(tmpl.ast, out)
   return out
 }
 
-function visit(node: any, out: TemplateExpression[], templateOffset: number): void {
+function visit(node: any, out: TemplateExpression[]): void {
   if (!node || typeof node !== 'object')
     return
   if (node.type === NODE_SIMPLE_EXPRESSION) {
-    if (typeof node.content === 'string' && node.content.trim() && node.loc?.start?.offset !== undefined) {
-      out.push({ code: node.content, offsetInSource: templateOffset + node.loc.start.offset })
+    if (!node.isStatic && typeof node.content === 'string' && node.content.trim() && node.loc?.start?.offset !== undefined) {
+      const argumentBracket = node.loc.source === `[${node.content}]` ? 1 : 0
+      out.push({ code: node.content, offsetInSource: node.loc.start.offset + argumentBracket })
     }
     return
   }
   if (node.type === NODE_COMPOUND_EXPRESSION) {
-    for (const c of node.children ?? []) visit(c, out, templateOffset)
+    for (const c of node.children ?? []) visit(c, out)
     return
   }
   if (node.type === NODE_INTERPOLATION) {
-    visit(node.content, out, templateOffset)
+    visit(node.content, out)
     return
   }
   if (node.type === NODE_DIRECTIVE) {
     if (node.exp)
-      visit(node.exp, out, templateOffset)
+      visit(node.exp, out)
     if (node.arg)
-      visit(node.arg, out, templateOffset)
+      visit(node.arg, out)
     return
   }
   if (node.type === NODE_ELEMENT) {
-    for (const prop of node.props ?? []) visit(prop, out, templateOffset)
-    for (const c of node.children ?? []) visit(c, out, templateOffset)
+    for (const prop of node.props ?? []) visit(prop, out)
+    for (const c of node.children ?? []) visit(c, out)
     return
   }
-  for (const c of node.children ?? []) visit(c, out, templateOffset)
+  for (const c of node.children ?? []) visit(c, out)
 }
 
 const HTML_ELEMENT_NAMES = new Set([
