@@ -15,9 +15,26 @@ Use `--apply --profile agent`. Keep type verification enabled.
 Append the supplied check with `&&` in the same shell call. Do not invent check commands.
 Read the result once. If the check passes, finish without another search or check.
 
-If the task provides an executable on PATH, use `ripast` directly.
+If the task supplies an executable, use it. Prefer an existing project installation over a global CLI.
+If only a global CLI is available on PATH, use `ripast` directly.
 Otherwise, use the project's package manager from its instructions, metadata, or lockfile.
 Do not switch package managers or probe versions solely to choose a launcher.
+
+For repeated use, prefer installing globally once over a temporary launcher on every command.
+If no CLI is installed, use the matching global command, then run `ripast` directly:
+
+| Package manager | One-time global installation |
+| --- | --- |
+| npm | `npm install -g @ripast/cli @ripast/vue` |
+| pnpm | `pnpm add -g @ripast/cli @ripast/vue` |
+| Bun | `bun add -g @ripast/cli @ripast/vue` |
+| Yarn Classic | `yarn global add @ripast/cli @ripast/vue` |
+
+Yarn 2+ has no global install command. Use npm for global tooling, or the Yarn launcher below.
+Include `@ripast/vue` to avoid temporary adapter installation in Vue/Nuxt projects.
+Respect environment rules that prohibit global installs. Use temporary launchers for one-off or restricted environments.
+If the global binary is unavailable, add the manager's global bin directory to PATH or use a temporary launcher.
+Do not reinstall before each command or silently upgrade an existing CLI.
 
 | Package manager | Installed CLI | Temporary CLI |
 | --- | --- | --- |
@@ -28,7 +45,7 @@ Do not switch package managers or probe versions solely to choose a launcher.
 
 Yarn Classic uses `yarn exec -- ripast` for an installed CLI, or the npm temporary command.
 The Classic `--` separator ensures flags such as `--apply` reach Ripast.
-If the package manager is unknown, use the npm temporary command.
+If the package manager is unknown, use npm for global installation, or its temporary command for one-off use.
 
 Examples use `ripast`. Substitute your launcher.
 If an executable is provided, skip installation and version probes.
@@ -114,3 +131,4 @@ Svelte markup and arbitrary custom codemods remain unsupported.
 CLI flags and output contracts: [CLI source](https://github.com/harlan-zw/ripast/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/src/cli.ts).
 Adapter selection: [launcher](https://github.com/harlan-zw/ripast/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/bin/ripast.mjs).
 Launcher flags: [npm](https://docs.npmjs.com/cli/npm-exec/), [Yarn](https://yarnpkg.com/cli/dlx), [Bun](https://bun.sh/docs/pm/bunx).
+Global installation: [npm](https://docs.npmjs.com/cli/v11/commands/npm-install/), [pnpm](https://pnpm.io/cli/add), [Bun](https://bun.sh/docs/pm/cli/add), [Yarn Classic](https://classic.yarnpkg.com/lang/en/docs/cli/global/).
