@@ -19,53 +19,10 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 </div>
 
-Rename a symbol across files. Update its imports and references. Preview the diff before writing.
-
-Latest Codex comparisons used **59.9% fewer total tokens** and took **60.5% less time** with Ripast.
-These figures cover four completed source-slice pairs, with one run per method per project.
-Installation and Skill loading are excluded. See the [full results and limits](#agent-benchmarks).
-
-## Try a refactor
-
-Requires Node 22.13+ and pnpm. Run from your project root.
-Replace the example names and declaration path with a symbol from your project:
-
-```bash
-pnpm dlx @ripast/cli rename useStore useAppStore --scope src/store.ts --profile full
-```
-
-This previews the diff. Imports and references change together:
-
-```diff
-# src/store.ts
--export function useStore() { return 1 }
-+export function useAppStore() { return 1 }
-# src/consumer.ts
--import { useStore } from './store.js'
--export const value = useStore()
-+import { useAppStore } from './store.js'
-+export const value = useAppStore()
- export const label = 'useStore'
-```
-
-The unrelated string keeps its spelling. If the diff matches your intent, add `--apply` to write it.
-Supported refactors check type diagnostics before writing. See [verification scope](#verify).
-
-### Use with a coding agent
-
-Install the [Ripast Agent Skill](./packages/cli/skills/ripast/SKILL.md):
-
-```bash
-pnpm dlx skilld add @ripast/cli
-```
-
-The Skill tells your agent when to use Ripast and how to run verified refactors.
-For community-specific demonstrations, use the [video runbook](./docs/video-runbook.md).
-
 ## Features
 
 - ✂️ **Agent refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
-- 📉 **Lower agent overhead.** Latest completed pairs: 45% to 60% fewer tokens, 35% to 61% less time ([benchmarks](#agent-benchmarks)).
+- 📉 **Lower agent overhead.** Latest Codex comparisons: **59.9% fewer total tokens**, **60.5% less time** across four completed pairs ([results and limits](#agent-benchmarks)).
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
 - 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
@@ -78,20 +35,28 @@ For community-specific demonstrations, use the [video runbook](./docs/video-runb
 Renaming a symbol can affect imports, type references, JSX components, and Vue templates across a project.
 Text search finds the spelling, but a rename needs to distinguish references from unrelated names.
 
-Ripast gives coding agents CLI commands for these refactors, with a preview before writing changes.
+Ripast gives coding agents one scoped command to rename a symbol and update its imports and references.
+Preview the diff before writing changes. Unrelated strings keep their spelling.
 Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
 
 ## Installation
 
 Requires Node 22.13+. These examples use [pnpm](https://pnpm.io/installation).
 
-From your project root, run a scan without installing globally:
+From your project root, preview a rename without installing globally.
+Replace the example names and declaration path with a symbol from your project:
 
 ```bash
-pnpm dlx @ripast/cli scan useStore
+pnpm dlx @ripast/cli rename useStore useAppStore --scope src/store.ts --profile full
 ```
 
-This lists matching occurrences and their syntax, such as an identifier, string, or property.
+If the diff matches your intent, add `--apply` to write it.
+Supported refactors check type diagnostics before writing. See [verification scope](#verify).
+
+> [!TIP]
+> Install the [Ripast Agent Skill](./packages/cli/skills/ripast/SKILL.md) with `pnpm dlx skilld add @ripast/cli`.
+> The Skill tells your agent when to use Ripast and how to run verified refactors.
+
 To use the `ripast` command in the examples below, install the CLI globally:
 
 ```bash
@@ -177,6 +142,20 @@ ripast rename useStore useAppStore --apply
 # Ambiguous declarations? Pick one or rename all
 ripast rename useStore useAppStore --scope src/store.ts --apply
 ripast rename useStore useAppStore --all --apply
+```
+
+Imports and references change together. The unrelated string keeps its spelling:
+
+```diff
+# src/store.ts
+-export function useStore() { return 1 }
++export function useAppStore() { return 1 }
+# src/consumer.ts
+-import { useStore } from './store.js'
+-export const value = useStore()
++import { useAppStore } from './store.js'
++export const value = useAppStore()
+ export const label = 'useStore'
 ```
 
 </details>
@@ -415,6 +394,8 @@ ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 Licensed under the [MIT license](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md).
 
 ## Agent benchmarks
+
+For community-specific demonstrations, use the [video runbook](./docs/video-runbook.md).
 
 ### Latest batch, 9 October 2026
 
