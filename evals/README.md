@@ -156,3 +156,10 @@ In both mode, tasks match, but tool stacks, token accounting, and provider load 
 Keep failed attempts, timeouts, and harness setup failures visible in the report.
 Recorded second-batch measurements live in [the results file](./results/2026-10-09.json).
 The matched 40-run batch lives in [its separate results file](./results/2026-10-09-matched.json).
+
+### GPT-6.1 Sol findings
+
+The [GPT-6.1 Sol report](./results/2026-10-09-6.1-sol.md) records ten second-batch projects with medium reasoning.
+Both methods passed all ten cases. Ripast used 60.4% fewer total tokens and 51.2% less total agent time.
+These are single-run measurements. The report includes source commits, model selection, and comparison limits.
+The [measurement file](./results/2026-10-09-6.1-sol.json) retains all twenty attempts.

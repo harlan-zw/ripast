@@ -1,7 +1,7 @@
 {
   "name": "@ripast/core",
   "type": "module",
-  "version": "0.5.0",
+  "version": "0.6.1",
   "description": "AST refactor engine for AI coding agents. Deterministic rename, move, find-usages, and tailwind/CSS class migration across TypeScript. Framework adapters loaded via @ripast/<framework> packages.",
   "author": {
     "name": "Harlan Wilton",

@@ -127,10 +127,22 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
   const stderrTail: string[] = []
   let seq = 0
   let buffer = Buffer.alloc(0)
-  let exited = false
+  let terminalError: Error | undefined
+
+  const stop = (error: Error): void => {
+    if (terminalError)
+      return
+    terminalError = error
+    for (const entry of pending.values())
+      entry.reject(error)
+    pending.clear()
+    // Cancel queued writes before terminating the reader on every platform.
+    proc.stdin.destroy()
+    proc.kill()
+  }
 
   const write = (message: object): void => {
-    if (exited)
+    if (terminalError)
       return
     const body = Buffer.from(JSON.stringify(message), 'utf8')
     proc.stdin.write(`Content-Length: ${body.length}\r\n\r\n`)
@@ -140,8 +152,8 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
   const stderrHint = (): string => stderrTail.length ? `: ${stderrTail.join(' ').trim()}` : ''
 
   const request = (method: string, params: unknown): Promise<any> => {
-    if (exited)
-      return Promise.reject(new Error(`ripast: TypeScript server exited before ${method}${stderrHint()}`))
+    if (terminalError)
+      return Promise.reject(terminalError)
     const id = ++seq
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject })
@@ -199,16 +211,14 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       stderrTail.shift()
   })
   proc.on('exit', (code) => {
-    exited = true
-    for (const entry of pending.values())
-      entry.reject(new Error(`ripast: TypeScript server exited with code ${code}${stderrHint()}`))
-    pending.clear()
+    stop(new Error(`ripast: TypeScript server exited with code ${code}${stderrHint()}`))
   })
   proc.on('error', (error) => {
-    exited = true
-    for (const entry of pending.values())
-      entry.reject(new Error(`ripast: could not start TypeScript server at ${binary}: ${error.message}`))
-    pending.clear()
+    stop(new Error(`ripast: could not start TypeScript server at ${binary}: ${error.message}`))
+  })
+  proc.stdin.on('error', (error) => {
+    // A queued write can fail after disposal. Its requests already have the terminal error.
+    stop(new Error(`ripast: TypeScript server input failed: ${error.message}${stderrHint()}`))
   })
 
   await request('initialize', {
@@ -293,7 +303,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     // Pulling config diagnostics loads its project, even when the source sits outside the config directory.
     open(tsconfig, tsconfigText)
     await request('textDocument/diagnostic', { textDocument: { uri: uriOf(tsconfig) } }).catch((error) => {
-      proc.kill()
+      stop(error)
       throw error
     })
   }
@@ -348,10 +358,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     open,
     textOf,
     dispose() {
-      if (exited)
-        return
-      exited = true
-      proc.kill()
+      stop(new Error('ripast: TypeScript server disposed.'))
     },
   }
 }

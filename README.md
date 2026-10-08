@@ -12,7 +12,7 @@
 [![license](https://img.shields.io/github/license/harlan-zw/ripast?style=flat-square&labelColor=334155&color=334155)](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md)
 [![Agent skill on skilld.dev](https://img.shields.io/badge/Skill_repo-skilld.dev-334155?style=flat-square&labelColor=334155)](https://skilld.dev/gh/harlan-zw/ripast)
 
-> IDE-like refactoring for agents.
+> Typesafe IDE-like refactoring for agents.
 
 <p><sub>Made possible by my <a href="https://github.com/sponsors/harlan-zw">Sponsor Program 💖</a><br>
 Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <a href="https://discord.gg/275MBUBvgP">Discord</a> for help</sub></p>
@@ -21,7 +21,7 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 ## Features
 
-- ✂️ **Agent refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
+- ✂️ **Typesafe Agent Refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
 - 📉 **Lower agent overhead.** Median reductions by model: **59% to 71% fewer tokens**, **48% to 56% less time** ([benchmarks](#agent-benchmarks)).
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [Git](https://git-scm.com), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.

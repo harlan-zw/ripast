@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
     paths-ignore: ['**/*.md']
   pull_request:
     paths-ignore: ['**/*.md']
@@ -11,6 +12,28 @@ permissions:
   contents: read
 
 jobs:
+  platform:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec vitest run test/ts-server.test.ts test/launcher-platform.test.ts test/platform-paths.test.ts
+      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
+      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
+
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

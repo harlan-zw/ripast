@@ -1,8 +1,44 @@
 import assert from 'node:assert/strict'
-import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { join, resolve } from 'node:path'
+import process from 'node:process'
+import { pathToFileURL } from 'node:url'
 import { findRegressions, startTsServer } from '@ripast/core'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
+
+it('disposes the server while document writes are queued without crashing', () => {
+  const fx = makeFixture()
+  try {
+    const entry = pathToFileURL(resolve('packages/core/dist/index.mjs')).href
+    const script = fx.write('dispose.ts', `
+import { startTsServer } from ${JSON.stringify(entry)}
+import process from 'node:process'
+const server = await startTsServer(process.cwd())
+server.open('large.ts', 'export const value = 1\\n'.repeat(200_000))
+server.dispose()
+process.stdout.write('disposed\\n')
+`)
+    const result = spawnSync(process.execPath, [script], { cwd: fx.dir, encoding: 'utf8', timeout: 10_000 })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout.trim(), 'disposed')
+  }
+  finally { fx.cleanup() }
+})
+
+it('rejects pending requests when the server is disposed', async () => {
+  const fx = makeFixture({ 'value.ts': 'export const value = 1\n' })
+  const server = await startTsServer(fx.dir)
+  try {
+    const diagnostics = server.diagnostics([join(fx.dir, 'value.ts')])
+    server.dispose()
+    await assert.rejects(diagnostics, /TypeScript server disposed/)
+  }
+  finally {
+    server.dispose()
+    fx.cleanup()
+  }
+})
 
 it('uses compiler options from a selected generated config', async () => {
   const fx = makeFixture({

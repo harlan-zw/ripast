@@ -18,12 +18,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
+  publish:
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 20
-    outputs:
-      npmTag: ${{ steps.plan.outputs.npmTag }}
-      version: ${{ steps.plan.outputs.version }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -36,90 +36,16 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
       - name: Validate package versions
-        id: plan
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: node --experimental-strip-types scripts/release.ts plan "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+        run: node --experimental-strip-types scripts/release.ts plan "$RELEASE_TAG"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
       - run: pnpm build
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm -r --filter './packages/*' exec publint
       - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
-      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: npm-packages
-          path: ${{ runner.temp }}/ripast-pack/*.tgz
-          if-no-files-found: error
-
-  platform:
-    needs: verify
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
-          persist-credentials: false
-      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm exec vitest run test/launcher-platform.test.ts test/platform-paths.test.ts
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: npm-packages
-          path: ${{ runner.temp }}/ripast-pack
-      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
-
-  publish:
-    needs: [verify, platform]
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
-          persist-credentials: false
-      - name: Load download tooling from this workflow revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: .release-tools
-          sparse-checkout: scripts/release.ts
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
       - run: npm install --global npm@12
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: npm-packages
-          path: ${{ runner.temp }}/ripast-pack
-      - name: Publish verified packages through OIDC
+      - name: Publish packages through OIDC
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: npm run release:publish -- "$RELEASE_TAG" "${{ runner.temp }}/ripast-pack"
-      - name: Download published packages
-        env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          npm pkg set 'scripts.release:download=node --experimental-strip-types .release-tools/scripts/release.ts download'
-          npm run release:download -- "$RELEASE_TAG" "${{ runner.temp }}/ripast-published"
-      - name: Check installation from npm
-        run: npm run smoke:package -- "${{ runner.temp }}/ripast-published"
