@@ -6,7 +6,7 @@ import process from 'node:process'
 import { setTimeout } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 
-const folders = ['core', 'vue', 'cli'] as const
+const folders = ['core', 'vue', 'tsrx', 'cli'] as const
 interface ReleasePackage { name: string, version: string }
 interface RegistryResponse { status: number | null, stdout: string }
 
@@ -35,8 +35,8 @@ export function planRelease(tag: string, packages: ReleasePackage[]) {
     throw new Error('Pass a version tag, such as v0.5.0 or v0.6.0-beta.1.')
   const version = match[1]
   const names = new Set(packages.map(pkg => pkg.name))
-  if (packages.length !== 3 || names.size !== 3 || folders.some(folder => !names.has(`@ripast/${folder}`)))
-    throw new Error('Release the core, Vue, and CLI packages together.')
+  if (packages.length !== folders.length || names.size !== folders.length || folders.some(folder => !names.has(`@ripast/${folder}`)))
+    throw new Error('Release the core, Vue, TSRX, and CLI packages together.')
   if (packages.some(pkg => pkg.version !== version))
     throw new Error('Every package version must match the release tag.')
   const channel = match[2]?.split('.')[0].toLowerCase()

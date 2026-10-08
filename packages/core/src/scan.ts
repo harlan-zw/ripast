@@ -793,7 +793,7 @@ function bindingName(node: any): string | undefined {
   return undefined
 }
 
-const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.tsrx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
 
 function resolveModuleSpecifier(fromFile: string, specifier: string): string | null {
   if (!specifier.startsWith('.'))

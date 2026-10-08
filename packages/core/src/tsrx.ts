@@ -1,0 +1,29 @@
+import type { compile_to_volar_mappings } from '@ripast/tsrx/compiler'
+import { createRequire } from 'node:module'
+
+export function resolveTsrxModule(from: string, entry: 'compiler' | 'package.json'): string {
+  const specifier = `@ripast/tsrx/${entry}`
+  try {
+    return createRequire(from).resolve(specifier)
+  }
+  catch {
+    return createRequire(import.meta.url).resolve(specifier)
+  }
+}
+
+/** Parse authored positions, never the generated TSX that refactors would corrupt. */
+export function parseTsrxSource(path: string, source: string) {
+  const require = createRequire(path)
+  let compiler: { compile_to_volar_mappings: typeof compile_to_volar_mappings }
+  try {
+    compiler = require(resolveTsrxModule(path, 'compiler'))
+  }
+  catch (cause) {
+    throw new Error(`ripast: ${path} requires @ripast/tsrx and a project-local Octane compiler for TSRX support`, { cause })
+  }
+  const result = compiler.compile_to_volar_mappings(source, path, { loose: true })
+  if (result.errors.length) {
+    throw new Error(`ripast: cannot parse ${path}: ${result.errors.map(error => error.message).join('; ')}`)
+  }
+  return { program: result.sourceAst, comments: [] }
+}

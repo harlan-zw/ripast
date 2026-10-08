@@ -6,6 +6,7 @@ import { createPatch } from 'diff'
 import { parseSync } from 'oxc-parser'
 import picomatch from 'picomatch'
 import { searchFiles } from './file-search.ts'
+import { parseTsrxSource } from './tsrx.ts'
 
 export interface ParsedFile {
   path: string
@@ -57,7 +58,7 @@ export function applyTextEdits(source: string, edits: TextEdit[]): string {
   return out
 }
 
-const EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
+const EXTS = ['.ts', '.tsx', '.tsrx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
 
 // Meta-project directories that aren't real source even when not in .gitignore.
 // `.git` is already excluded by ripgrep's built-in rules; the rest are workflow
@@ -183,6 +184,10 @@ export function parseFile(path: string, cwd: string = process.cwd()): ParsedFile
 
 export function parseSourceFile(path: string, source: string, cwd: string = process.cwd()): ParsedFile {
   const rel = relative(cwd, path)
+  if (path.endsWith('.tsrx')) {
+    const { program } = parseTsrxSource(path, source)
+    return { path, rel, fullSource: source, scriptSource: source, scriptStart: 0, scriptEnd: source.length, program, isSfc: false }
+  }
   if (path.endsWith('.vue')) {
     const block = extractScript(source)
     if (!block)

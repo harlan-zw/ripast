@@ -6,7 +6,8 @@ import { createRequire } from 'node:module'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { posToLineCol } from './util.ts'
+import { resolveTsrxModule } from './tsrx.ts'
+import { posToLineCol, rgFiles } from './util.ts'
 
 // Client for the native TypeScript language server (TypeScript 7+, `tsc --lsp`).
 // Semantics (rename, references, definitions, diagnostics, file renames) come
@@ -87,14 +88,17 @@ const PREFERENCES = {
   preferences: { useAliasesForRenames: false },
 }
 
-export function resolveNativeTsc(): string {
+export function resolveNativeTsc(tsrxCwd?: string): string {
   const override = process.env.RIPAST_NATIVE_TSC
   if (override)
     return override
   const platformPkg = `@typescript/typescript-${process.platform}-${process.arch}`
   let platformJson: string
   try {
-    const pkgJson = createRequire(import.meta.url).resolve('typescript-native/package.json')
+    const anchor = tsrxCwd
+      ? resolveTsrxModule(join(tsrxCwd, 'package.json'), 'package.json')
+      : import.meta.url
+    const pkgJson = createRequire(anchor).resolve('typescript-native/package.json')
     platformJson = createRequire(pkgJson).resolve(`${platformPkg}/package.json`)
   }
   catch {
@@ -117,7 +121,11 @@ interface OpenDocument {
 }
 
 export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Promise<TsServer> {
-  const binary = opts.binary ?? resolveNativeTsc()
+  const tsrxFiles = rgFiles('', { cwd, glob: '*.tsrx', listAll: true })
+  const runExternalCode = process.env.RIPAST_RUN_EXTERNAL_CODE === '1'
+  if (tsrxFiles.length && !runExternalCode)
+    throw new Error('ripast: TSRX semantic operations require RIPAST_RUN_EXTERNAL_CODE=1 and a configured .tsrx content mapper')
+  const binary = opts.binary ?? resolveNativeTsc(tsrxFiles.length ? cwd : undefined)
   const tsconfig = opts.tsconfig ? resolve(cwd, opts.tsconfig) : undefined
   const tsconfigText = tsconfig ? readFileSync(tsconfig, 'utf8') : undefined
   const preferences = tsconfig ? { ...PREFERENCES, customConfigFileName: basename(tsconfig) } : PREFERENCES
@@ -128,11 +136,14 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
   let seq = 0
   let buffer = Buffer.alloc(0)
   let terminalError: Error | undefined
+  let hasTsrxMapper = false
+  let mapperWait: { resolve: () => void, reject: (error: Error) => void } | undefined
 
   const stop = (error: Error): void => {
     if (terminalError)
       return
     terminalError = error
+    mapperWait?.reject(error)
     for (const entry of pending.values())
       entry.reject(error)
     pending.clear()
@@ -167,6 +178,13 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
 
   const onMessage = (message: any): void => {
     if (message.id !== undefined && message.method) {
+      if (message.method === 'client/registerCapability') {
+        hasTsrxMapper ||= message.params?.registrations?.some((registration: { id: string }) => registration.id === 'content-mapper-did-open') ?? false
+        if (hasTsrxMapper)
+          mapperWait?.resolve()
+        if (DEBUG)
+          process.stderr.write(`[ts-server] registrations: ${JSON.stringify(message.params)}\n`)
+      }
       // Server -> client request. We hold no editor state beyond preferences.
       const result = message.method === 'workspace/configuration'
         ? (message.params?.items ?? []).map(() => preferences)
@@ -225,7 +243,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     processId: process.pid,
     rootUri: pathToFileURL(cwd).href,
     workspaceFolders: [{ uri: pathToFileURL(cwd).href, name: 'ripast' }],
-    initializationOptions: preferences,
+    initializationOptions: { ...preferences, runExternalCode },
     capabilities: {
       workspace: {
         workspaceEdit: { documentChanges: true },
@@ -233,6 +251,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
         fileOperations: { willRename: true },
       },
       textDocument: {
+        synchronization: { dynamicRegistration: true },
         rename: { prepareSupport: false },
         diagnostic: { dynamicRegistration: false },
       },
@@ -308,6 +327,51 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     })
   }
 
+  if (tsrxFiles.length) {
+    try {
+      // Native TypeScript discovers configured TSRX-only projects from these hints.
+      // Wait for synchronization registration before opening mapped documents.
+      await request('custom/setContentMapperContributions', {
+        contributions: [{ contributorId: 'ripast-tsrx', extensions: ['.tsrx'] }],
+        openDocuments: tsrxFiles.map(path => ({ uri: uriOf(path) })),
+      })
+      if (!hasTsrxMapper) {
+        await new Promise<void>((resolve, reject) => {
+          const finish = (error?: Error) => {
+            clearTimeout(timer)
+            mapperWait = undefined
+            if (error)
+              reject(error)
+            else resolve()
+          }
+          const timer = setTimeout(() => finish(new Error('ripast: no TSRX content mapper was registered. Configure @tsrx/content-mapper for .tsrx with @ripast/tsrx/compiler and use a compatible TypeScript 7.1 build')), 5000)
+          mapperWait = { resolve: () => finish(), reject: finish }
+          if (terminalError)
+            finish(terminalError)
+        })
+      }
+    }
+    catch (cause) {
+      const error = cause instanceof Error ? cause : new Error('ripast: TSRX content mapper initialization failed', { cause })
+      stop(error)
+      throw error
+    }
+  }
+
+  for (const path of tsrxFiles) {
+    open(path)
+    const report = await request('textDocument/diagnostic', { textDocument: { uri: uriOf(path) } }).catch((cause) => {
+      const error = new Error('ripast: no TSRX content mapper could load the source. Configure @tsrx/content-mapper for .tsrx', { cause })
+      stop(error)
+      throw error
+    })
+    const failure = report?.items?.find((diagnostic: LspDiagnostic) => /^(?:TSRX)?77100[0-3]$/.test(String(diagnostic.code)))
+    if (failure) {
+      const error = new Error(`ripast: TSRX content mapper failed for ${path}: ${failure.message}`)
+      stop(error)
+      throw error
+    }
+  }
   return {
     async rename(path, offset, newName) {
       open(path)

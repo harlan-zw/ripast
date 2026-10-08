@@ -63,5 +63,8 @@
     "picomatch": "^4.0.7",
     "std-env": "^4.3.0",
     "typescript-native": "npm:typescript@7.1.0-dev.20260905.1"
+  },
+  "devDependencies": {
+    "@ripast/tsrx": "workspace:*"
   }
 }

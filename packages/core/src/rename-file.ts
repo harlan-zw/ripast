@@ -68,7 +68,9 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     throw new Error('ripast rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
   const verifyMode = resolveVerifyMode(opts.verify)
-  const vueAdapter = opts.vue === false ? null : await loadAdapter('vue')
+  const hasVueFiles = rgFiles('', { cwd, glob: '*.vue', listAll: true }).length > 0
+  const hasTsrxFiles = rgFiles('', { cwd, glob: '*.tsrx', listAll: true }).length > 0
+  const vueAdapter = opts.vue === false || (hasTsrxFiles && !hasVueFiles) ? null : await loadAdapter('vue')
   const warnings: string[] = []
   const server = !vueAdapter || verifyMode !== 'none' ? await startTsServer(cwd, { tsconfig: tsconfigPath }) : null
   try {

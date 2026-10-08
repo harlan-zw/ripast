@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { downloadPublishedPackages, planRelease, publicationDecision } from '../scripts/release.ts'
 
-const packages = ['@ripast/core', '@ripast/vue', '@ripast/cli'].map(name => ({ name, version: '0.5.0' }))
+const packages = ['@ripast/core', '@ripast/vue', '@ripast/tsrx', '@ripast/cli'].map(name => ({ name, version: '0.5.0' }))
 
 describe('registry download', () => {
   it('waits for processed packages before completing the download', async () => {
@@ -57,8 +57,8 @@ describe('release plan', () => {
   })
 
   it('rejects missing or duplicate packages', () => {
-    expect(() => planRelease('v0.5.0', packages.slice(1))).toThrow('core, Vue, and CLI')
-    expect(() => planRelease('v0.5.0', [packages[0], packages[0], packages[2]])).toThrow('core, Vue, and CLI')
+    expect(() => planRelease('v0.5.0', packages.slice(1))).toThrow('core, Vue, TSRX, and CLI')
+    expect(() => planRelease('v0.5.0', [packages[0], packages[0], ...packages.slice(2)])).toThrow('core, Vue, TSRX, and CLI')
   })
 })
 

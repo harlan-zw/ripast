@@ -24,7 +24,7 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 - ✂️ **Typesafe Agent Refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
 - 📉 **Lower agent overhead.** Median reductions by model: **59% to 71% fewer tokens**, **48% to 56% less time** ([benchmarks](#agent-benchmarks)).
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
-- 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
+- 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript. Optional [Octane TSRX support](./packages/tsrx/README.md) covers authored-source scans and semantic renames.
 - 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
 - 🪂 **Preview first.** Dry runs show the diff; [type checking](#verify) blocks supported refactors that introduce errors.
 
