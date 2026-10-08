@@ -12,7 +12,7 @@
 [![license](https://img.shields.io/github/license/harlan-zw/ripast?style=flat-square&labelColor=334155&color=334155)](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md)
 [![Agent skill on skilld.dev](https://img.shields.io/badge/Skill_repo-skilld.dev-334155?style=flat-square&labelColor=334155)](https://skilld.dev/gh/harlan-zw/ripast)
 
-> IDE-like refactoring for agents: rename, move, find-usages, css-class-rename, etc. Works with TS, Vue, React & more
+> IDE-like refactoring for agents.
 
 <p><sub>Made possible by my <a href="https://github.com/sponsors/harlan-zw">Sponsor Program 💖</a><br>
 Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <a href="https://discord.gg/275MBUBvgP">Discord</a> for help</sub></p>
