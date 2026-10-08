@@ -1,7 +1,8 @@
 import type { PathAlias } from './nuxt-paths.ts'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 import ts from '@typescript/typescript6'
+import picomatch from 'picomatch'
 import { configProperty, literalNuxtConfig, literalString } from './nuxt-config.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases } from './nuxt-paths.ts'
 
@@ -18,19 +19,26 @@ export function nuxtImportMetadataPaths(cwd: string, consumerPath?: string): str
     const rel = relative(directory, consumerPath).replace(/\\/g, '/')
     return rel === '' || (rel !== '..' && !rel.startsWith('../') && !rel.startsWith('/'))
   }
-  const inProject = (name: string): boolean => {
+  const inProject = (name: string, fallback: string): boolean => {
     const configPath = join(cwd, '.nuxt', name)
     if (!existsSync(configPath))
-      return false
+      return inDirectory(join(cwd, fallback))
     const parsed = ts.parseConfigFileTextToJson(configPath, readFileSync(configPath, 'utf8'))
     if (parsed.error)
       throw new Error(`ripast: cannot read Nuxt runtime configuration in ${configPath}. Run Nuxt prepare first.`)
-    return (parsed.config.include ?? []).some((pattern: unknown) => typeof pattern === 'string'
-      && pattern.endsWith('/**/*') && inDirectory(resolve(dirname(configPath), pattern.slice(0, -5))))
+    const matches = (patterns: unknown): boolean => Array.isArray(patterns) && patterns.some((pattern: unknown) => {
+      if (typeof pattern !== 'string')
+        return false
+      const path = resolve(dirname(configPath), pattern.replace(/\\/g, '/')).replace(/\\/g, '/')
+      // TypeScript treats a plain directory as including its descendants.
+      const directory = !/[?*]/.test(path) && (existsSync(path) ? statSync(path).isDirectory() : !extname(path))
+      return picomatch(directory ? `${path}/**/*` : path, { dot: true })(consumerPath.replace(/\\/g, '/'))
+    })
+    return matches(parsed.config.include) && !matches(parsed.config.exclude)
   }
-  if (existsSync(shared) && (inDirectory(join(cwd, 'shared')) || inProject('tsconfig.shared.json')))
+  if (existsSync(shared) && inProject('tsconfig.shared.json', 'shared'))
     return [shared]
-  if (inDirectory(join(cwd, 'server')) || inProject('tsconfig.server.json'))
+  if (inProject('tsconfig.server.json', 'server'))
     return [server].filter(path => existsSync(path))
   return app.filter(path => existsSync(path))
 }

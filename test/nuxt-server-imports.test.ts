@@ -25,6 +25,69 @@ function evaluate(source: string, globals: Record<string, unknown> = {}, importe
   return exports
 }
 
+function layerFixture(include = '../layers/*/shared/**/*', exclude: string[] = []) {
+  const fx = fixture()
+  fx.write('shared/utils/format.ts', 'export const format = (value: number) => value * 100')
+  fx.write('layers/admin/nuxt.config.ts', 'export default {}')
+  fx.write('layers/admin/shared/consumer.ts', 'export const result = format(7)')
+  fx.write('.nuxt/types/shared-imports.d.ts', `declare global { const format: typeof import('../../shared/utils/format').format } export {}`)
+  fx.write('.nuxt/tsconfig.shared.json', JSON.stringify({ include: ['../shared/**/*', include], exclude }))
+  return fx
+}
+
+it.each(['../layers/*/shared/**/*', '../layers/admin/shared', '../layers/*/shared/*.ts'])('keeps shared layer consumers bound to their runtime: %s', async (include) => {
+  const fx = layerFixture(include)
+  try {
+    const app = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verify: false })
+    assert.equal(app.changes.find(change => change.rel === 'layers/admin/shared/consumer.ts'), undefined)
+    const shared = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'shared/utils/format.ts', verify: false })
+    const provider = evaluate(shared.changes.find(change => change.rel === 'shared/utils/format.ts')!.after)
+    assert.equal(evaluate(shared.changes.find(change => change.rel === 'layers/admin/shared/consumer.ts')!.after, provider).result, 700)
+  }
+  finally { fx.cleanup() }
+})
+
+it('refuses deletion of a shared provider used by a wildcard layer', async () => {
+  const fx = layerFixture()
+  try {
+    await assert.rejects(runDelete('format', 'shared/utils/format.ts', { cwd: fx.dir, verify: false }), /auto-imports.*layers\/admin\/shared\/consumer.ts/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('imports a moved shared provider in its wildcard layer consumer', async () => {
+  const fx = layerFixture()
+  try {
+    const result = await runMove('format', 'shared/utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verify: false })
+    const provider = evaluate(result.changes.find(change => change.rel === 'lib/format.ts')!.after)
+    assert.equal(evaluate(result.changes.find(change => change.rel === 'layers/admin/shared/consumer.ts')!.after, {}, provider).result, 700)
+    assert.equal(result.changes.find(change => change.rel === 'app/consumer.ts'), undefined)
+  }
+  finally { fx.cleanup() }
+})
+
+it.each(['../layers/admin/shared', '../layers/*/shared/**/*', '../layers/admin/shared/consumer.ts'])('honors generated runtime exclusions: %s', async (exclude) => {
+  const fx = layerFixture('../layers/admin/shared/**/*', [exclude])
+  try {
+    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verify: false })
+    const provider = evaluate(result.changes.find(change => change.rel === 'app/utils/format.ts')!.after)
+    assert.equal(evaluate(result.changes.find(change => change.rel === 'layers/admin/shared/consumer.ts')!.after, provider).result, 8)
+  }
+  finally { fx.cleanup() }
+})
+
+it('uses plain server directories from generated runtime includes', async () => {
+  const fx = fixture()
+  try {
+    fx.write('modules/admin/server/consumer.ts', 'export const result = format(7)')
+    fx.write('.nuxt/tsconfig.server.json', JSON.stringify({ include: ['../server/**/*', '../modules/admin/server'] }))
+    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'server/utils/format.ts', verify: false })
+    const provider = evaluate(result.changes.find(change => change.rel === 'server/utils/format.ts')!.after)
+    assert.equal(evaluate(result.changes.find(change => change.rel === 'modules/admin/server/consumer.ts')!.after, provider).result, 70)
+  }
+  finally { fx.cleanup() }
+})
+
 it.each(['app', 'server'])('renames only the active %s auto-import provider', async (realm) => {
   const fx = fixture()
   try {
