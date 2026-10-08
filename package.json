@@ -23,6 +23,7 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/*' run build",
     "bench": "tsx bench/bench.ts",
+    "eval": "tsx evals/run.ts",
     "dev:prepare": "pnpm -r --filter './packages/*' run dev:prepare",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
