@@ -1,6 +1,8 @@
 import type { FileChange, ScanFn } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
+import { parse } from '@vue/compiler-sfc'
+import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
 
 export interface ExplicitImportContext {
@@ -41,11 +43,9 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
     const before = byPath.get(filePath)?.before ?? current
     const specifier = resolveBestImportSpecifier(filePath, toAbs, aliases, './placeholder')
     let touched = false
-    for (const symbol of neededSymbols) {
-      if (hasNamedImport(current, symbol))
-        continue
+    for (const [symbol, block] of unboundNuxtSymbols(filePath, current, neededSymbols)) {
       const next = filePath.endsWith('.vue')
-        ? insertVueScriptImport(current, symbol, specifier, noScriptError)
+        ? insertVueScriptImport(current, symbol, specifier, noScriptError, block)
         : insertTopLevelImport(current, symbol, specifier)
       if (next !== current) {
         current = next
@@ -69,16 +69,18 @@ export function insertVueScriptImport(
   symbol: string,
   specifier: string,
   noScriptError: (symbol: string) => Error,
+  target?: 'script' | 'scriptSetup',
 ): string {
-  const match = source.match(/<script(?:\s[^>]*)?>/)
-  if (!match || match.index === undefined)
+  const { descriptor } = parse(source)
+  const block = target ? descriptor[target] : descriptor.scriptSetup ?? descriptor.script
+  if (!block || block.src)
     throw noScriptError(symbol)
-  const insertAt = match.index + match[0].length
-  const scriptEnd = source.indexOf('</script>', insertAt)
-  const scriptSource = scriptEnd >= 0 ? source.slice(insertAt, scriptEnd) : source.slice(insertAt)
+  const insertAt = block.loc.start.offset
+  const scriptEnd = block.loc.end.offset
+  const scriptSource = block.content
   const mergedScript = mergeNamedImport(scriptSource, symbol, specifier)
   if (mergedScript !== scriptSource)
-    return `${source.slice(0, insertAt)}${mergedScript}${scriptEnd >= 0 ? source.slice(scriptEnd) : ''}`
+    return `${source.slice(0, insertAt)}${mergedScript}${source.slice(scriptEnd)}`
   const rest = source[insertAt] === '\n' ? source.slice(insertAt + 1) : source.slice(insertAt)
   return `${source.slice(0, insertAt)}\nimport { ${symbol} } from '${specifier}'\n${rest}`
 }
@@ -96,11 +98,6 @@ export function insertTopLevelImport(source: string, symbol: string, specifier: 
   return `${importLine}${source}`
 }
 
-export function hasNamedImport(source: string, symbol: string): boolean {
-  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`\\bimport\\s*\\{[^}]*\\b${escaped}\\b[^}]*\\}\\s*from\\s*['"]`).test(source)
-}
-
 export function mergeNamedImport(source: string, symbol: string, specifier: string): string {
   const spec = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const importRe = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*(['"])${spec}\\2`)
@@ -108,7 +105,7 @@ export function mergeNamedImport(source: string, symbol: string, specifier: stri
   if (!match)
     return source
   const names = match[1].split(',').map(part => part.trim()).filter(Boolean)
-  if (names.some(name => name === symbol || name.startsWith(`${symbol} as `)))
+  if (names.includes(symbol))
     return source
   const replacement = `import { ${[...names, symbol].join(', ')} } from ${match[2]}${specifier}${match[2]}`
   return `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match[0].length)}`

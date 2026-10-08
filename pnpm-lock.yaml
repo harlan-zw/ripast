@@ -220,6 +220,9 @@ importers:
       '@volar/typescript':
         specifier: ^2.4.28
         version: 2.4.28(@typescript/typescript6@6.0.2)
+      '@vue/compiler-sfc':
+        specifier: ^3.5.43
+        version: 3.5.43
       '@vue/language-core':
         specifier: ^3.3.12
         version: 3.3.12
