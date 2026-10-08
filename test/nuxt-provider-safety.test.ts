@@ -113,6 +113,17 @@ it('renames standard Nuxt app providers in both script and template', async () =
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+it('refuses a Nuxt rename that captures a consumer local destination binding', async () => {
+  const { dir } = appFixture()
+  try {
+    const source = '<script setup lang="ts">const pretty = (value: number) => value * 10; const label = format(7)</script><template>{{ label }}</template>'
+    writeFileSync(join(dir, 'app/pages/index.vue'), source)
+    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verify: false }), /capture.*pretty/)
+    assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 it('adds imports when renaming a standard Nuxt app composable file out of scope', async () => {
   const { dir } = appFixture()
   try {

@@ -12,6 +12,13 @@ export const validateNuxtAutoImportRename: NonNullable<FrameworkAdapter['validat
   const consumers = inspectConsumers({ ...ctx, files: rgFiles('', { cwd: ctx.cwd, listAll: true }) }, new Map(ctx.changes.map(change => [change.path, change.after])), 'Rename')
   if (consumers.length)
     throw new Error(`ripast rename: unresolved Nuxt auto-import uses remain in ${consumers.join(', ')}. Use explicit imports first.`)
+  const captures = ctx.changes
+    .filter(change => !isGeneratedNuxtPath(ctx.cwd, change.path))
+    .filter(change => unboundNuxtSymbols(change.path, change.before, new Set([ctx.symbol]), 'Rename').has(ctx.symbol))
+    .filter(change => !unboundNuxtSymbols(change.path, change.after, new Set([ctx.to]), 'Rename').has(ctx.to))
+    .map(change => relative(ctx.cwd, change.path))
+  if (captures.length)
+    throw new Error(`ripast rename: planned Nuxt consumer edits capture the local binding "${ctx.to}" in ${captures.join(', ')}. Use an explicit import alias first.`)
 }
 
 function inspectConsumers(ctx: Parameters<NonNullable<FrameworkAdapter['inspectAutoImportConsumers']>>[0], planned: Map<string, string>, purpose: 'Delete' | 'Rename'): string[] {

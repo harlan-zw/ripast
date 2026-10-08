@@ -116,7 +116,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
         mergeFileChanges(changes, fallbackChanges)
         for (const decl of declarations) {
           if (decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))
-            vueAdapter.validateAutoImportRename?.({ cwd, symbol: from, fromAbs: decl.filePath, changes, scopes })
+            vueAdapter.validateAutoImportRename?.({ cwd, symbol: from, to, fromAbs: decl.filePath, changes, scopes })
         }
       }
       if (scopes.size)
