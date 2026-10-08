@@ -35,31 +35,28 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 Renaming a symbol can affect imports, type references, JSX components, and Vue templates across a project.
 Text search finds the spelling, but a rename needs to distinguish references from unrelated names.
 
-Ripast gives coding agents CLI commands for these refactors, with a preview before writing changes.
+Ripast gives coding agents one scoped command to rename a symbol and update its imports and references.
+Preview the diff before writing changes. Unrelated strings keep their spelling.
 Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
-
-### Supported targets
-
-| Stack | Status | Notes |
-| --- | --- | --- |
-| TypeScript / JavaScript | ✅ Full | Native TypeScript 7 language server for semantics, oxc for edits. Type-only imports, namespace imports, re-exports, decorators. |
-| React (JSX / TSX) | ✅ Full | JSX component refs, hooks, type props all rename together. |
-| Solid (JSX / TSX) | ✅ Full | Same JSX engine path as React. |
-| Vue 3 SFC | ✅ Full | `<script setup>` + `<template>` (interpolations, `v-if`, `v-for`, `:prop`) + component tag PascalCase ↔ kebab-case. |
-| Nuxt | ✅ Full | Vue SFCs plus auto-imported `composables/`, `utils/`, and `components/`. Moving a symbol out of Nuxt auto-import scope inserts explicit imports in consumers, or refuses when a Vue file has no script block to receive one. |
-| Svelte | Planned | Svelte markup refactoring is not supported. |
 
 ## Installation
 
 Requires Node 22.13+. These examples use [pnpm](https://pnpm.io/installation).
 
-From your project root, run a scan without installing globally:
+From your project root, preview a rename without installing globally.
+Replace the example names and declaration path with a symbol from your project:
 
 ```bash
-pnpm dlx @ripast/cli scan useStore
+pnpm dlx @ripast/cli rename useStore useAppStore --scope src/store.ts --profile full
 ```
 
-This lists matching occurrences and their syntax, such as an identifier, string, or property.
+If the diff matches your intent, add `--apply` to write it.
+Supported refactors check type diagnostics before writing. See [verification scope](#verify).
+
+> [!TIP]
+> Install the [Ripast Agent Skill](./packages/cli/skills/ripast/SKILL.md) with `pnpm dlx skilld add @ripast/cli`.
+> The Skill tells your agent when to use Ripast and how to run verified refactors.
+
 To use the `ripast` command in the examples below, install the CLI globally:
 
 ```bash
@@ -79,18 +76,12 @@ Programmatic users install `@ripast/core` (and any adapters they need) directly:
 pnpm add @ripast/core @ripast/vue
 ```
 
-> [!TIP]
-> The CLI includes an [Agent Skill](./packages/cli/skills/ripast/SKILL.md). Install it with [skilld](https://github.com/harlan-zw/skilld):
-> ```bash
-> pnpm dlx skilld add @ripast/cli
-> ```
-
 Ripast uses `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) when it is available on `PATH`.
 If it is missing, Ripast searches files in Node instead. This can be slower.
 Both paths support fixed-string searches, file listing, globs, and standard ignore files.
 Programmatic regex searches still require `rg`.
 
-If `rg` is missing, install ripgrep for your system:
+For faster searches, optionally install ripgrep:
 
 | System | Command |
 | --- | --- |
@@ -98,7 +89,7 @@ If `rg` is missing, install ripgrep for your system:
 | Ubuntu or Debian | `sudo apt-get install ripgrep` |
 | Windows with Winget | `winget install BurntSushi.ripgrep.MSVC` |
 
-Then run `rg --version` and retry. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
+Run `rg --version` to confirm installation. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
 
 Automatic adapter installation prefers `pnpm` and falls back to `npm` if `pnpm` is missing.
 The npm fallback uses a separate temporary prefix and preserves your project directory.
@@ -151,6 +142,20 @@ ripast rename useStore useAppStore --apply
 # Ambiguous declarations? Pick one or rename all
 ripast rename useStore useAppStore --scope src/store.ts --apply
 ripast rename useStore useAppStore --all --apply
+```
+
+Imports and references change together. The unrelated string keeps its spelling:
+
+```diff
+# src/store.ts
+-export function useStore() { return 1 }
++export function useAppStore() { return 1 }
+# src/consumer.ts
+-import { useStore } from './store.js'
+-export const value = useStore()
++import { useAppStore } from './store.js'
++export const value = useAppStore()
+ export const label = 'useStore'
 ```
 
 </details>
@@ -390,113 +395,13 @@ Licensed under the [MIT license](https://github.com/harlan-zw/ripast/blob/main/L
 
 ## Agent benchmarks
 
-### Matched batch, 9 October 2026
+Forty runs compared Ripast with ordinary editing on ten matched project tasks using both models.
+Ripast passed **20/20** runs. Ordinary editing passed **19/20**.
 
-Forty runs covered the same ten tasks with both models and both methods.
-Five tasks renamed TypeScript symbols. Five migrated static Vue class tokens.
-Each task supplied four fresh copies of identical captured source.
-Ripast completed **20/20** runs and their checks. Ordinary editing completed **19/20**.
-
-| Runner and model | Completed pairs | Fewer total tokens | Less total time | Median token reduction | Median time reduction |
-| --- | --- | --- | --- | --- | --- |
-| Codex, GPT-6 Luna, medium reasoning | 9 | 60.4% | 15.4% | 58.7% | 47.8% |
-| OpenCode, GLM 5.3 Flash | 10 | 73.9% | 55.4% | 71.2% | 56.3% |
-
-Total reductions compare summed tokens and time within each model, using only completed pairs.
-Medians give each completed task equal weight.
-Two Luna Ripast runs were slower: Harlanzw.com took 39.8 versus 17.6 seconds; NuxtSEO.com took 49.0 versus 24.2 seconds.
-The OpenCode Mdream.dev baseline used 312,498 tokens and affects the total token reduction.
-The Luna Unrouting baseline stopped after inspection, without edits or a successful check. Its pair is excluded.
-
-**Method.** One run per task, method, and model; three projects ran concurrently.
-Starting model alternated by task. Luna always ran Ripast first; OpenCode always ran ordinary editing first.
-Method order was not balanced within each model, so cache effects can bias timing.
-Independent checks compared expected source edits and baseline TypeScript diagnostics.
-Timing includes startup, model work, edits, and the requested check. Installation and Skill loading are excluded.
-Only the Ripast method received the Skill. Both runners executed without an OS sandbox in scratch copies.
-
-**Resources.** All 40 attempts used 2,460,704 total tokens, including cached input counted once.
-The batch took 8.7 minutes elapsed and 23.5 summed agent minutes. Dollar charges were not recorded.
-
-**Limits.** One repeat cannot establish timing variance. Source slices omit installed dependencies and generated Nuxt state.
-Full builds, auto-import refactors, moves, and import replacements remain unmeasured.
-Matched tasks improve comparison, but tool stacks, caches, token accounting, and provider load still differ.
-See [all 40 measurements and source hashes](./evals/results/2026-10-09-matched.json)
-and [commands to reproduce the batch](./evals/README.md#second-batch-and-codex).
-
-### Split batch, 9 October 2026
-
-Ten new repositories supplied five TypeScript symbol renames and five static Vue class migrations.
-Each project ran once with Ripast and once with ordinary editing tools, using the same assigned runner and model.
-Ripast completed **10/10** tasks and their checks. Ordinary editing completed **9/10**.
-
-| Runner and model | Completed pairs | Fewer total tokens with Ripast | Less time with Ripast |
+| Model | Completed pairs | Fewer total tokens | Less total time |
 | --- | --- | --- | --- |
-| Codex, GPT-6 Luna, medium reasoning | 4 | 59.9% | 60.5% |
-| OpenCode, GLM 5.3 Flash | 5 | 45.3% | 35.0% |
+| GPT-6 Luna, medium | 9 | 60.4% | 15.4% |
+| GLM 5.3 Flash | 10 | 73.9% | 55.4% |
 
-Percentages compare summed tokens and time within each runner, excluding failed pairs.
-Different project assignments and models prevent a direct Codex versus OpenCode speed comparison.
-
-| Project | Runner | Ripast time | Agent time | Ripast tokens | Agent tokens |
-| --- | --- | --- | --- | --- | --- |
-| C12 | Codex | 8.3 s | 48.2 s | 30,284 | 74,264 |
-| Harlanzw.com | Codex | 15.6 s | 39.7 s | 45,626 | 110,120 |
-| Unrouting | Codex | 9.9 s | 39.8 s, failed | 45,460 | 123,119 |
-| Mdream.dev | Codex | 12.7 s | 21.2 s | 30,382 | 97,626 |
-| Nuxt Link Checker | Codex | 12.1 s | 14.1 s | 30,261 | 58,397 |
-| Massive Monster | OpenCode | 35.9 s | 50.4 s | 30,485 | 51,817 |
-| Nuxt SEO Utils | OpenCode | 30.7 s | 62.1 s | 30,958 | 75,577 |
-| NuxtSEO.com | OpenCode | 24.1 s | 71.9 s | 22,618 | 60,446 |
-| Nuxt Site Config | OpenCode | 41.7 s | 44.2 s | 24,668 | 52,721 |
-| Unlighthouse.dev | OpenCode | 46.7 s | 47.3 s | 49,004 | 47,906 |
-
-The Unrouting baseline added compatibility aliases and stopped after failed source checks. Its pair is excluded from the percentages.
-Unlighthouse.dev used 2.3% more tokens with Ripast after repeated searches. Gains are not universal.
-
-**Method.** Codex 0.161.0, OpenCode 1.18.32, Node 24.18.0; fresh tracked source slices, containing 4 to 49 files.
-Three projects ran concurrently. Each project's two methods ran sequentially, with the first method alternating.
-Both runners received isolated configuration. Only the Ripast arm received the Skill.
-Both runners executed without an OS sandbox. Initial Codex sandbox setup failures are excluded from these measurements.
-Independent checks compared expected edits and baseline TypeScript diagnostics.
-Timing includes runner startup, model work, edits, and the requested check; installation and Skill loading are excluded.
-
-**Limits.** One run per method per project; these slices omit installed dependencies and generated Nuxt state.
-They do not measure full builds or Nuxt auto-import refactors. Provider and CPU load affect timing.
-Total tokens include cached input, counted once. Dollar savings were not measured.
-See the [recorded measurements and source commits](./evals/results/2026-10-09.json)
-and [commands to reproduce the batch](./evals/README.md#second-batch-and-codex).
-
-### First batch, 8 October 2026
-
-On 8 October 2026, OpenCode refactored six project source slices with Ripast or ordinary editing tools.
-Across five completed pairs, Ripast used **39.9% fewer total tokens** and took **40.5% less time**.
-These percentages compare summed tokens and time across the completed pairs.
-
-| Project | Task | Ripast time | Agent time | Ripast tokens | Agent tokens |
-| --- | --- | --- | --- | --- | --- |
-| Unimport | TypeScript symbol rename | 39.5 s | 43.7 s | 53,262 | 46,267 |
-| Unhead | TypeScript symbol rename | 32.3 s | 61.4 s | 30,888 | 64,287 |
-| Mdream | TypeScript symbol rename | 41.9 s | 89.8 s | 37,429 | 87,293 |
-| Skilld | TypeScript symbol rename | 55.9 s | 71.7 s | 48,967 | 89,981 |
-| Request Indexing | Static Vue class rename | 22.8 s | Timeout at 100 s | 30,979 | 63,072 |
-| Forgd | Static Vue class rename | 26.3 s | 62.7 s | 30,596 | 47,034 |
-
-Ripast completed all six tasks and their requested checks. Ordinary editing completed five.
-The Request Indexing baseline made the expected edits but timed out before completing its check.
-Its pair is excluded from the aggregate comparison. Unimport used more tokens with Ripast.
-
-**Method.** OpenCode 1.18.32, GLM 5.3 Flash, Node 24.18.0; one run per method per project.
-Each run used a fresh copy of tracked source from a recorded local commit.
-The four TypeScript slices contained 10 to 110 files; each Vue slice contained 20 files.
-The Ripast prompt included the revised Skill. The baseline used ordinary editing tools.
-Timing includes startup, model work, edits, and the requested source check; CLI installation and Skill loading are excluded.
-Three projects ran concurrently, with each project's two methods run sequentially in alternating order.
-Independent checks compared edits with expected source and rejected increases in baseline TypeScript diagnostics.
-
-**Limits.** This small sample measures source slices, without installed project dependencies or generated Nuxt state.
-It does not measure full builds or Nuxt auto-import refactors. Provider and CPU variation can affect timing.
-Total tokens include cached input, so token savings do not imply the same cost savings.
-
-See the [eval implementation and commands](https://github.com/harlan-zw/ripast/blob/58d5da54dd1384d5e0def97bf05a4959a962bd74/evals/README.md)
-and [measurement evidence](https://github.com/harlan-zw/ripast/pull/42#issuecomment-6060408443).
+Percentages compare completed pairs within each model. One run per combination used source slices, with fixed method order per model.
+See [full results, methods, and limits](./bench/README.md).
