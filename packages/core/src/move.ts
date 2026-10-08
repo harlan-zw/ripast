@@ -164,7 +164,11 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     if (verifyMode !== 'none') {
       const scriptChanges = changes.filter(c => !isVuePath(c.path))
       const files = verifyScope(verifyMode, cwd, [fromAbs, toAbs, ...candidatePaths], scriptChanges.map(c => c.path))
-      regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, files)))
+      const verified = await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, files))
+      // Native module resolution reads disk, so a new directory cannot resolve yet.
+      // Ignore only changed consumers pointing at this planned destination.
+      const consumers = new Set(scriptChanges.filter(change => change.path !== toAbs).map(change => change.path))
+      regressions.push(...verified.filter(regression => !consumers.has(regression.file) || !isUnresolvedMoveTarget(regression, toAbs)))
     }
 
     if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {
@@ -177,6 +181,17 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   finally {
     server.dispose()
   }
+}
+
+function isUnresolvedMoveTarget(regression: Regression, toAbs: string): boolean {
+  if (regression.code !== 2307)
+    return false
+  const specifier = /Cannot find module '([^']+)'/.exec(regression.message)?.[1]
+  if (!specifier?.startsWith('.'))
+    return false
+  const moduleExtension = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
+  const base = resolve(dirname(regression.file), specifier).replace(moduleExtension, '')
+  return base === toAbs.replace(moduleExtension, '')
 }
 
 function findMovableExport(program: any, symbol: string): TopLevelDeclaration | null {
