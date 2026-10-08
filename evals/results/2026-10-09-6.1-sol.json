@@ -1,0 +1,441 @@
+{
+  "date": "2026-10-09",
+  "dateTimezone": "Australia/Melbourne",
+  "metadata": {
+    "opencodeModel": "zai-coding-plan/glm-5.3-flash",
+    "codexModel": "gpt-6.1-sol",
+    "codexReasoning": "medium",
+    "runner": "codex",
+    "batch": "second",
+    "revision": "3d0dfdc56775bdd952c9037aaeac8c3a0df8fefa",
+    "harnessHashes": {
+      "projects.ts": "d4c57cd67b3f074eb4e694825e0bf9ba4d3b87d3cf9ee32cbe7e8cf630414305",
+      "project-cases.ts": "54d70add704f1b1c93a04d0141cdfc21c2a093b2156f136ab6dad307d573c102",
+      "project-check.ts": "5821934e4ff3e0bfd81a9028805a6b46e6f2e5d45db8193540bae6502cf1b515",
+      "project-plan.ts": "2042442b5a717ea2378219b35e87861f8eae7a1db023939277f7a23e20115181",
+      "core.ts": "80061479c0b62fb79014031f0935d8ec7307b0c9de4f9276f349db5698532c58",
+      "codex-runner.ts": "da1891f26dfb9d1034b0faa4ff146a16f60fb75300df8fa0d3531fd9d052fdc8"
+    },
+    "started": "2026-10-08T15:46:38.192Z",
+    "skillHash": "d56ae4c42c6b78b316d474e7f1f3aad8f1c07858cc5197ce64e15a13c4ef2b25",
+    "sourceMode": "tracked HEAD source slices",
+    "concurrency": 3
+  },
+  "versions": {
+    "codex": "0.161.0",
+    "node": "24.18.0"
+  },
+  "method": "One attempt per method on ten second-batch projects. Fresh tracked source slices. Three projects concurrently. Sequential paired methods, alternating method order by project.",
+  "harnessOverride": {
+    "baseRevision": "3d0dfdc56775bdd952c9037aaeac8c3a0df8fefa",
+    "files": [
+      "evals/codex-runner.ts",
+      "evals/projects.ts"
+    ],
+    "replacement": {
+      "from": "gpt-6-luna",
+      "to": "gpt-6.1-sol"
+    },
+    "otherChanges": false
+  },
+  "sources": [
+    {
+      "name": "c12",
+      "revision": "874baea49b2f06cd1f8f8eeaf7c2cada7b0db054",
+      "files": 6,
+      "changedFiles": [
+        "src/dotenv.ts",
+        "src/index.ts"
+      ]
+    },
+    {
+      "name": "unrouting",
+      "revision": "28531572f1a7279db871c8e92ddec670a5e2f0fe",
+      "files": 4,
+      "changedFiles": [
+        "src/index.ts",
+        "src/parse.ts"
+      ]
+    },
+    {
+      "name": "harlanzw.com",
+      "revision": "05b019b8a678ae64a3ed89a2f89e2a5541185394",
+      "files": 17,
+      "changedFiles": [
+        "app/components/PostCard.vue",
+        "app/components/ProjectCard.vue",
+        "app/components/content/ArticleRunnerProjection.vue",
+        "app/components/content/ArticleRunnerSavings.vue",
+        "app/components/content/ProjectList.vue",
+        "app/components/content/SponsorList.vue",
+        "app/components/content/Tweet.vue"
+      ]
+    },
+    {
+      "name": "nuxt-link-checker",
+      "revision": "e07ea4e2fb6acda8d6b04dc004fb98f5e3b558c8",
+      "files": 46,
+      "changedFiles": [
+        "src/build/report.ts",
+        "src/build/util.ts",
+        "src/prerender.ts"
+      ]
+    },
+    {
+      "name": "mdream.dev",
+      "revision": "40a4f34d95119bd670e9313ff6f1b375871cc066",
+      "files": 20,
+      "changedFiles": [
+        "app/components/MarkdownDocumentViewer.vue",
+        "app/components/NumberedList.vue",
+        "app/components/llms-txt/LlmsTxtBrowser.vue",
+        "app/pages/examples.vue",
+        "app/pages/guides/[slug].vue",
+        "app/pages/guides/index.vue",
+        "app/pages/index.vue",
+        "app/pages/insights.vue",
+        "app/pages/llms-txt/[slug].vue",
+        "app/pages/llms-txt/guide.vue"
+      ]
+    },
+    {
+      "name": "massivemonster.co",
+      "revision": "4a7c316966bcb76487722a0298c6182eb30a2905",
+      "files": 13,
+      "changedFiles": [
+        "app/components/game/GameInfoCard.vue",
+        "app/error.vue",
+        "app/pages/games/cult-of-the-lamb.vue"
+      ]
+    },
+    {
+      "name": "nuxt-seo-utils",
+      "revision": "a1547ea4f4115e748668ef1ac6603be8e4f32ffc",
+      "files": 49,
+      "changedFiles": [
+        "src/build-time/generateTagsFromPageDirImages.ts",
+        "src/build-time/generateTagsFromPublicFiles.ts",
+        "src/build-time/iconAssets.test.ts",
+        "src/build-time/iconAssets.ts",
+        "src/const.ts"
+      ]
+    },
+    {
+      "name": "nuxt-site-config",
+      "revision": "f98da95381cc93794c8e00fa33d00122f2dec3ee",
+      "files": 5,
+      "changedFiles": [
+        "packages/kit/src/urls.ts",
+        "packages/kit/src/util.ts"
+      ]
+    },
+    {
+      "name": "nuxtseo.com",
+      "revision": "ab5fe0fb427ea920f0d6962ec8456dae6dd985bb",
+      "files": 20,
+      "changedFiles": [
+        "apps/admin/app/components/AdminCompetitorDetail.vue",
+        "apps/admin/app/components/AdminFeedbackDetail.vue",
+        "apps/admin/app/components/AdminSiteDetail.vue",
+        "apps/admin/app/components/AdminToolsCharts.client.vue",
+        "apps/admin/app/components/AdminUserDetail.vue",
+        "apps/admin/app/components/AdminUsersCharts.client.vue",
+        "apps/admin/app/pages/admin/activity.vue",
+        "apps/admin/app/pages/admin/cache.vue",
+        "apps/admin/app/pages/admin/dataforseo.vue",
+        "apps/admin/app/pages/admin/emails.vue"
+      ]
+    },
+    {
+      "name": "unlighthouse.dev",
+      "revision": "48bc5d95ec31d0697d296351988439f0504502b7",
+      "files": 20,
+      "changedFiles": [
+        "app/components/FeedbackButtons.vue",
+        "app/components/Footer.vue",
+        "app/components/Header.vue",
+        "app/components/LearnMenu.vue",
+        "app/components/ShowcaseCard.vue",
+        "app/components/content/AuditImpact.vue",
+        "app/components/content/InteractiveClsPlayground.vue",
+        "app/components/content/InteractiveInpLab.vue",
+        "app/components/content/InteractiveLcpTimeline.vue",
+        "app/components/content/LabVsFieldFlow.vue"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "caseName": "c12",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 11.693201987,
+      "tokens": 30122,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "unrouting",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 11.888117118999999,
+      "tokens": 30121,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "harlanzw.com",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 25.704312073,
+      "tokens": 73142,
+      "issues": [],
+      "tools": 3,
+      "steps": 1
+    },
+    {
+      "caseName": "unrouting",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 19.396892460000004,
+      "tokens": 81033,
+      "issues": [],
+      "tools": 4,
+      "steps": 1
+    },
+    {
+      "caseName": "c12",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 23.104271650999998,
+      "tokens": 77228,
+      "issues": [],
+      "tools": 5,
+      "steps": 1
+    },
+    {
+      "caseName": "harlanzw.com",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 10.337856220999997,
+      "tokens": 30214,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "nuxt-link-checker",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 9.981484322000004,
+      "tokens": 30150,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "mdream.dev",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 24.520426351999994,
+      "tokens": 68881,
+      "issues": [],
+      "tools": 3,
+      "steps": 1
+    },
+    {
+      "caseName": "massivemonster.co",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 22.312143486,
+      "tokens": 75552,
+      "issues": [],
+      "tools": 3,
+      "steps": 1
+    },
+    {
+      "caseName": "mdream.dev",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 9.835482265,
+      "tokens": 30271,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "massivemonster.co",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 10.137062799000006,
+      "tokens": 30160,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "nuxt-link-checker",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 25.475688885999997,
+      "tokens": 64653,
+      "issues": [],
+      "tools": 5,
+      "steps": 1
+    },
+    {
+      "caseName": "nuxt-seo-utils",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 11.345156860999996,
+      "tokens": 30227,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "nuxt-site-config",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 12.284942540000003,
+      "tokens": 30193,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "nuxtseo.com",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 24.253030256999992,
+      "tokens": 106039,
+      "issues": [],
+      "tools": 4,
+      "steps": 1
+    },
+    {
+      "caseName": "nuxt-seo-utils",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 19.930918709000004,
+      "tokens": 70401,
+      "issues": [],
+      "tools": 3,
+      "steps": 1
+    },
+    {
+      "caseName": "nuxtseo.com",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 9.905370921000008,
+      "tokens": 30285,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    },
+    {
+      "caseName": "nuxt-site-config",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 19.319599228999998,
+      "tokens": 63265,
+      "issues": [],
+      "tools": 3,
+      "steps": 1
+    },
+    {
+      "caseName": "unlighthouse.dev",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 27.234884521999994,
+      "tokens": 81698,
+      "issues": [],
+      "tools": 3,
+      "steps": 1
+    },
+    {
+      "caseName": "unlighthouse.dev",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 15.371453878999993,
+      "tokens": 30267,
+      "issues": [],
+      "tools": 1,
+      "steps": 1
+    }
+  ],
+  "aggregates": {
+    "attempts": 20,
+    "ripastPassed": 10,
+    "agentPassed": 10,
+    "completedPairs": 10,
+    "medianPairSpeedup": 2.0884591503443004,
+    "medianPairTokenReduction": 0.5938589358204323,
+    "aggregateSpeedup": 2.0504690839761346,
+    "aggregateTokenReduction": 0.6036052353876927
+  },
+  "previousLunaComparison": {
+    "projects": [
+      "c12",
+      "unrouting",
+      "harlanzw.com",
+      "nuxt-link-checker",
+      "mdream.dev"
+    ],
+    "sameSources": true,
+    "previousPassed": 9,
+    "currentPassed": 10,
+    "sameSkill": false,
+    "resultsFile": "2026-10-09.json",
+    "modelEffectIsolated": false
+  },
+  "limitations": [
+    "One attempt per method. No repeat distribution.",
+    "Concurrent work, caches, and provider load can affect timing.",
+    "Tokens include cached input. They do not measure billed cost.",
+    "Source slices omit dependencies and generated Nuxt state. They do not establish full build or browser correctness.",
+    "The Skill and harness changed since the Luna batch. The shared-project comparison cannot isolate the model effect."
+  ]
+}
