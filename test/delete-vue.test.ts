@@ -14,13 +14,14 @@ it.each([
   ['namespace template', 'import * as utils from \'./source.ts\'', '<div>{{ utils.helper() }}</div>'],
   ['computed namespace template', 'import * as utils from \'./source.ts\'', '<div>{{ utils[\'helper\']() }}</div>'],
   ['multiline namespace template', 'import * as utils from \'./source.ts\'', '<div>{{\nutils.helper()\n}}</div>'],
+  ['TSX named import', 'import { helper } from \'./source.ts\'\nconst node = <div>{helper()}</div>', '<div />'],
 ])('delete refuses a Vue %s consumer', async (_, script, template) => {
   const fx = makeFixture({
     'source.ts': 'export function helper() { return 42 }\n',
-    'Consumer.vue': `<script setup lang="ts">\n${script}\n</script>\n<template>${template}</template>`,
+    'Consumer.vue': `<script setup lang="${_ === 'TSX named import' ? 'tsx' : 'ts'}">\n${script}\n</script>\n<template>${template}</template>`,
   })
   try {
-    const location = _ === 'multiline namespace template' ? /still has.*reference[\s\S]*Consumer\.vue:5:/ : /still has.*reference[\s\S]*Consumer\.vue/
+    const location = _.includes('namespace') ? /namespace import at Consumer\.vue:2:/ : /still has.*reference[\s\S]*Consumer\.vue/
     await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false }), location)
   }
   finally { fx.cleanup() }
@@ -30,11 +31,12 @@ it.each([
   ['local', 'function helper() { return 7 }'],
   ['imported', 'import { helper } from \'./other.ts\''],
   ['imported namespace', 'import * as utils from \'./other.ts\'\nconst helper = () => utils.helper()'],
-  ['namespace', 'import * as utils from \'./source.ts\'\nconst helper = () => utils.other'],
+  ['namespace without target export', 'import * as utils from \'./without.ts\'\nconst helper = () => utils.other'],
 ])('delete allows unrelated same-spelling Vue %s names', async (_, binding) => {
   const fx = makeFixture({
     'source.ts': 'export function helper() { return 42 }\nexport const other = 7\n',
     'other.ts': 'export function helper() { return 7 }',
+    'without.ts': 'export const other = 7',
     'Consumer.vue': `<script>${binding}\nexport default { value: helper() }</script><template>{{ helper() }}</template>`,
   })
   try {

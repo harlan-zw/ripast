@@ -11,7 +11,6 @@ it.each([
   ['JS without allowJs', 'consumer.js', false, 'import { helper } from \'./source.ts\'\nexport const result = helper()'],
   ['JS with allowJs', 'consumer.js', true, 'import { helper } from \'./source.ts\'\nexport const result = helper()'],
   ['re-export alias', 'consumer.ts', false, 'export { helper as renamed } from \'./source.ts\''],
-  ['namespace access', 'consumer.ts', false, 'import * as source from \'./source.ts\'\nexport const result = source.helper()'],
   ['wildcard consumer', 'consumer.ts', false, 'import { helper } from \'./barrel.ts\'\nexport const result = helper()'],
 ])('delete refuses an external consumer, %s', async (_, consumer, allowJs, source) => {
   const fx = makeFixture({
