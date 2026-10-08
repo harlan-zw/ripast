@@ -75,6 +75,8 @@ For a fresh capture, record the actual agent UI and retain the full uncut record
 Retained C12 transcripts also support a tool-call comparison.
 The baseline has three shell calls and one two-file edit. Ripast has one shell call, including its check.
 Show calls in transcript order. Mark abbreviated commands. Do not invent per-call timestamps.
+If timestamps are absent, use editorial reveals and label the command timing as illustrated.
+Count tool calls when each call appears. Count final tokens only after completion.
 If the agent UI has no reliable token display, show the final total after completion.
 
 ## Camera and layout
@@ -95,6 +97,10 @@ If the agent UI has no reliable token display, show the final total after comple
 
 Prefer a fixed, tight crop. Add a small zoom only if it makes the changed identifier easier to read.
 Keep the same wordmark through the splash, comparison header, and closing card.
+Centre the wordmark above the terminals. Omit the comparison headline and model subtitle.
+For the call-stack version, replace symbol snippets with a Typecheck step after the commands.
+Start its checkmark grey. Turn it green when the diagnostic comparison completes.
+Use `No new diagnostics` to describe a comparison against existing source-slice errors.
 Use plain text labels. Avoid italics, underlines, decorative captions, and extra slogans.
 Keep syntax colours in the code. Give measurements and the wordmark room to breathe.
 Use eased transforms for scene changes. Stagger terminal entrances by 30 to 80 milliseconds.
