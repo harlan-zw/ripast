@@ -22,6 +22,7 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 ## Features
 
 - ✂️ **Agent refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
+- 📉 **Lower agent overhead.** About 40% fewer tokens and 40% less time across five completed OpenCode refactor pairs ([benchmarks](#agent-benchmarks)).
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
 - 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
@@ -386,3 +387,37 @@ ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 ## License
 
 Licensed under the [MIT license](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md).
+
+## Agent benchmarks
+
+On 8 October 2026, OpenCode refactored six project source slices with Ripast or ordinary editing tools.
+Across five completed pairs, Ripast used **39.9% fewer total tokens** and took **40.5% less time**.
+These percentages compare summed tokens and time across the completed pairs.
+
+| Project | Task | Ripast time | Agent time | Ripast tokens | Agent tokens |
+| --- | --- | --- | --- | --- | --- |
+| Unimport | TypeScript symbol rename | 39.5 s | 43.7 s | 53,262 | 46,267 |
+| Unhead | TypeScript symbol rename | 32.3 s | 61.4 s | 30,888 | 64,287 |
+| Mdream | TypeScript symbol rename | 41.9 s | 89.8 s | 37,429 | 87,293 |
+| Skilld | TypeScript symbol rename | 55.9 s | 71.7 s | 48,967 | 89,981 |
+| Request Indexing | Static Vue class rename | 22.8 s | Timeout at 100 s | 30,979 | 63,072 |
+| Forgd | Static Vue class rename | 26.3 s | 62.7 s | 30,596 | 47,034 |
+
+Ripast completed all six tasks and their requested checks. Ordinary editing completed five.
+The Request Indexing baseline made the expected edits but timed out before completing its check.
+Its pair is excluded from the aggregate comparison. Unimport used more tokens with Ripast.
+
+**Method.** OpenCode 1.18.32, GLM 5.3 Flash, Node 24.18.0; one run per method per project.
+Each run used a fresh copy of tracked source from a recorded local commit.
+The four TypeScript slices contained 10 to 110 files; each Vue slice contained 20 files.
+The Ripast prompt included the revised Skill. The baseline used ordinary editing tools.
+Timing includes startup, model work, edits, and the requested source check; CLI installation and Skill loading are excluded.
+Three projects ran concurrently, with each project's two methods run sequentially in alternating order.
+Independent checks compared edits with expected source and rejected increases in baseline TypeScript diagnostics.
+
+**Limits.** This small sample measures source slices, without installed project dependencies or generated Nuxt state.
+It does not measure full builds or Nuxt auto-import refactors. Provider and CPU variation can affect timing.
+Total tokens include cached input, so token savings do not imply the same cost savings.
+
+See the [eval implementation and commands](https://github.com/harlan-zw/ripast/blob/58d5da54dd1384d5e0def97bf05a4959a962bd74/evals/README.md)
+and [measurement evidence](https://github.com/harlan-zw/ripast/pull/42#issuecomment-6060408443).
