@@ -72,6 +72,9 @@ If reconstructing a view from transcripts, label it `Illustrated replay from rec
 Do not invent per-command durations, token growth, cursors, or thinking text.
 
 For a fresh capture, record the actual agent UI and retain the full uncut recording.
+Retained C12 transcripts also support a tool-call comparison.
+The baseline has three shell calls and one two-file edit. Ripast has one shell call, including its check.
+Show calls in transcript order. Mark abbreviated commands. Do not invent per-call timestamps.
 If the agent UI has no reliable token display, show the final total after completion.
 
 ## Camera and layout
