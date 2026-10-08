@@ -209,3 +209,55 @@ it.each([false, true])('resolves nested consumer imports despite shadowed aliase
   }
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
+
+it.each([undefined, false])('refuses to rename another provider global with verify %s', async (verify) => {
+  const dir = fixture()
+  try {
+    writeFileSync(join(dir, 'utils/active.ts'), 'export function format(value: number) { return value * 10 }')
+    writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global {
+const format: typeof import('../utils/active')['format']
+} export {}`)
+    const source = '<script setup lang="ts">const label = format(7)</script><template>{{ format(8) }} {{ label }}</template>'
+    writeFileSync(join(dir, 'pages/index.vue'), source)
+    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify }), /another Nuxt auto-import provider/)
+    assert.equal(labelFromVue(source, {}, moduleExports(readFileSync(join(dir, 'utils/active.ts'), 'utf8'))), 70)
+    assert.equal(readFileSync(join(dir, 'pages/index.vue'), 'utf8'), source)
+    assert.equal(typeof moduleExports(readFileSync(join(dir, 'utils/format.ts'), 'utf8')).format, 'function')
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+it.each([undefined, false])('refuses edits to another nested Nuxt provider with verify %s', async (verify) => {
+  const dir = fixture()
+  try {
+    mkdirSync(join(dir, 'apps/site/.nuxt'), { recursive: true })
+    writeFileSync(join(dir, 'utils/active.ts'), 'export function format(value: number) { return value * 10 }')
+    writeFileSync(join(dir, 'apps/site/.nuxt/imports.d.ts'), `declare global {
+const format: typeof import('../../../utils/active')['format']
+} export {}`)
+    const root = '<script setup lang="ts">const label = format(7)</script><template>{{ label }}</template>'
+    const child = '<script setup lang="ts">const label = format(8)</script><template>{{ format(9) }} {{ label }}</template>'
+    writeFileSync(join(dir, 'pages/index.vue'), root)
+    writeFileSync(join(dir, 'apps/site/page.vue'), child)
+    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify }), /another Nuxt auto-import provider/)
+    assert.equal(labelFromVue(child, {}, moduleExports(readFileSync(join(dir, 'utils/active.ts'), 'utf8'))), 80)
+    assert.equal(readFileSync(join(dir, 'pages/index.vue'), 'utf8'), root)
+    assert.equal(readFileSync(join(dir, 'apps/site/page.vue'), 'utf8'), child)
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+it('permits an inactive provider rename when consumer uses are local', async () => {
+  const dir = fixture()
+  try {
+    writeFileSync(join(dir, 'utils/active.ts'), 'export function format(value: number) { return value * 10 }')
+    writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const format: typeof import('../utils/active')['format'] } export {}`)
+    const source = '<script setup lang="ts">const format = (value: number) => value * 100; const label = format(7)</script><template>{{ format(8) }} {{ label }}</template>'
+    writeFileSync(join(dir, 'pages/index.vue'), source)
+    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts' })
+    assert.equal(result.changes.find(change => change.rel === 'pages/index.vue'), undefined)
+    assert.equal(labelFromVue(source, {}), 700)
+    assert.equal(typeof moduleExports(result.changes.find(change => change.rel === 'utils/format.ts')!.after).pretty, 'function')
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})

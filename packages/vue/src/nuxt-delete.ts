@@ -35,6 +35,10 @@ function inspectConsumers(ctx: Parameters<NonNullable<FrameworkAdapter['inspectA
       local = resolved
       byContext.set(context, local)
     }
+    if (purpose === 'Rename' && planned.has(path) && !local.names.includes(symbol)
+      && unboundNuxtSymbols(path, readFileSync(path, 'utf8'), new Set([symbol]), purpose).size) {
+      throw new Error(`ripast rename: edits may change another Nuxt auto-import provider in ${relative(cwd, path)}. Use explicit imports first.`)
+    }
     if (local.names.length && unboundNuxtSymbols(path, planned.get(path) ?? readFileSync(path, 'utf8'), new Set(local.names), purpose).size)
       consumers.push(relative(cwd, path))
   }
