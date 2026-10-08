@@ -100,13 +100,24 @@ function visitScript(file: CssClassSourceFile, visit: (text: string) => void): v
     visitProgramClassStrings(parsed.program, visit)
 }
 
-interface ScriptStringSite {
+type ScriptStringSite = {
+  _tag: 'String'
   node: any
   templateKind?: 'cooked' | 'raw' | 'unknown'
+} | {
+  _tag: 'ClassListKey'
+  node: any
+  shorthand: boolean
 }
 
 function visitProgramClassStrings(program: any, visit: (text: string) => void): void {
-  visitProgramClassStringSites(program, ({ node, templateKind }) => {
+  visitProgramClassStringSites(program, (site) => {
+    const { node } = site
+    if (site._tag === 'ClassListKey') {
+      visit(node.name)
+      return
+    }
+    const { templateKind } = site
     if (node.type === 'Literal' && typeof node.value === 'string') {
       visit(node.value)
     }
@@ -145,7 +156,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
     const templateKind = tagged ? rawTag ? 'raw' : 'unknown' : 'cooked'
     if (classContext) {
       for (const quasi of template.quasis)
-        visit({ node: quasi, templateKind })
+        visit({ _tag: 'String', node: quasi, templateKind })
     }
     for (const expression of template.expressions)
       walkProgram(expression, classContext, classObjectKeyContext, visit)
@@ -154,12 +165,12 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
 
   if (node.type === 'Literal' && typeof node.value === 'string') {
     if (classContext)
-      visit({ node })
+      visit({ _tag: 'String', node })
     return
   }
   if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
     if (classContext)
-      visit({ node })
+      visit({ _tag: 'String', node })
     return
   }
 
@@ -180,7 +191,9 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
   if (node.type === 'Property') {
     const keyMatches = isClassName(node.key)
     const valueContext = classContext || keyMatches
-    if (classObjectKeyContext)
+    if (classObjectKeyContext === 'classList' && node.key.type === 'Identifier' && !node.computed)
+      visit({ _tag: 'ClassListKey', node: node.key, shorthand: node.shorthand })
+    else if (classObjectKeyContext)
       walkProgram(node.key, true, true, visit)
     else
       walkProgram(node.key, false, false, visit)
@@ -308,7 +321,17 @@ function rewriteScript(file: CssClassSourceFile, map: RenameMap): string {
 
 function rewriteStringsInProgram(source: string, program: any, map: RenameMap, offset: number): string {
   const edits: { start: number, end: number, replacement: string }[] = []
-  visitProgramClassStringSites(program, ({ node, templateKind }) => {
+  visitProgramClassStringSites(program, (site) => {
+    const { node } = site
+    if (site._tag === 'ClassListKey') {
+      const rewritten = rewriteClassString(node.name, map)
+      if (rewritten !== node.name) {
+        const key = encodeStringLiteral(rewritten, '\'')
+        edits.push({ start: node.start + offset, end: node.end + offset, replacement: site.shorthand ? `${key}: ${node.name}` : key })
+      }
+      return
+    }
+    const { templateKind } = site
     if (node.type === 'Literal' && typeof node.value === 'string') {
       if (!mapIncludesAny(node.value, map))
         return

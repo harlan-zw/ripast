@@ -156,6 +156,28 @@ export const output = read()
     finally { fx.cleanup() }
   })
 
+  it('rewrites bare and shorthand classList keys while preserving boolean bindings', async () => {
+    const fx = makeSolidFixture()
+    try {
+      fx.write('src/classes.ts', `
+const disabled = false
+export const classList = { active: true, disabled }
+`)
+      fx.write('src/Classes.tsx', 'const disabled = false; export const View = () => <div classList={{ active: true, disabled }} />')
+      assertSolidDiagnostics(fx)
+      assert.deepEqual(runCssClassScan({ cwd: fx.dir, pattern: ['active', 'disabled'], sort: 'token' }), [
+        { token: 'active', count: 2, files: ['src/Classes.tsx', 'src/classes.ts'] },
+        { token: 'disabled', count: 2, files: ['src/Classes.tsx', 'src/classes.ts'] },
+      ])
+      const result = await runCssClassRename(new Map([['active', 'is-active'], ['disabled', 'is-disabled']]), { cwd: fx.dir })
+      writeChanges(result.changes)
+      assert.deepEqual(solidModuleValue(fx, 'src/classes.ts', 'classList'), { 'is-active': true, 'is-disabled': false })
+      assert.deepEqual(solidSyntax(fx, 'src/Classes.tsx').attributes, [{ name: 'classList', values: ['is-active', 'is-disabled'] }])
+      assertSolidDiagnostics(fx)
+    }
+    finally { fx.cleanup() }
+  })
+
   it('rewrites classList keys without changing conditions or unrelated object keys', async () => {
     const fx = makeSolidFixture()
     try {
