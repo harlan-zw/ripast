@@ -1,6 +1,6 @@
 import type { DoctorAdapter, DoctorContext, DoctorFinding } from '@ripast/core/adapter'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { hyphenateVueName, parseVueTemplateAst, posToLineCol, rgFiles } from '@ripast/core/adapter'
 import { listComponents } from './components.ts'
 
@@ -165,6 +165,7 @@ function collectEntries(cwd: string): string[] {
 }
 
 function isAutoImportRel(rel: string): boolean {
+  rel = rel.replace(/\\/g, '/')
   return NUXT_AUTOIMPORT_DIRS.some(d => rel.includes(`/${d}/`) || rel.startsWith(`${d}/`))
     || rel.includes('/server/api/')
     || rel.includes('/server/routes/')
@@ -189,7 +190,7 @@ export const doctor: DoctorAdapter = {
   filterFinding(_cwd, finding) {
     // Orphan check noise: Nuxt convention files are entries by design; if they
     // still look orphan, the entry list missed them. Drop, don't flag.
-    if (finding.check === 'orphan-file' && (isAutoImportRel(finding.file) || CONFIG_FILE_RE.test(finding.file)))
+    if (finding.check === 'orphan-file' && (isAutoImportRel(finding.file) || CONFIG_FILE_RE.test(finding.file.replace(/\\/g, '/'))))
       return false
     return true
   },
@@ -311,7 +312,8 @@ function scopeForFile(abs: string, roots: string[], cwd: string): string {
   let best = cwd
   let bestLen = -1
   for (const root of roots) {
-    if ((abs === root || abs.startsWith(`${root}/`)) && root.length > bestLen) {
+    const rel = relative(root, abs)
+    if (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) && root.length > bestLen) {
       best = root
       bestLen = root.length
     }
@@ -441,6 +443,7 @@ const SERVER_SUFFIX_RE = /\.server\.(?:[mc]?[jt]sx?|vue)$/
 const CLIENT_SUFFIX_RE = /\.client\.(?:[mc]?[jt]sx?|vue)$/
 
 function fileRealm(rel: string): 'app' | 'server' | 'shared' | null {
+  rel = rel.replace(/\\/g, '/')
   // Filename conventions override directory classification.
   if (SERVER_SUFFIX_RE.test(rel))
     return 'server'

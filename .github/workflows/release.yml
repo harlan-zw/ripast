@@ -56,8 +56,35 @@ jobs:
           path: ${{ runner.temp }}/ripast-pack/*.tgz
           if-no-files-found: error
 
-  publish:
+  platform:
     needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec vitest run test/launcher-platform.test.ts test/platform-paths.test.ts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: npm-packages
+          path: ${{ runner.temp }}/ripast-pack
+      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
+
+  publish:
+    needs: [verify, platform]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     permissions:

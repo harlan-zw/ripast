@@ -2,7 +2,7 @@ import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { existsSync, lstatSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { loadAdapter } from './adapter.ts'
@@ -52,7 +52,15 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   if (lstatSync(oldAbs).isSymbolicLink())
     throw new Error(`ripast rename-file: source "${oldPath}" is a symbolic link. Rename its target file instead.`)
   // Inspect the entry itself: existsSync follows symlinks and misses dangling targets.
-  if (lstatSync(newAbs, { throwIfNoEntry: false }))
+  const target = lstatSync(newAbs, { throwIfNoEntry: false })
+  const source = lstatSync(oldAbs)
+  const caseOnlyRename = oldAbs !== newAbs
+    && dirname(oldAbs) === dirname(newAbs)
+    && basename(oldAbs).toLowerCase() === basename(newAbs).toLowerCase()
+    && target?.isFile()
+    && source.dev === target.dev && source.ino === target.ino
+    && !readdirSync(dirname(newAbs)).includes(basename(newAbs))
+  if (target && !caseOnlyRename)
     throw new Error(`ripast rename-file: target "${newPath}" already exists`)
 
   const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
@@ -175,6 +183,11 @@ async function verifyFileRename(
     return []
 
   const changes: FileChange[] = [...consumerTsChanges]
+  // willRenameFiles resolves the original imports through the configured project.
+  // Keep its exact consumer replacements so aliases need no second resolver.
+  const renamedSpecifiers = moveIsTs
+    ? await server.willRenameFile(oldAbs, newAbs)
+    : new Map<string, LspTextEdit[]>()
   if (moveIsTs) {
     const oldText = readFileSync(oldAbs, 'utf8')
     // Model the move as two overlays: the old path empties out, the new path
@@ -189,11 +202,22 @@ async function verifyFileRename(
     ? projectScriptFiles(cwd)
     : [...(moveIsTs ? [newAbs] : []), ...consumerTsChanges.map(c => c.path)]
   const regressions = await findRegressions(server, changes, files)
-  return regressions.filter(r => r.file !== oldAbs && !isUnresolvedNewPath(r, newAbs))
+  return regressions.filter(r => r.file !== oldAbs
+    && !isUnresolvedNewPath(r, newAbs)
+    && !isUnresolvedRenamedSpecifier(r, newAbs, renamedSpecifiers))
 }
 
 const CANNOT_FIND_MODULE_CODE = 2307
 const MODULE_IN_MESSAGE_RE = /Cannot find module '([^']+)'/
+
+function isUnresolvedRenamedSpecifier(regression: Regression, newAbs: string, edits: Map<string, LspTextEdit[]>): boolean {
+  if (regression.code !== CANNOT_FIND_MODULE_CODE || regression.file === newAbs)
+    return false
+  const specifier = MODULE_IN_MESSAGE_RE.exec(regression.message)?.[1]
+  if (!specifier)
+    return false
+  return edits.get(regression.file)?.some(edit => edit.newText.replace(/^(['"])(.*)\1$/, '$2') === specifier) ?? false
+}
 
 function isUnresolvedNewPath(regression: Regression, newAbs: string): boolean {
   if (regression.code !== CANNOT_FIND_MODULE_CODE)

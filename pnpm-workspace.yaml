@@ -16,6 +16,9 @@ packages:
   - packages/*
 
 overrides:
+  # Keep the fixture compiler on the current semver package.
+  '@babel/core@7>semver': ^7.7.4
+  '@babel/helper-compilation-targets@7>semver': ^7.7.4
   # Fix GHSA-238p-pmpm-9mq7 in Markdown linting's transitive math renderer.
   micromark-extension-math>katex: ^0.19.0
   # Version 0.0.71 lacks the provenance supplied with 0.0.70.

@@ -48,7 +48,7 @@ export function makeFixture(files: Record<string, string> = {}, includeTsconfig 
     dir,
     write,
     read,
-    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    cleanup: () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   }
 }
 
@@ -79,6 +79,6 @@ export function makeJsFixture(files: Record<string, string> = {}): Fixture {
     dir,
     write,
     read,
-    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    cleanup: () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
   }
 }
