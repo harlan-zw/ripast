@@ -300,23 +300,19 @@ async function rewriteImportSites(server: TsServer, path: string, source: string
       continue
     const current = copyOf(imp)
     const match = current.named.find(n => n.name === symbol)
-    const isDefault = current.defaultImport?.name === symbol
-    if (!match && !isDefault)
+    if (!match)
       continue
-    const alias = match?.alias
-    const isTypeOnly = current.isTypeOnly || !!match?.isTypeOnly
+    const alias = match.alias
+    const isTypeOnly = current.isTypeOnly || !!match.isTypeOnly
     const newSpec = computeSpecifier(path, toAbs, current.specifier)
     // A value binding must not land in an `import type` statement; a type
     // binding can join either kind (inline `type` on a value import).
-    const existing = imports.find(i => i.specifier === newSpec && i !== imp && !i.sideEffectOnly && (isTypeOnly || !i.isTypeOnly))
+    const existing = imports.find(i => i.specifier === newSpec && i !== imp && !i.sideEffectOnly && !i.namespaceImport && (isTypeOnly || !i.isTypeOnly))
     if (!existing && isSimpleSoleNamedImport(current, symbol)) {
       current.specifier = newSpec
       continue
     }
-    if (match)
-      current.named = current.named.filter(n => n !== match)
-    if (isDefault)
-      current.defaultImport = undefined
+    current.named = current.named.filter(n => n !== match)
     if (existing) {
       const target = copyOf(existing)
       if (!target.named.some(n => n.name === symbol))

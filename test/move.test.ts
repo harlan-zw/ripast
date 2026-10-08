@@ -3,8 +3,7 @@ import { execFileSync } from 'node:child_process'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
-import { runMove } from '../packages/core/src/move.ts'
-import { writeChanges } from '../packages/core/src/util.ts'
+import { runMove, writeChanges } from '../packages/core/src/index.ts'
 import { makeFixture } from './helpers.ts'
 
 it('move rejects a destination alias before changing either module', async () => {
@@ -259,6 +258,41 @@ it('move does not merge a value binding into an existing type-only import of the
     assert.match(b, /import \{ helper \} from '\.\/c\.ts'/, 'value import added separately')
     assert.doesNotMatch(b, /import type \{ Shape, helper \}/)
     assert.equal(result.regressions.length, 0, JSON.stringify(result.regressions))
+  }
+  finally { fx.cleanup() }
+})
+
+it('move preserves a namespace import of the destination', async () => {
+  const fx = makeFixture({
+    'a.ts': 'export function helper() { return 2 }\n',
+    'b.ts': 'import * as target from \'./c.ts\'\nimport { helper as movedHelper } from \'./a.ts\'\nexport const result = movedHelper() + target.existing\n',
+    'c.ts': 'export const existing = 3\n',
+  })
+  try {
+    const result = await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, vue: false })
+    assert.deepEqual(result.regressions, [])
+    writeChanges(result.changes)
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/b.ts`).href)})).result)`], { encoding: 'utf8' })
+    assert.equal(output.trim(), '5')
+  }
+  finally { fx.cleanup() }
+})
+
+it.each([
+  ['default only', 'import helper from', 'helper()', '3'],
+  ['default and named', 'import helper, { helper as named } from', 'helper() + named()', '5'],
+])('move preserves a default import with the same local name, %s', async (_, binding, expression, expected) => {
+  const fx = makeFixture({
+    'a.ts': 'export default function main() { return 3 }\nexport function helper() { return 2 }\n',
+    'b.ts': `${binding} './a.ts'\nexport const result = ${expression}\n`,
+    'c.ts': '',
+  })
+  try {
+    const result = await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, vue: false })
+    assert.deepEqual(result.regressions, [])
+    writeChanges(result.changes)
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/b.ts`).href)})).result)`], { encoding: 'utf8' })
+    assert.equal(output.trim(), expected)
   }
   finally { fx.cleanup() }
 })
