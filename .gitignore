@@ -9,5 +9,18 @@ dist
 .idea
 coverage
 
+# Local credentials and agent state
+.env
+.env.*
+!.env.example
+!.env.*.example
+.dev.vars
+.dev.vars.*
+.npmrc
+.claude/
+CONTEXT.md
+.ripast-tmp-*/
+*.tgz
+
 # PR Lens writes its previews here. They are rebuilt on demand.
 .pr-lens/
