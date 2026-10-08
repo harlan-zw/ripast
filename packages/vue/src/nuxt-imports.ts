@@ -24,7 +24,6 @@ export interface ExplicitImportContext {
 export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[] {
   const { cwd, symbols, toAbs, fromAbs, existingChanges, noScriptError } = ctx
   const byPath = new Map(existingChanges.map(change => [change.path, change]))
-  const aliases = loadNuxtPathAliases(cwd)
   const out: FileChange[] = []
   const byContext = new Map<string, Map<string, string>>()
   for (const filePath of rgFiles('', { cwd, listAll: true })) {
@@ -52,6 +51,9 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
       continue
     let current = byPath.get(filePath)?.after ?? readFileSync(filePath, 'utf8')
     const before = byPath.get(filePath)?.before ?? current
+    const localAliases = loadNuxtPathAliases(context)
+    // Conflicting inherited mappings cannot establish a portable alias.
+    const aliases = localAliases.filter(alias => localAliases.every(other => other.pattern !== alias.pattern || JSON.stringify(other.targets) === JSON.stringify(alias.targets)))
     const specifier = resolveBestImportSpecifier(filePath, toAbs, aliases, './placeholder')
     let touched = false
     for (const [symbol, block] of unboundNuxtSymbols(filePath, current, new Set(names.keys()))) {

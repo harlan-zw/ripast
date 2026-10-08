@@ -178,3 +178,34 @@ it('selects each nested Nuxt consumer provider before adding imports', async () 
   }
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
+
+it.each([false, true])('resolves nested consumer imports despite shadowed aliases with extends %s', async (extendsRoot) => {
+  const dir = fixture()
+  try {
+    writeFileSync(join(dir, '.nuxt/tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '..', paths: { '#lib/*': ['lib/*'] } } }))
+    mkdirSync(join(dir, 'apps/site/.nuxt'), { recursive: true })
+    writeFileSync(join(dir, 'apps/site/.nuxt/imports.d.ts'), `declare global { const format: typeof import('../../../utils/format')['format'] } export {}`)
+    writeFileSync(join(dir, 'apps/site/.nuxt/tsconfig.json'), JSON.stringify({
+      ...(extendsRoot ? { extends: '../../../.nuxt/tsconfig.json' } : {}),
+      compilerOptions: { baseUrl: '..', paths: { '#lib/*': ['lib/*'] } },
+    }))
+    mkdirSync(join(dir, 'apps/site/lib'))
+    writeFileSync(join(dir, 'apps/site/lib/format.ts'), 'export function format() { return 999 }')
+    const source = '<script setup lang="ts">const label = format(7)</script><template>{{ label }}</template>'
+    writeFileSync(join(dir, 'apps/site/page.vue'), source)
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+    const transformed = result.changes.find(change => change.rel === 'apps/site/page.vue')!.after
+    const { descriptor } = parse(transformed)
+    const compiled = compileScript(descriptor, { id: 'nested-alias' })
+    const statement = ts.createSourceFile('consumer.ts', compiled.content, ts.ScriptTarget.Latest, true).statements.filter(ts.isImportDeclaration).find(statement => (statement.moduleSpecifier as ts.StringLiteral).text !== 'vue')!
+    const specifier = (statement.moduleSpecifier as ts.StringLiteral).text
+    const resolved = ts.resolveModuleName(specifier, join(dir, 'apps/site/page.vue'), {
+      baseUrl: join(dir, 'apps/site'),
+      paths: { '#lib/*': ['lib/*'] },
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    }, { ...ts.sys, fileExists: path => result.changes.some(change => change.path === path && change.after.length > 0) || ts.sys.fileExists(path), directoryExists: path => result.changes.some(change => change.path.startsWith(`${path}/`) && change.after.length > 0) || ts.sys.directoryExists(path) }).resolvedModule
+    assert.equal(resolved?.resolvedFileName, join(dir, 'lib/format.ts'))
+    assert.equal(readFileSync(join(dir, 'apps/site/page.vue'), 'utf8'), source)
+  }
+  finally { rmSync(dir, { recursive: true, force: true }) }
+})
