@@ -2,8 +2,14 @@
 
 ## 👀 Highlights
 
-Ripast uses the native TypeScript language server for semantic refactors.
-The CLI also works without ripgrep or pnpm.
+Ripast 0.5.0 gives coding agents semantic refactors across files.
+
+Preview symbol renames, declaration moves, and file renames before writing changes.
+Supported refactors compare type diagnostics and block writes when verification finds new errors.
+Default verification checks touched files. Use `--verify-mode project` to check the full project.
+
+This release includes the Ripast Agent Skill and fallbacks for missing ripgrep or pnpm.
+Requires Node 22.13 or later. See the [SDK upgrade guide](./docs/upgrade-0.5.0.md) for API changes.
 
 ### 🧠 Native TypeScript refactors
 
