@@ -15,6 +15,8 @@ export function unboundNuxtSymbols(path: string, source: string, symbols: Set<st
   const { descriptor, errors } = parse(source, { filename: path })
   if (errors.length)
     throw errors[0]
+  if (descriptor.template?.src)
+    throw new Error(`ripast ${purpose.toLowerCase()}: cannot inspect an external Nuxt template in ${path}. Use an inline template first.`)
   const extension = [descriptor.script?.lang, descriptor.scriptSetup?.lang].some(lang => lang === 'tsx' || lang === 'jsx') ? 'tsx' : 'ts'
   const normal = inspectScript(`${path}.${extension}`, descriptor.script?.content ?? '')
   for (const name of unresolvedReferences(normal.file, normal.checker, symbols))

@@ -149,6 +149,20 @@ it('preserves unrelated named import aliases while deleting an unused provider',
   }
 })
 
+it('refuses an external Nuxt template whose implicit bindings cannot be inspected', async () => {
+  const dir = fixture()
+  try {
+    writeFileSync(join(dir, 'pages/index.vue'), '<script setup lang="ts">const unrelated = 1</script><template src="./external.html"></template>')
+    writeFileSync(join(dir, 'pages/external.html'), '<p>{{ format(7) }}</p>')
+    const provider = readFileSync(join(dir, 'utils/format.ts'), 'utf8')
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { cwd: dir }), /external Nuxt template/)
+    assert.equal(readFileSync(join(dir, 'utils/format.ts'), 'utf8'), provider)
+  }
+  finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 it('refuses escaped TypeScript auto-import consumers', async () => {
   const dir = fixture()
   try {
