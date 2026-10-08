@@ -115,12 +115,26 @@ pnpm eval:projects --batch second --runner split --timeout 150
 pnpm eval:projects --batch second --runner codex --case c12
 ```
 
-Options: `--batch first|second` and `--runner opencode|codex|split`.
+Options: `--batch first|second` and `--runner opencode|codex|split|both`.
 Defaults retain the first batch with OpenCode.
 Split mode assigns the first five cases in the chosen batch to Codex and the rest to OpenCode.
 Filtering by `--case` preserves that assignment.
 In the second batch, Codex runs C12, Harlanzw.com, Unrouting, Mdream.dev, and Nuxt Link Checker.
 Each assigned runner executes both methods on fresh source copies.
+
+Use `--runner both` to run both models on every selected task:
+
+```sh
+pnpm eval:projects --batch second --runner both --timeout 150
+```
+
+The ten-case second batch produces 40 runs: ten tasks, two methods, two models.
+Each task captures its source once and supplies the same expected edits to both models.
+The model that starts alternates by task. Method order also alternates between model pairs.
+Directories include the runner, such as `c12-codex-ripast`, to keep all four copies separate.
+The report keeps one row per task and runner. It does not pool the two models.
+This mode fixes differing task assignments. It still provides only one run per method and model.
+Source slices omit full project dependencies and generated framework state.
 
 Codex uses `gpt-6-luna` with medium reasoning and emits JSONL events.
 It uses temporary configuration and a private authentication copy, deleted after the run.
@@ -135,6 +149,7 @@ Codex events do not report cost. A zero placeholder is not a price measurement.
 Codex steps count completed turns; OpenCode steps count model steps. Do not compare those counts directly.
 
 Report token and time changes within each runner, using completed pairs only.
-Different models and assigned projects prevent a direct Codex versus OpenCode speed comparison.
+In split mode, different models and assigned projects prevent a direct Codex versus OpenCode speed comparison.
+In both mode, tasks match, but tool stacks, token accounting, and provider load still affect comparison.
 Keep failed attempts, timeouts, and harness setup failures visible in the report.
 Recorded second-batch measurements live in [the results file](./results/2026-10-09.json).
