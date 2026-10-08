@@ -1,5 +1,7 @@
 # Commands
 
+Mutations default to dry-run. If the target is uncertain, review the result, then apply once.
+
 | Command | Use |
 | --- | --- |
 | `ripast rename <from> <to>` | Rename a symbol and its references. |
@@ -24,3 +26,14 @@ Use `--no-vue` only when there are no Vue consumers or Nuxt auto-imports.
 Template commands accept `--scope <file>` and `--root-only`.
 Mutation `--json` includes complete before/after source. Select fields before printing large results.
 
+
+## Examples
+
+```bash
+ripast scan useStore --profile agent
+ripast rename useStore useAppStore --scope src/store.ts --profile full
+```
+
+These are separate task examples. Run only the requested operation.
+Use `--scope` when the declaration file is known.
+Use `--profile full` only when you need a diff. Applying with it prints file names, not a diff.
