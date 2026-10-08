@@ -19,6 +19,49 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 </div>
 
+Rename a symbol across files. Update its imports and references. Preview the diff before writing.
+
+Latest Codex comparisons used **59.9% fewer total tokens** and took **60.5% less time** with Ripast.
+These figures cover four completed source-slice pairs, with one run per method per project.
+Installation and Skill loading are excluded. See the [full results and limits](#agent-benchmarks).
+
+## Try a refactor
+
+Requires Node 22.13+ and pnpm. Run from your project root.
+Replace the example names and declaration path with a symbol from your project:
+
+```bash
+pnpm dlx @ripast/cli rename useStore useAppStore --scope src/store.ts --profile full
+```
+
+This previews the diff. Imports and references change together:
+
+```diff
+# src/store.ts
+-export function useStore() { return 1 }
++export function useAppStore() { return 1 }
+# src/consumer.ts
+-import { useStore } from './store.js'
+-export const value = useStore()
++import { useAppStore } from './store.js'
++export const value = useAppStore()
+ export const label = 'useStore'
+```
+
+The unrelated string keeps its spelling. If the diff matches your intent, add `--apply` to write it.
+Supported refactors check type diagnostics before writing. See [verification scope](#verify).
+
+### Use with a coding agent
+
+Install the [Ripast Agent Skill](./packages/cli/skills/ripast/SKILL.md):
+
+```bash
+pnpm dlx skilld add @ripast/cli
+```
+
+The Skill tells your agent when to use Ripast and how to run verified refactors.
+For community-specific demonstrations, use the [video runbook](./docs/video-runbook.md).
+
 ## Features
 
 - ✂️ **Agent refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
@@ -37,17 +80,6 @@ Text search finds the spelling, but a rename needs to distinguish references fro
 
 Ripast gives coding agents CLI commands for these refactors, with a preview before writing changes.
 Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
-
-### Supported targets
-
-| Stack | Status | Notes |
-| --- | --- | --- |
-| TypeScript / JavaScript | ✅ Full | Native TypeScript 7 language server for semantics, oxc for edits. Type-only imports, namespace imports, re-exports, decorators. |
-| React (JSX / TSX) | ✅ Full | JSX component refs, hooks, type props all rename together. |
-| Solid (JSX / TSX) | ✅ Full | Same JSX engine path as React. |
-| Vue 3 SFC | ✅ Full | `<script setup>` + `<template>` (interpolations, `v-if`, `v-for`, `:prop`) + component tag PascalCase ↔ kebab-case. |
-| Nuxt | ✅ Full | Vue SFCs plus auto-imported `composables/`, `utils/`, and `components/`. Moving a symbol out of Nuxt auto-import scope inserts explicit imports in consumers, or refuses when a Vue file has no script block to receive one. |
-| Svelte | Planned | Svelte markup refactoring is not supported. |
 
 ## Installation
 
@@ -79,18 +111,12 @@ Programmatic users install `@ripast/core` (and any adapters they need) directly:
 pnpm add @ripast/core @ripast/vue
 ```
 
-> [!TIP]
-> The CLI includes an [Agent Skill](./packages/cli/skills/ripast/SKILL.md). Install it with [skilld](https://github.com/harlan-zw/skilld):
-> ```bash
-> pnpm dlx skilld add @ripast/cli
-> ```
-
 Ripast uses `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) when it is available on `PATH`.
 If it is missing, Ripast searches files in Node instead. This can be slower.
 Both paths support fixed-string searches, file listing, globs, and standard ignore files.
 Programmatic regex searches still require `rg`.
 
-If `rg` is missing, install ripgrep for your system:
+For faster searches, optionally install ripgrep:
 
 | System | Command |
 | --- | --- |
@@ -98,7 +124,7 @@ If `rg` is missing, install ripgrep for your system:
 | Ubuntu or Debian | `sudo apt-get install ripgrep` |
 | Windows with Winget | `winget install BurntSushi.ripgrep.MSVC` |
 
-Then run `rg --version` and retry. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
+Run `rg --version` to confirm installation. See the [ripgrep installation guide](https://github.com/BurntSushi/ripgrep#installation) for other systems.
 
 Automatic adapter installation prefers `pnpm` and falls back to `npm` if `pnpm` is missing.
 The npm fallback uses a separate temporary prefix and preserves your project directory.
