@@ -93,6 +93,9 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
 
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
+    // Resolve bindings against the same text used to collect their offsets.
+    // A new destination exists only in this overlay during the dry run.
+    server.open(toAbs, toAfter)
     const destinationImports = listImports(toAfter, toAbs, parseProgram(toAbs, toAfter))
     const replacements = new Map<ImportInfo, string | null>()
     for (const imp of destinationImports) {
@@ -107,6 +110,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
       replacements.set(imp, isImportEmpty(remaining) ? null : renderImport(remaining))
     }
     toAfter = rewriteImports(toAfter, destinationImports, replacements, [])
+    server.open(toAbs, toOriginal)
     const changes: FileChange[] = []
     if (fromAfter !== fromOriginal)
       changes.push({ path: fromAbs, rel: relative(cwd, fromAbs), before: fromOriginal, after: fromAfter })
