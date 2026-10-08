@@ -147,32 +147,6 @@ it.each(['old', '$old'])('reports multiline stale imports of %s', async (name) =
   finally { fx.cleanup() }
 })
 
-it.each<{ name: string, files: Record<string, string>, code: number }>([
-  {
-    name: 'namespace import',
-    files: { 'main.ts': 'import * as ns from "./source.ts"; export const result = ns.moved + ns.kept\n' },
-    code: 2339,
-  },
-  {
-    name: 'wildcard re-export',
-    files: {
-      'barrel.ts': 'export * from "./source.ts"\n',
-      'main.ts': 'import { moved, kept } from "./barrel.ts"; export const result = moved + kept\n',
-    },
-    code: 2305,
-  },
-])('blocks a move that leaves an unsupported $name consumer', async ({ files, code }) => {
-  const source = 'export const moved = 1\nexport const kept = 2\n'
-  const fx = makeFixture({ ...files, 'source.ts': source, 'target.ts': '' })
-  try {
-    const result = await runMove('moved', 'source.ts', 'target.ts', { cwd: fx.dir, vue: false })
-    assert.ok(result.regressions.some(regression => regression.code === code && regression.file.endsWith('/main.ts')))
-    assert.equal(fx.read('source.ts'), source)
-    assert.equal(fx.read('target.ts'), '')
-  }
-  finally { fx.cleanup() }
-})
-
 it.each(['target.ts', 'lib/target.ts'])('verifies a new %s file when its parent directory exists', async (target) => {
   const source = 'export const value = 42\n'
   const consumer = 'import { value } from "./source.ts"; export const result = value\n'

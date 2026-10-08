@@ -6,6 +6,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { loadAdapter } from './adapter.ts'
+import { computeSpecifier } from './imports.ts'
 import { findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { mergeFileChanges, rgFiles } from './util.ts'
@@ -48,6 +49,8 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       : ''
     throw new Error(`ripast rename-file: source "${oldPath}" does not exist${hint}`)
   }
+  if (lstatSync(oldAbs).isSymbolicLink())
+    throw new Error(`ripast rename-file: source "${oldPath}" is a symbolic link. Rename its target file instead.`)
   // Inspect the entry itself: existsSync follows symlinks and misses dangling targets.
   const target = lstatSync(newAbs, { throwIfNoEntry: false })
   const source = lstatSync(oldAbs)
@@ -135,7 +138,7 @@ async function tsOnlyFileRename(server: TsServer, cwd: string, oldAbs: string, n
   const out: FileChange[] = []
   for (const [path, fileEdits] of edits) {
     const before = server.textOf(path)
-    const after = applyLspEdits(before, fileEdits.map(edit => keepSpecifierStyle(before, edit)))
+    const after = applyLspEdits(before, fileEdits.map(edit => keepSpecifierStyle(before, edit, path, oldAbs, newAbs)))
     if (after === before)
       continue
     const outPath = path === oldAbs ? newAbs : path
@@ -151,12 +154,15 @@ const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
 // wrote `./aa.js` for an import that read `./a.ts`). ripast keeps the style
 // the file already used: same extension, or none. The server edits the string
 // contents, sometimes with the quotes and sometimes without.
-function keepSpecifierStyle(text: string, edit: LspTextEdit): LspTextEdit {
+function keepSpecifierStyle(text: string, edit: LspTextEdit, path: string, oldAbs: string, newAbs: string): LspTextEdit {
   const replaced = text.slice(offsetOfPosition(text, edit.range.start), offsetOfPosition(text, edit.range.end))
   const oldMatch = SPECIFIER_RE.exec(replaced)
   const newMatch = SPECIFIER_RE.exec(edit.newText)
   if (!oldMatch || !newMatch)
     return edit
+  const oldTarget = resolve(dirname(path), oldMatch[2]).replace(MODULE_EXT_RE, '')
+  if (oldTarget === oldAbs.replace(MODULE_EXT_RE, ''))
+    return { ...edit, newText: `${newMatch[1]}${computeSpecifier(path === oldAbs ? newAbs : path, newAbs, oldMatch[2])}${newMatch[1]}` }
   const oldExt = MODULE_EXT_RE.exec(oldMatch[2])?.[0] ?? ''
   const stripped = newMatch[2].replace(MODULE_EXT_RE, '')
   return { ...edit, newText: `${newMatch[1]}${stripped}${oldExt}${newMatch[1]}` }

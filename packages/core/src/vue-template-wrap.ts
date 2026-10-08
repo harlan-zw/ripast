@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { rgFiles } from './util.ts'
-import { hyphenateVueName, parseTemplateSelector, unwrapTemplateElements, wrapTemplateElements } from './vue-template.ts'
+import { hyphenateVueName, parseTemplateSelector, parseTemplateWrapper, unwrapTemplateElements, wrapTemplateElements } from './vue-template.ts'
 
 export interface VueTemplateWrapOptions {
   cwd?: string
@@ -50,12 +50,13 @@ function candidateFiles(tag: string, opts: VueTemplateWrapOptions): string[] {
 export async function runVueTemplateWrap(selector: string, wrapper: string, opts: VueTemplateWrapOptions = {}): Promise<VueTemplateWrapResult> {
   const cwd = opts.cwd ?? process.cwd()
   const sel = parseTemplateSelector(selector)
+  const parent = parseTemplateWrapper(wrapper)
   const files = candidateFiles(sel.tag, opts)
   const matchOpts = { rootOnly: opts.rootOnly }
   const changes: FileChange[] = []
   for (const path of files) {
     const before = readFileSync(path, 'utf8')
-    const after = wrapTemplateElements(before, sel, wrapper, matchOpts)
+    const after = wrapTemplateElements(before, sel, parent.inner, matchOpts)
     if (after !== before)
       changes.push({ path, rel: relative(cwd, path), before, after })
   }

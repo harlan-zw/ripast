@@ -298,6 +298,23 @@ export interface TemplateMatchOptions {
   rootOnly?: boolean
 }
 
+export function parseTemplateWrapper(input: string): { tag: string, inner: string } {
+  const inner = input.trim()
+  if (!inner)
+    throw new Error('ripast: empty wrapper tag')
+  const tag = inner.match(/^([A-Z][\w.:-]*)(?=\s|$)/i)?.[1]
+  if (tag) {
+    const parsed = parseSfc(`<template><${inner}><RipastChild /></${tag}></template>`)
+    const children = parsed.descriptor.template?.ast?.children as any[] | undefined
+    const parent = children?.[0]
+    if (!parsed.errors.length && children?.length === 1 && parent.type === NODE_ELEMENT
+      && parent.tag === tag && parent.children?.length === 1 && parent.children[0].tag === 'RipastChild') {
+      return { tag, inner }
+    }
+  }
+  throw new Error('ripast: wrapper must be a valid tag with optional attributes')
+}
+
 function collectMatches(ast: any, sel: TemplateSelector, recurseIntoMatches: boolean, opts: TemplateMatchOptions = {}): any[] {
   const out: any[] = []
   if (opts.rootOnly) {
@@ -322,12 +339,11 @@ function collectMatches(ast: any, sel: TemplateSelector, recurseIntoMatches: boo
 }
 
 export function wrapTemplateElements(source: string, selector: TemplateSelector, wrapperInner: string, opts: TemplateMatchOptions = {}): string {
+  const wrapper = parseTemplateWrapper(wrapperInner)
   const ast = parseTemplate(source)
   if (!ast)
     return source
-  const wrapperTag = wrapperInner.trim().split(/\s/)[0]
-  if (!wrapperTag)
-    throw new Error('ripast: empty wrapper tag')
+  const newline = source.includes('\r\n') ? '\r\n' : '\n'
   const matches = collectMatches(ast, selector, false, opts)
   if (!matches.length)
     return source
@@ -337,18 +353,18 @@ export function wrapTemplateElements(source: string, selector: TemplateSelector,
     const end = node.loc.end.offset
     const { indent, isAllWhitespace } = getLineIndent(source, start)
     if (isAllWhitespace) {
-      const inner = source.slice(start, end).replace(/\n/g, '\n  ')
+      const inner = source.slice(start, end).replace(/\r?\n/g, `${newline}  `)
       edits.push({
         start,
         end,
-        replacement: `<${wrapperInner}>\n${indent}  ${inner}\n${indent}</${wrapperTag}>`,
+        replacement: `<${wrapper.inner}>${newline}${indent}  ${inner}${newline}${indent}</${wrapper.tag}>`,
       })
     }
     else {
       edits.push({
         start,
         end,
-        replacement: `<${wrapperInner}>${source.slice(start, end)}</${wrapperTag}>`,
+        replacement: `<${wrapper.inner}>${source.slice(start, end)}</${wrapper.tag}>`,
       })
     }
   }
@@ -365,16 +381,17 @@ export function unwrapTemplateElements(source: string, selector: TemplateSelecto
   const hasNestedMatches = collectMatches(ast, selector, true, opts).length > matches.length
   if (!matches.length)
     return source
+  const newline = source.includes('\r\n') ? '\r\n' : '\n'
   const edits: TextEdit[] = []
   for (const node of matches) {
     const start = node.loc.start.offset
     const end = node.loc.end.offset
+    const { lineStart, isAllWhitespace } = getLineIndent(source, start)
+    const nextNewline = source.indexOf('\n', end)
+    const lineEnd = nextNewline === -1 ? source.length : nextNewline + 1
+    const ownsLine = isAllWhitespace && !source.slice(end, lineEnd).trim()
     if (node.isSelfClosing || !node.children?.length) {
-      const { isAllWhitespace, lineStart } = getLineIndent(source, start)
-      if (isAllWhitespace) {
-        let lineEnd = end
-        if (source[lineEnd] === '\n')
-          lineEnd++
+      if (ownsLine) {
         edits.push({ start: lineStart, end: lineEnd, replacement: '' })
       }
       else {
@@ -386,20 +403,22 @@ export function unwrapTemplateElements(source: string, selector: TemplateSelecto
     const closeStart = findCloseTagStart(source, node)
     let innerStart = openEnd
     let innerEnd = closeStart
-    if (source[innerStart] === '\n')
-      innerStart++
-    while (innerEnd > innerStart && (source[innerEnd - 1] === ' ' || source[innerEnd - 1] === '\t'))
-      innerEnd--
-    if (innerEnd > innerStart && source[innerEnd - 1] === '\n')
-      innerEnd--
+    const block = source.startsWith('\r\n', innerStart) || source[innerStart] === '\n'
+    if (block) {
+      innerStart += source.startsWith('\r\n', innerStart) ? 2 : 1
+      while (innerEnd > innerStart && (source[innerEnd - 1] === ' ' || source[innerEnd - 1] === '\t'))
+        innerEnd--
+      if (innerEnd > innerStart && source[innerEnd - 1] === '\n') {
+        innerEnd--
+        if (source[innerEnd - 1] === '\r')
+          innerEnd--
+      }
+    }
     let inner = source.slice(innerStart, innerEnd)
-    inner = inner.replace(/^ {2}/gm, '')
-    const { lineStart, isAllWhitespace } = getLineIndent(source, start)
-    if (isAllWhitespace) {
-      let lineEnd = end
-      if (source[lineEnd] === '\n')
-        lineEnd++
-      edits.push({ start: lineStart, end: lineEnd, replacement: `${inner}\n` })
+    if (block)
+      inner = inner.replace(/^ {2}/gm, '')
+    if (ownsLine && block) {
+      edits.push({ start: lineStart, end: lineEnd, replacement: inner + (nextNewline === -1 ? '' : newline) })
     }
     else {
       edits.push({ start, end, replacement: inner })

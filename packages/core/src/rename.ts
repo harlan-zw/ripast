@@ -8,7 +8,7 @@ import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
-import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource } from './declarations.ts'
+import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
@@ -72,11 +72,14 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
       const source = readFileSync(path, 'utf8')
       if (!source.includes('\\u'))
         continue
-      walk(parseSource(path, source).program, {
+      const program = parseSource(path, source).program
+      const selectedPositions = new Set(declarations.filter(declaration => declaration.filePath === path).map(declaration => declaration.pos))
+      const unrelated = unrelatedVariableIdentifierOffsets(program, from, selectedPositions)
+      walk(program, {
         enter(node: any) {
           if (node.type !== 'Identifier' || node.name !== from || !source.slice(node.start, node.end).includes('\\u'))
             return
-          if (!declarations.some(declaration => declaration.filePath === path && declaration.pos === node.start))
+          if (!selectedPositions.has(node.start) && !unrelated.has(node.start))
             throw new Error(`ripast rename: TypeScript cannot resolve escaped references to "${from}" in ${relative(cwd, path)}`)
         },
       })
@@ -252,23 +255,33 @@ function findDeclarations(paths: string[], name: string, allowMultiple = false):
       if (node?.type === 'VariableDeclaration') {
         for (const declarator of node.declarations) addPattern(declarator.id, 'TopLevel')
       }
+      if (node?.type === 'TSModuleDeclaration')
+        addPattern(node.id, 'TopLevel')
     }
     walk(program, {
       enter(node: any) {
-        if (node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type) || node.type === 'FunctionExpression' || node.type === 'ClassExpression')
+        if (node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type) || node.type === 'FunctionExpression' || node.type === 'ClassExpression' || node.type === 'TSModuleDeclaration' || node.type === 'TSImportEqualsDeclaration')
           addPattern(node.id, 'Local')
+        if (node.type === 'TSTypeParameter')
+          addPattern(node.name, 'Local', parameters)
+        if (node.type === 'TSMappedType')
+          addPattern(node.key, 'Local', parameters)
+        if (node.type === 'ImportSpecifier' || node.type === 'ImportDefaultSpecifier' || node.type === 'ImportNamespaceSpecifier')
+          addPattern(node.local, 'Local', parameters)
         for (const parameter of node.params ?? []) addPattern(parameter, 'Local', parameters)
         if (node.type === 'CatchClause')
           addPattern(node.param, 'Local', parameters)
       },
     })
   }
+  if (allowMultiple)
+    return [...new Map([...parameters, ...locals, ...out].map(declaration => [`${declaration.filePath}:${declaration.pos}`, declaration])).values()]
   // Keep top-level renames from changing unrelated local shadows.
   if (out.length)
     return out
-  if (allowMultiple || !locals.length)
+  if (!locals.length)
     locals.push(...parameters)
-  if (!allowMultiple && locals.length > new Set(locals.map(d => d.filePath)).size)
+  if (locals.length > new Set(locals.map(d => d.filePath)).size)
     throw new Error(`ripast rename: "${name}" has multiple declarations in one file. Pass --all to rename every occurrence.`)
   return locals
 }

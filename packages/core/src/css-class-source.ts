@@ -4,7 +4,7 @@ import process from 'node:process'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { decode } from 'html-entities'
 import { parseSync } from 'oxc-parser'
-import { rewriteClassString, visitClassTokens } from './css-class-token.ts'
+import { completeClassBounds, rewriteClassString, visitClassTokens } from './css-class-token.ts'
 import { applyTextEdits, parseFile, rgFiles, rgFilesMany } from './util.ts'
 
 export interface CssClassSourceOptions {
@@ -37,8 +37,8 @@ export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSour
     return []
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs()
-  // Escapes can encode any part of a class key. Parse those candidates before matching decoded values.
-  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&', '+'], { cwd, glob }), cwd)
+  // Escapes and static expressions can split a class key across source text.
+  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&', '+', '`'], { cwd, glob }), cwd)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {
@@ -101,30 +101,21 @@ function visitScript(file: CssClassSourceFile, visit: (text: string) => void): v
     visitProgramClassStrings(parsed.program, visit)
 }
 
-type ScriptStringSite
-  = | { _tag: 'Literal', node: any }
-    | { _tag: 'Template', node: any, templateKind: 'cooked' | 'raw' | 'unknown' }
-    | { _tag: 'ObjectKey', node: any, shorthand: boolean }
-    | { _tag: 'Concatenation', node: any, value: string }
-    | { _tag: 'JsxAttribute', node: any, value: string }
+type ScriptStringSite = (
+  | { _tag: 'Literal', node: any }
+  | { _tag: 'Template', node: any, templateKind: 'cooked' | 'raw' | 'unknown' }
+  | { _tag: 'ObjectKey', node: any, shorthand: boolean }
+  | { _tag: 'Concatenation', node: any }
+  | { _tag: 'JsxAttribute', node: any }
+) & { value: string, bounds: { start: number, end: number } }
+
+function classText(value: string): { value: string, bounds: { start: number, end: number } } {
+  return { value, bounds: { start: 0, end: value.length } }
+}
 
 function visitProgramClassStrings(program: any, visit: (text: string) => void): void {
   visitProgramClassStringSites(program, (site) => {
-    const { node } = site
-    if (site._tag === 'Concatenation' || site._tag === 'JsxAttribute') {
-      visit(site.value)
-    }
-    else if (site._tag === 'ObjectKey') {
-      visit(node.name)
-    }
-    else if (site._tag === 'Literal') {
-      visit(node.value)
-    }
-    else {
-      const value = site.templateKind === 'cooked' ? node.value.cooked : node.value.raw
-      if (typeof value === 'string')
-        visit(value)
-    }
+    visit(site.value.slice(site.bounds.start, site.bounds.end))
   })
 }
 
@@ -143,6 +134,7 @@ function visitVue(file: CssClassSourceFile, visit: (text: string) => void): void
 const CLASS_CALLEE_RE = /^(?:cva|cn|clsx|classNames|classnames|twJoin|twMerge)$/
 const CLASS_ATTR_RE_SCRIPT = /^(?:class|className)$/
 const CLASS_NAME_RE = /(?:^|[-_])(?:cls|class|classes|className|classList|activeClass|inactiveClass|exactActiveClass|ui|slots|variants|compoundVariants|defaultVariants)(?:$|[-_])/i
+const CLASS_OBJECT_NAME_RE = /^(?:cls|class|classes|className|classList)$/i
 
 function walkProgram(node: any, classContext: boolean, classObjectKeyContext: boolean, visit: (site: ScriptStringSite) => void): void {
   if (!node || typeof node !== 'object')
@@ -156,7 +148,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
   }
 
   if (node.type === 'LogicalExpression') {
-    walkProgram(node.left, node.operator === '&&' ? false : classContext, false, visit)
+    walkProgram(node.left, node.operator === '&&' ? false : classContext, node.operator === '&&' ? false : classObjectKeyContext, visit)
     walkProgram(node.right, classContext, classObjectKeyContext, visit)
     return
   }
@@ -170,7 +162,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
     }
     const value = staticClassString(node)
     if (value !== undefined) {
-      visit({ _tag: 'Concatenation', node, value })
+      visit({ _tag: 'Concatenation', node, ...classText(value) })
       return
     }
     walkProgram(node.left, concatenation, false, boundaryVisit(visit, hasClassBoundary(node.right, 'start'), 'end'))
@@ -181,25 +173,43 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
   if (node.type === 'TemplateLiteral' || node.type === 'TaggedTemplateExpression') {
     const tagged = node.type === 'TaggedTemplateExpression'
     const template = tagged ? node.quasi : node
+    const staticValue = !tagged && classContext && template.expressions.length ? staticClassString(template) : undefined
+    if (staticValue !== undefined) {
+      visit({ _tag: 'Concatenation', node, ...classText(staticValue) })
+      return
+    }
     const rawTag = tagged && node.tag.type === 'MemberExpression' && !node.tag.computed && node.tag.object?.name === 'String' && node.tag.property?.name === 'raw'
     const templateKind = tagged ? rawTag ? 'raw' : 'unknown' : 'cooked'
     if (classContext) {
-      for (const quasi of template.quasis)
-        visit({ _tag: 'Template', node: quasi, templateKind })
+      for (const [index, quasi] of template.quasis.entries()) {
+        const value = templateKind === 'cooked' ? quasi.value.cooked : quasi.value.raw
+        if (typeof value !== 'string')
+          continue
+        const startSafe = index === 0 || hasClassBoundary(template.expressions[index - 1], 'end')
+        const endSafe = index === template.quasis.length - 1 || hasClassBoundary(template.expressions[index], 'start')
+        visit({ _tag: 'Template', node: quasi, templateKind, value, bounds: completeClassBounds(value, startSafe, endSafe) })
+      }
     }
-    for (const expression of template.expressions)
-      walkProgram(expression, classContext, classObjectKeyContext, visit)
+    for (const [index, expression] of template.expressions.entries()) {
+      const left = template.quasis[index].value
+      const right = template.quasis[index + 1].value
+      const before = templateKind === 'cooked' ? left.cooked : left.raw
+      const after = templateKind === 'cooked' ? right.cooked : right.raw
+      const startSafe = typeof before === 'string' && (/\s$/.test(before) || (index === 0 && !before))
+      const endSafe = typeof after === 'string' && (/^\s/.test(after) || (index === template.expressions.length - 1 && !after))
+      walkProgram(expression, classContext, false, boundaryVisit(boundaryVisit(visit, startSafe, 'start'), endSafe, 'end'))
+    }
     return
   }
 
   if (node.type === 'Literal' && typeof node.value === 'string') {
     if (classContext)
-      visit({ _tag: 'Literal', node })
+      visit({ _tag: 'Literal', node, ...classText(node.value) })
     return
   }
   if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
     if (classContext)
-      visit({ _tag: 'Template', node, templateKind: 'unknown' })
+      visit({ _tag: 'Template', node, templateKind: 'unknown', ...classText(node.value.raw) })
     return
   }
 
@@ -228,7 +238,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
 
   if (node.type === 'VariableDeclarator') {
     walkProgram(node.id, false, false, visit)
-    walkProgram(node.init, classContext || isClassName(node.id), nodeName(node.id) === 'classList', visit)
+    walkProgram(node.init, classContext || isClassName(node.id), CLASS_OBJECT_NAME_RE.test(nodeName(node.id) ?? ''), visit)
     return
   }
 
@@ -237,7 +247,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
     const valueContext = classContext || keyMatches
     if (classObjectKeyContext) {
       if (!node.computed && node.key.type === 'Identifier') {
-        visit({ _tag: 'ObjectKey', node: node.key, shorthand: Boolean(node.shorthand) })
+        visit({ _tag: 'ObjectKey', node: node.key, shorthand: Boolean(node.shorthand), ...classText(node.key.name) })
       }
       else {
         walkProgram(node.key, true, false, visit)
@@ -256,7 +266,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
     const attrContext = classContext || isClassName(node.name) || isJsxClassAttr(node.name)
     if (node.value?.type === 'Literal' && typeof node.value.value === 'string') {
       if (attrContext)
-        visit({ _tag: 'JsxAttribute', node: node.value, value: decodeJsxAttribute(node.value.value) })
+        visit({ _tag: 'JsxAttribute', node: node.value, ...classText(decodeJsxAttribute(node.value.value)) })
       return
     }
     walkProgram(node.value, attrContext, nodeName(node.name) === 'classList', visit)
@@ -291,6 +301,21 @@ function staticClassString(node: any): string | undefined {
     return staticClassString(node.expression)
   if (node?.type === 'Literal' && typeof node.value === 'string')
     return node.value
+  if (node?.type === 'TemplateLiteral') {
+    let value = ''
+    for (const [index, quasi] of node.quasis.entries()) {
+      if (typeof quasi.value.cooked !== 'string')
+        return undefined
+      value += quasi.value.cooked
+      if (index < node.expressions.length) {
+        const expression = staticClassString(node.expressions[index])
+        if (expression === undefined)
+          return undefined
+        value += expression
+      }
+    }
+    return value
+  }
   if (node?.type !== 'BinaryExpression' || node.operator !== '+')
     return undefined
   const left = staticClassString(node.left)
@@ -311,9 +336,9 @@ function boundaryVisit(visit: (site: ScriptStringSite) => void, safe: boolean, e
   if (safe)
     return visit
   return (site) => {
-    const value = site._tag === 'Concatenation' ? site.value : site._tag === 'Literal' ? site.node.value : undefined
-    if (typeof value === 'string' && (!value || /\s/.test(edge === 'start' ? value[0] : value.at(-1)!)))
-      visit(site)
+    const value = site.value.slice(site.bounds.start, site.bounds.end)
+    const bounds = completeClassBounds(value, edge !== 'start', edge !== 'end')
+    visit({ ...site, bounds: { start: site.bounds.start + bounds.start, end: site.bounds.start + bounds.end } })
   }
 }
 
@@ -414,6 +439,10 @@ function visitCssApplyRanges(source: string, syntax: CssSyntax, visit: (start: n
   let quote = ''
   for (let i = 0; i < source.length; i++) {
     const char = source[i]
+    if (depth && char === '\\') {
+      i++
+      continue
+    }
     if (quote) {
       if (char === '\\')
         i++
@@ -450,11 +479,14 @@ function visitCssApplyRanges(source: string, syntax: CssSyntax, visit: (start: n
       }
       continue
     }
-    if (!depth && source.startsWith('!important', i) && /\s/.test(source[i - 1] ?? '') && /[\s;}]/.test(source[i + 10] ?? ';')) {
-      visit(applyStart, i)
-      i += 9
-      applyStart = i + 1
-      continue
+    if (!depth && char === '!') {
+      const end = cssImportantEnd(source, i, syntax)
+      if (end !== undefined) {
+        visit(applyStart, i)
+        i = end - 1
+        applyStart = end
+        continue
+      }
     }
     if (char === '[') {
       depth++
@@ -469,6 +501,32 @@ function visitCssApplyRanges(source: string, syntax: CssSyntax, visit: (start: n
   }
   if (applyStart !== -1)
     visit(applyStart, source.length)
+}
+
+function cssImportantEnd(source: string, start: number, syntax: CssSyntax): number | undefined {
+  let cursor = start + 1
+  while (cursor < source.length) {
+    if (/\s/.test(source[cursor])) {
+      if (syntax.indented && /[\r\n]/.test(source[cursor]))
+        return undefined
+      cursor++
+    }
+    else if (source.startsWith('/*', cursor)) {
+      const end = source.indexOf('*/', cursor + 2)
+      if (end === -1)
+        return undefined
+      cursor = end + 2
+    }
+    else {
+      break
+    }
+  }
+  if (source.slice(cursor, cursor + 9).toLowerCase() !== 'important')
+    return undefined
+  const end = cursor + 9
+  if (end === source.length || /[\s;}]/.test(source[end]) || source.startsWith('/*', end) || (syntax.lineComments && source.startsWith('//', end)))
+    return end
+  return undefined
 }
 
 function mapIncludesAny(input: string, map: RenameMap): boolean {
@@ -490,38 +548,27 @@ function rewriteStringsInProgram(source: string, program: any, map: RenameMap, o
   const edits: { start: number, end: number, replacement: string }[] = []
   visitProgramClassStringSites(program, (site) => {
     const { node } = site
+    const rewritten = site.value.slice(0, site.bounds.start)
+      + rewriteClassString(site.value.slice(site.bounds.start, site.bounds.end), map)
+      + site.value.slice(site.bounds.end)
+    if (rewritten === site.value)
+      return
     if (site._tag === 'JsxAttribute') {
-      const rewritten = rewriteClassString(site.value, map)
-      if (rewritten !== site.value) {
-        const quote = source[node.start + offset]
-        edits.push({ start: node.start + offset, end: node.end + offset, replacement: quote + encodeAttributeValue(rewritten, quote) + quote })
-      }
+      const quote = source[node.start + offset]
+      edits.push({ start: node.start + offset, end: node.end + offset, replacement: quote + encodeAttributeValue(rewritten, quote) + quote })
     }
     else if (site._tag === 'Concatenation') {
-      const rewritten = rewriteClassString(site.value, map)
-      if (rewritten !== site.value)
-        edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, '"') })
+      edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, '"') })
     }
     else if (site._tag === 'ObjectKey') {
-      const rewritten = rewriteClassString(node.name, map)
-      if (rewritten !== node.name)
-        edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, '"') + (site.shorthand ? `: ${node.name}` : '') })
+      edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, '"') + (site.shorthand ? `: ${node.name}` : '') })
     }
     else if (site._tag === 'Literal') {
-      if (!mapIncludesAny(node.value, map))
-        return
-      const rewritten = rewriteClassString(node.value, map)
-      if (rewritten !== node.value)
-        edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, source[node.start + offset]) })
+      edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, source[node.start + offset]) })
     }
     else if (site._tag === 'Template' && typeof node.value?.raw === 'string') {
       const { templateKind } = site
-      const raw: string = node.value.raw
-      const value = templateKind === 'cooked' ? node.value.cooked : raw
-      if (templateKind === 'unknown' || typeof value !== 'string' || !mapIncludesAny(value, map))
-        return
-      const rewritten = rewriteClassString(value, map)
-      if (rewritten === value)
+      if (templateKind === 'unknown')
         return
       // Raw tags expose source escapes. Refuse replacements that introduce template syntax.
       if (templateKind === 'raw' && ([...map.values()].some(replacement => /`|\$\{/.test(replacement)) || /(?:^|[^\\])(?:\\\\)*\\$/.test(rewritten)))
