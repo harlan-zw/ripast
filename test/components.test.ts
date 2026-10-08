@@ -263,7 +263,7 @@ describe('layered nuxt fixture', () => {
   })
 })
 
-describe('pathPrefix:true manifest (TODO.md bug)', () => {
+describe('pathPrefix:true manifest', () => {
   it('does not flag same-basename files with distinct registered names as duplicates', async () => {
     const fx = makeFixture({
       '.nuxt/components.d.ts': `declare module "vue" {

@@ -8,6 +8,7 @@
 [![npm version](https://img.shields.io/npm/v/@ripast/cli?color=yellow)](https://npmjs.com/package/@ripast/cli)
 [![npm downloads](https://img.shields.io/npm/dm/@ripast/cli?color=yellow)](https://npm.chart.dev/@ripast/cli)
 [![license](https://img.shields.io/github/license/harlan-zw/ripast?color=yellow)](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md)
+[![Agent skill on skilld.dev](https://skilld.dev/b/harlan-zw/ripast?style=flat&color=dfb317)](https://skilld.dev/gh/harlan-zw/ripast)
 
 > AST refactoring for TypeScript, JavaScript, Vue, Nuxt, React, and Solid. Built for AI coding agents, with dry runs by default.
 
