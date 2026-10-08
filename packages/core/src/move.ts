@@ -10,7 +10,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
-import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, localBindingNames, parseSource, removeDeclaration } from './declarations.ts'
+import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, localBindingNames, localExportSpecifierNames, parseSource, removeDeclaration } from './declarations.ts'
 import { addOrMergeImport, appendStatement, computeSpecifier, isImportEmpty, listImports, parseProgram, pruneUnusedImports, renderImport, rewriteImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
@@ -303,7 +303,7 @@ function rebaseSpecifier(specifier: string, fromAbs: string, toAbs: string): str
 }
 
 function countReferencesOutside(program: any, decl: TopLevelDeclaration, symbol: string): number {
-  let count = 0
+  let count = localExportSpecifierNames(program).has(symbol) ? 1 : 0
   walk(program, {
     enter(node: any, parent: any) {
       if (!isBindingReference(node, parent) || node.name !== symbol)

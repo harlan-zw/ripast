@@ -114,6 +114,22 @@ export function View() { return <Button /> }`,
     expect(renderReactFixture(fx, 'src/View.tsx')).toBe('<strong>icon</strong>')
   })
 
+  it('preserves a local export alias when moving its component', async () => {
+    const fx = fixture({
+      'src/Button.tsx': `export function Button() { return <button>alias</button> }
+export { Button as Action }`,
+      'src/View.tsx': `import { Action } from './Button'
+export function View() { return <Action /> }`,
+      'src/components/Button.tsx': '',
+    })
+    expect(reactDiagnostics(fx)).toEqual([])
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { cwd: fx.dir, verify: 'project' })
+    expect(result.regressions).toEqual([])
+    writeChanges(result.changes)
+    expect(reactDiagnostics(fx)).toEqual([])
+    expect(renderReactFixture(fx, 'src/View.tsx')).toBe('<button>alias</button>')
+  })
+
   it.each(['tsx', 'jsx'])('scans and renames %s className literals and conditional classes', async (extension) => {
     const fx = fixture({
       [`src/View.${extension}`]: `const active = true
