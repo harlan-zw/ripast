@@ -6,11 +6,12 @@ import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
+import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, parseSource } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { applyTextEdits, rgFiles } from './util.ts'
+import { applyTextEdits, rgFilesMany } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
@@ -40,7 +41,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   const verifyMode = resolveVerifyMode(opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : rgFiles(to, { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+    : rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripast replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
@@ -48,7 +49,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   try {
     const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = rgFiles(from, { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
+    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     for (const path of candidatePaths) {
@@ -158,6 +159,36 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   }
   const localName = from !== to && occupied.has(to) ? from : to
 
+  const referenceReplacements = new Map<number, string>()
+  const bindingNames = new Set<number>()
+  const qualifiedNames = new Set<number>()
+  const reexports: { start: number, end: number }[] = []
+  walk(program, {
+    enter(node: any) {
+      if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') && node.name === from)
+        bindingNames.add(node.start)
+      if (node.type === 'Identifier' && node.name === from && source.slice(node.start, node.end).includes('\\u'))
+        throw new Error(`ripast replace: TypeScript cannot resolve escaped references to "${from}" in ${path}`)
+      if ((node.type === 'MemberExpression' && !node.computed) || node.type === 'JSXMemberExpression')
+        qualifiedNames.add(node.property.start)
+      if (node.type === 'TSQualifiedName')
+        qualifiedNames.add(node.right.start)
+      if ((node.type === 'Property' || node.type === 'ObjectProperty') && !node.computed && !node.shorthand)
+        qualifiedNames.add(node.key.start)
+      if (node.type === 'ExportNamedDeclaration' && node.source)
+        reexports.push({ start: node.start, end: node.end })
+      if (node.type === 'Property' && node.shorthand && node.value?.type === 'Identifier')
+        referenceReplacements.set(node.value.start, `${source.slice(node.key.start, node.key.end)}: ${localName}`)
+      if (node.type === 'ExportSpecifier') {
+        const exportedName = source.slice(node.exported.start, node.exported.end)
+        if (node.local.start === node.exported.start)
+          referenceReplacements.set(node.local.start, `${localName} as ${exportedName}`)
+        else
+          referenceReplacements.set(node.exported.start, exportedName)
+      }
+    },
+  })
+
   server.open(path, source)
   const edits: TextEdit[] = []
   let replaced = false
@@ -165,7 +196,11 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
     for (const ref of await server.references(path, binding.offset)) {
       if (ref.path !== path || imports.some(i => ref.start >= i.start && ref.start < i.end))
         continue
-      edits.push({ start: ref.start, end: ref.end, replacement: localName })
+      // References can follow the exported symbol through other local aliases,
+      // namespaces, and re-exports. Only this imported local binding changes.
+      if (!bindingNames.has(ref.start) || qualifiedNames.has(ref.start) || reexports.some(range => ref.start >= range.start && ref.start < range.end))
+        continue
+      edits.push({ start: ref.start, end: ref.end, replacement: referenceReplacements.get(ref.start) ?? localName })
       replaced = true
     }
   }

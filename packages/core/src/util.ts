@@ -100,7 +100,7 @@ function discoverySelection(userGlobs: string[]) {
 }
 
 function runRipgrep(args: string[], cwd: string, fallback: () => string[]): string[] {
-  const result = spawnSync('rg', args, { cwd, encoding: 'utf8' })
+  const result = spawnSync('rg', ['--null', ...args], { cwd, encoding: 'utf8' })
   if (result.error) {
     if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
       process.stderr.write('ripast: rg was not found on PATH. Using Node file search; it may be slower.\n')
@@ -110,7 +110,7 @@ function runRipgrep(args: string[], cwd: string, fallback: () => string[]): stri
   }
   if (result.status !== 0 && result.status !== 1)
     throw new Error(`rg failed: ${result.stderr}`)
-  return result.stdout.split('\n').filter(Boolean).map(p => resolve(cwd, p))
+  return result.stdout.split('\0').filter(Boolean).map(p => resolve(cwd, p))
 }
 
 export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {

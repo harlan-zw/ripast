@@ -47,7 +47,8 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   const toAbs = resolve(cwd, toPath)
   if (fromAbs === toAbs)
     throw new Error('ripast move: source and destination must be different files')
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles(symbol, { cwd }))
+  // Imports may spell identifiers with Unicode escapes. Inspect every script.
+  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, listAll: true }))
 
   const fromOriginal = readFileSync(fromAbs, 'utf8')
   const fromSplit = timed(profile, 'split declarators', () => splitMultiDeclaratorIfNeeded(fromOriginal, fromAbs, symbol))
@@ -315,7 +316,7 @@ async function rewriteImportSites(server: TsServer, path: string, source: string
     current.named = current.named.filter(n => n !== match)
     if (existing) {
       const target = copyOf(existing)
-      if (!target.named.some(n => n.name === symbol))
+      if (!target.named.some(n => n.name === symbol && (n.alias ?? n.name) === (alias ?? symbol)))
         target.named.push({ name: symbol, alias, isTypeOnly: !target.isTypeOnly && isTypeOnly, localStart: -1 })
     }
     else {
@@ -394,6 +395,19 @@ function relativeImportTarget(fromFile: string, specifier: string): string | nul
   if (!specifier.startsWith('.'))
     return null
   const base = resolve(dirname(fromFile), specifier)
+  // TypeScript resolves emitted runtime extensions to their source files.
+  const sourceExtensions = base.endsWith('.js')
+    ? ['.ts', '.tsx']
+    : base.endsWith('.jsx')
+      ? ['.tsx', '.ts']
+      : base.endsWith('.mjs')
+        ? ['.mts']
+        : base.endsWith('.cjs') ? ['.cts'] : []
+  for (const ext of sourceExtensions) {
+    const candidate = base.replace(/\.[^.]+$/, ext)
+    if (existsSync(candidate))
+      return candidate
+  }
   for (const ext of RESOLVE_EXTS) {
     const candidate = `${base}${ext}`
     if (existsSync(candidate))
