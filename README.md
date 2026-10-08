@@ -49,10 +49,18 @@ Requires Node 22.13+.
    npm install -g @ripast/cli
    ```
 
-2. Install the [Ripast Agent Skill on skilld.dev](https://skilld.dev/gh/harlan-zw/ripast) in your project:
+2. Install the [Ripast Agent Skill](./packages/cli/skills/ripast/SKILL.md) in your project with your preferred installer:
+
+   With [skilld](https://skilld.dev/gh/harlan-zw/ripast):
 
    ```bash
    npx skilld add @ripast/cli
+   ```
+
+   Or with [skills.sh](https://skills.sh):
+
+   ```bash
+   npx skills add harlan-zw/ripast --skill ripast
    ```
 
 3. Ask your coding agent:
