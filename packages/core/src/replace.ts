@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { listTopLevelDeclarations, parseSource } from './declarations.ts'
-import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport } from './imports.ts'
+import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFiles } from './util.ts'
@@ -145,6 +145,19 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   if (!bindings.length)
     return source
 
+  // Keep the original local binding when the target name could capture references.
+  // It already resolves correctly at each semantic reference, including nested scopes.
+  const occupied = usedIdentifierNames(program)
+  for (const imp of imports) {
+    for (const named of imp.named)
+      occupied.add(localNameOf(named))
+    if (imp.defaultImport)
+      occupied.add(imp.defaultImport.name)
+    if (imp.namespaceImport)
+      occupied.add(imp.namespaceImport.name)
+  }
+  const localName = from !== to && occupied.has(to) ? from : to
+
   server.open(path, source)
   const edits: TextEdit[] = []
   let replaced = false
@@ -152,7 +165,7 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
     for (const ref of await server.references(path, binding.offset)) {
       if (ref.path !== path || imports.some(i => ref.start >= i.start && ref.start < i.end))
         continue
-      edits.push({ start: ref.start, end: ref.end, replacement: to })
+      edits.push({ start: ref.start, end: ref.end, replacement: localName })
       replaced = true
     }
   }
@@ -183,6 +196,19 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
     ?? imports.find(imp => relativeScriptSpecifier(imp.specifier))?.specifier
     ?? projectStyle(path)
   const specifier = targetImport ?? computeSpecifier(path, target.filePath, style)
+  if (localName !== to) {
+    // A separate import permits an alias even when the target is already imported.
+    const aliasImport = renderImport({
+      ...bindings[0].imp,
+      specifier,
+      isTypeOnly: target.isTypeOnly,
+      named: [{ name: target.importName, alias: localName, isTypeOnly: false, localStart: -1 }],
+      defaultImport: undefined,
+      namespaceImport: undefined,
+      sideEffectOnly: false,
+    })
+    return pruneUnusedImports(rewriteImports(stripped, listImports(stripped, path), new Map(), [aliasImport]), path)
+  }
   const withImport = addOrMergeImport(stripped, path, specifier, {
     namedImports: [{ name: target.importName, alias: target.importName === to ? undefined : to, isTypeOnly: target.isTypeOnly }],
     isTypeOnly: target.isTypeOnly,
