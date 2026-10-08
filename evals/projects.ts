@@ -1,6 +1,7 @@
 import type { Arm, Measurement } from './core.ts'
 import type { ProjectCase } from './project-cases.ts'
 import type { ProjectEvidence } from './project-check.ts'
+import type { RunnerMode } from './project-plan.ts'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
@@ -12,6 +13,7 @@ import { parseCodexEvents, runCodex } from './codex-runner.ts'
 import { parseEvents, summarize } from './core.ts'
 import { projectCases, projectCasesBatchTwo, renameIdentifiers, renameStaticClasses } from './project-cases.ts'
 import { checkProject, diagnostics } from './project-check.ts'
+import { runnersForCase } from './project-plan.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const model = 'zai-coding-plan/glm-5.3-flash'
@@ -108,8 +110,14 @@ function runAgent(project: string, prompt: string, env: NodeJS.ProcessEnv, timeo
 
 async function main() {
   const { values } = parseArgs({ options: { out: { type: 'string' }, preflight: { type: 'boolean', default: false }, case: { type: 'string' }, timeout: { type: 'string', default: '150' }, batch: { type: 'string', default: 'first' }, runner: { type: 'string', default: 'opencode' } } })
-  if (!['first', 'second'].includes(values.batch) || !['opencode', 'codex', 'split'].includes(values.runner))
-    throw new Error('Use --batch first|second and --runner opencode|codex|split')
+  if (!['first', 'second'].includes(values.batch) || !['opencode', 'codex', 'split', 'both'].includes(values.runner))
+    throw new Error('Use --batch first|second and --runner opencode|codex|split|both')
+  const mode = values.runner as RunnerMode
+  const cases = values.batch === 'second' ? projectCasesBatchTwo : projectCases
+  const selected = cases.filter(c => !values.case || c.name === values.case)
+  if (!selected.length)
+    throw new Error('No project case matches')
+  const needsOpenCode = !values.preflight && selected.some(c => runnersForCase(mode, cases.indexOf(c), cases.length).includes('opencode'))
   const timeout = Number(values.timeout) * 1000
   if (!Number.isFinite(timeout) || timeout < 1000)
     throw new Error('--timeout requires positive seconds')
@@ -121,71 +129,69 @@ async function main() {
   mkdirSync(out, { recursive: true })
   const skill = readFileSync(join(root, 'packages/cli/skills/ripast/SKILL.md'), 'utf8')
   const providerFile = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'opencode/opencode.json')
-  const provider = !values.preflight && values.runner !== 'codex' ? (JSON.parse(readFileSync(providerFile, 'utf8')) as { provider?: unknown }).provider ?? {} : {}
+  const provider = needsOpenCode ? (JSON.parse(readFileSync(providerFile, 'utf8')) as { provider?: unknown }).provider ?? {} : {}
   const authFile = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'opencode/auth.json')
   const auth = existsSync(authFile) ? readFileSync(authFile, 'utf8') : null
   const cli = join(root, 'packages/cli/bin/ripast.mjs')
   const shell = (text: string) => `'${text.replaceAll('\'', '\'\\\'\'')}'`
   const results: (Measurement & { caseName: string, runner: string, model: string, issues: string[], tools: number, steps: number })[] = []
-  const harnessHashes = Object.fromEntries(['projects.ts', 'project-cases.ts', 'project-check.ts', 'core.ts', 'codex-runner.ts'].map(path => [path, createHash('sha256').update(readFileSync(join(root, 'evals', path))).digest('hex')]))
+  const harnessHashes = Object.fromEntries(['projects.ts', 'project-cases.ts', 'project-check.ts', 'project-plan.ts', 'core.ts', 'codex-runner.ts'].map(path => [path, createHash('sha256').update(readFileSync(join(root, 'evals', path))).digest('hex')]))
   const metadata = { opencodeModel: model, codexModel: 'gpt-6-luna', codexReasoning: 'medium', runner: values.runner, batch: values.batch, revision: git(root, ['rev-parse', 'HEAD']).trim(), harnessHashes, started: new Date().toISOString(), skillHash: createHash('sha256').update(skill).digest('hex'), sourceMode: 'tracked HEAD source slices', concurrency: values.preflight ? 1 : 3 }
   console.log(`Results: ${out}`)
   writeFileSync(join(out, 'metadata.json'), JSON.stringify(metadata, null, 2))
-  const cases = values.batch === 'second' ? projectCasesBatchTwo : projectCases
-  const selected = cases.filter(c => !values.case || c.name === values.case)
-  if (!selected.length)
-    throw new Error('No project case matches')
   async function executeProject(c: ProjectCase, index: number) {
-    const runner = values.runner === 'split' ? (cases.indexOf(c) < Math.ceil(cases.length / 2) ? 'codex' : 'opencode') : values.runner
     const source = snapshot(c)
     writeFileSync(join(out, `${c.name}-source.json`), JSON.stringify({ ...source, initial: undefined, expected: undefined }, null, 2))
-    const order: Arm[] = values.preflight ? ['ripast'] : index % 2 ? ['agent', 'ripast'] : ['ripast', 'agent']
-    for (const arm of order) {
-      const dir = join(out, `${c.name}-${arm}`)
-      const project = join(dir, 'project')
-      const home = join(dir, 'home')
-      const bin = join(home, 'bin')
-      mkdirSync(bin, { recursive: true })
-      const configuration = { 'package.json': '{"name":"source-eval","private":true,"type":"module"}\n', 'tsconfig.json': '{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","strict":true,"noEmit":true,"skipLibCheck":true},"include":["**/*.ts","**/*.tsx"]}\n' }
-      writeFiles(project, { ...source.initial, ...configuration })
-      const evidence: ProjectEvidence = { initial: source.initial, expected: source.expected, baseline: diagnostics(project), configuration }
-      const evidenceFile = join(dir, 'expected.json')
-      writeFileSync(evidenceFile, JSON.stringify(evidence))
-      const called = join(home, 'ripast.called')
-      writeFileSync(join(bin, 'ripast'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${shell(called)}\nexec ${shell(process.execPath)} ${shell(cli)} "$@"\n`, { mode: 0o755 })
-      writeFileSync(join(bin, 'check-snapshot'), `#!/bin/sh\n${shell(process.execPath)} --experimental-strip-types ${shell(join(root, 'evals/project-check.ts'))} ${shell(project)} ${shell(evidenceFile)}\nresult=$?\nif [ "$result" -eq 0 ]; then touch ${shell(join(home, 'check.called'))}; fi\nexit "$result"\n`, { mode: 0o755 })
-      const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, 'config'), XDG_DATA_HOME: join(home, 'data'), XDG_STATE_HOME: join(home, 'state'), XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider, autoupdate: false, share: 'disabled', agent: { build: { steps: 25 } }, permission: { external_directory: 'deny', task: 'deny', webfetch: 'deny', websearch: 'deny', skill: 'deny' } }), OPENCODE_DISABLE_EXTERNAL_SKILLS: '1', OPENCODE_DISABLE_CLAUDE_CODE: '1', OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_DISABLE_SHARE: '1', PATH: `${bin}:${process.env.PATH ?? ''}` }
-      delete env.OPENCODE_CONFIG
-      delete env.OPENCODE_CONFIG_DIR
-      delete env.OPENCODE_AUTH_CONTENT
-      if (auth)
-        env.OPENCODE_AUTH_CONTENT = auth
-      const task = c._tag === 'Symbol' ? `Rename the ${c.from} function in ${c.declaration} to ${c.to}. Update all references and preserve aliases, strings, and comments.` : `Rename static class token ${c.from} to ${c.to} in every Vue class attribute, including variants. Preserve prose, formatting, and all other source.`
-      const prompt = [task, 'This is an isolated real-project source slice, without Git or installed dependencies. Do not add dependencies or read external repositories, Skills, or the eval harness. Do not edit configuration.', arm === 'ripast' ? `Use Ripast with this Skill. The ripast executable is on PATH.\n<skill>\n${skill}\n</skill>` : 'Use normal read, edit, and shell tools. You may write scripts. Do not use Ripast or another refactor CLI.', 'Finish by running check-snapshot. It checks the expected source diff and compares TypeScript diagnostics against the snapshot baseline. It substitutes for Git diff and project checks here. Give a brief result.'].join('\n')
-      writeFileSync(join(dir, 'prompt.txt'), prompt)
-      const args = c._tag === 'Symbol' ? ['rename', c.from, c.to, '--scope', c.declaration, '--apply', '--no-vue', '--profile', 'agent'] : ['css-class-rename', c.from, c.to, '--apply', '--profile', 'agent']
-      const execution = values.preflight
-        ? (() => {
-            const started = performance.now()
-            const result = spawnSync(process.execPath, [cli, ...args], { cwd: project, encoding: 'utf8', timeout, maxBuffer: 10_000_000 })
-            return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', code: result.status, timedOut: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT', seconds: (performance.now() - started) / 1000 }
-          })()
-        : runner === 'codex' ? await runCodex(project, prompt, env, timeout) : await runAgent(project, prompt, env, timeout)
-      writeFileSync(join(dir, 'events.jsonl'), execution.stdout)
-      writeFileSync(join(dir, 'stderr.log'), execution.stderr)
-      const transcript = values.preflight ? { usage: null, issues: [], tools: 0, steps: 0 } : runner === 'codex' ? parseCodexEvents(execution.stdout) : parseEvents(execution.stdout)
-      const issues = [...transcript.issues, ...checkProject(project, evidence)]
-      if (execution.code !== 0 || execution.timedOut)
-        issues.push(`Execution failed: ${execution.timedOut ? 'timeout' : execution.code}`)
-      if (!values.preflight && !existsSync(join(home, 'check.called')))
-        issues.push('No successful snapshot check')
-      if (!values.preflight && (arm === 'ripast') !== existsSync(called))
-        issues.push('Workflow adherence failed')
-      const result = { caseName: c.name, runner: values.preflight ? 'cli' : runner, model: runner === 'codex' ? 'gpt-6-luna' : model, arm, passed: issues.length === 0, seconds: execution.seconds, tokens: transcript.usage?.total ?? null, issues, tools: transcript.tools, steps: transcript.steps }
-      results.push(result)
-      writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...result, transcript }, null, 2))
-      writeFileSync(join(out, 'summary.json'), JSON.stringify(results, null, 2))
-      console.log(`${c.name} ${result.runner} ${arm}: ${result.passed ? 'PASS' : 'FAIL'}, ${result.seconds.toFixed(1)}s, ${result.tokens ?? 'n/a'} tokens, ${source.changedFiles.length}/${Object.keys(source.initial).length} files${issues.length ? `, ${issues.slice(0, 5).join('; ')}` : ''}`)
+    const runners = values.preflight ? ['opencode'] as const : runnersForCase(mode, cases.indexOf(c), cases.length)
+    for (const [runnerIndex, runner] of runners.entries()) {
+      const order: Arm[] = values.preflight ? ['ripast'] : (index + runnerIndex) % 2 ? ['agent', 'ripast'] : ['ripast', 'agent']
+      for (const arm of order) {
+        const dir = join(out, mode === 'both' && !values.preflight ? `${c.name}-${runner}-${arm}` : `${c.name}-${arm}`)
+        const project = join(dir, 'project')
+        const home = join(dir, 'home')
+        const bin = join(home, 'bin')
+        mkdirSync(bin, { recursive: true })
+        const configuration = { 'package.json': '{"name":"source-eval","private":true,"type":"module"}\n', 'tsconfig.json': '{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","strict":true,"noEmit":true,"skipLibCheck":true},"include":["**/*.ts","**/*.tsx"]}\n' }
+        writeFiles(project, { ...source.initial, ...configuration })
+        const evidence: ProjectEvidence = { initial: source.initial, expected: source.expected, baseline: diagnostics(project), configuration }
+        const evidenceFile = join(dir, 'expected.json')
+        writeFileSync(evidenceFile, JSON.stringify(evidence))
+        const called = join(home, 'ripast.called')
+        writeFileSync(join(bin, 'ripast'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${shell(called)}\nexec ${shell(process.execPath)} ${shell(cli)} "$@"\n`, { mode: 0o755 })
+        writeFileSync(join(bin, 'check-snapshot'), `#!/bin/sh\n${shell(process.execPath)} --experimental-strip-types ${shell(join(root, 'evals/project-check.ts'))} ${shell(project)} ${shell(evidenceFile)}\nresult=$?\nif [ "$result" -eq 0 ]; then touch ${shell(join(home, 'check.called'))}; fi\nexit "$result"\n`, { mode: 0o755 })
+        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, 'config'), XDG_DATA_HOME: join(home, 'data'), XDG_STATE_HOME: join(home, 'state'), XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider, autoupdate: false, share: 'disabled', agent: { build: { steps: 25 } }, permission: { external_directory: 'deny', task: 'deny', webfetch: 'deny', websearch: 'deny', skill: 'deny' } }), OPENCODE_DISABLE_EXTERNAL_SKILLS: '1', OPENCODE_DISABLE_CLAUDE_CODE: '1', OPENCODE_DISABLE_AUTOUPDATE: '1', OPENCODE_DISABLE_SHARE: '1', PATH: `${bin}:${process.env.PATH ?? ''}` }
+        delete env.OPENCODE_CONFIG
+        delete env.OPENCODE_CONFIG_DIR
+        delete env.OPENCODE_AUTH_CONTENT
+        if (auth)
+          env.OPENCODE_AUTH_CONTENT = auth
+        const task = c._tag === 'Symbol' ? `Rename the ${c.from} function in ${c.declaration} to ${c.to}. Update all references and preserve aliases, strings, and comments.` : `Rename static class token ${c.from} to ${c.to} in every Vue class attribute, including variants. Preserve prose, formatting, and all other source.`
+        const prompt = [task, 'This is an isolated real-project source slice, without Git or installed dependencies. Do not add dependencies or read external repositories, Skills, or the eval harness. Do not edit configuration.', arm === 'ripast' ? `Use Ripast with this Skill. The ripast executable is on PATH.\n<skill>\n${skill}\n</skill>` : 'Use normal read, edit, and shell tools. You may write scripts. Do not use Ripast or another refactor CLI.', 'Finish by running check-snapshot. It checks the expected source diff and compares TypeScript diagnostics against the snapshot baseline. It substitutes for Git diff and project checks here. Give a brief result.'].join('\n')
+        writeFileSync(join(dir, 'prompt.txt'), prompt)
+        const args = c._tag === 'Symbol' ? ['rename', c.from, c.to, '--scope', c.declaration, '--apply', '--no-vue', '--profile', 'agent'] : ['css-class-rename', c.from, c.to, '--apply', '--profile', 'agent']
+        const execution = values.preflight
+          ? (() => {
+              const started = performance.now()
+              const result = spawnSync(process.execPath, [cli, ...args], { cwd: project, encoding: 'utf8', timeout, maxBuffer: 10_000_000 })
+              return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', code: result.status, timedOut: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT', seconds: (performance.now() - started) / 1000 }
+            })()
+          : runner === 'codex' ? await runCodex(project, prompt, env, timeout) : await runAgent(project, prompt, env, timeout)
+        writeFileSync(join(dir, 'events.jsonl'), execution.stdout)
+        writeFileSync(join(dir, 'stderr.log'), execution.stderr)
+        const transcript = values.preflight ? { usage: null, issues: [], tools: 0, steps: 0 } : runner === 'codex' ? parseCodexEvents(execution.stdout) : parseEvents(execution.stdout)
+        const issues = [...transcript.issues, ...checkProject(project, evidence)]
+        if (execution.code !== 0 || execution.timedOut)
+          issues.push(`Execution failed: ${execution.timedOut ? 'timeout' : execution.code}`)
+        if (!values.preflight && !existsSync(join(home, 'check.called')))
+          issues.push('No successful snapshot check')
+        if (!values.preflight && (arm === 'ripast') !== existsSync(called))
+          issues.push('Workflow adherence failed')
+        const result = { caseName: c.name, runner: values.preflight ? 'cli' : runner, model: runner === 'codex' ? 'gpt-6-luna' : model, arm, passed: issues.length === 0, seconds: execution.seconds, tokens: transcript.usage?.total ?? null, issues, tools: transcript.tools, steps: transcript.steps }
+        results.push(result)
+        writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...result, transcript }, null, 2))
+        writeFileSync(join(out, 'summary.json'), JSON.stringify(results, null, 2))
+        console.log(`${c.name} ${result.runner} ${arm}: ${result.passed ? 'PASS' : 'FAIL'}, ${result.seconds.toFixed(1)}s, ${result.tokens ?? 'n/a'} tokens, ${source.changedFiles.length}/${Object.keys(source.initial).length} files${issues.length ? `, ${issues.slice(0, 5).join('; ')}` : ''}`)
+      }
     }
   }
   let next = 0
@@ -197,10 +203,12 @@ async function main() {
   }))
   const lines = ['# Real project source evals', '', '| Project | Runner | Ripast pass | Agent pass | Ripast seconds | Agent seconds | Ripast tokens | Agent tokens |', '| --- | --- | --- | --- | --- | --- | --- | --- |']
   for (const c of selected) {
-    const s = summarize(results.filter(r => r.caseName === c.name))
-    lines.push(`| ${c.name} | ${results.find(r => r.caseName === c.name)?.runner} | ${s.ripast.passed}/${s.ripast.runs} | ${s.agent.passed}/${s.agent.runs} | ${s.ripast.seconds?.toFixed(1) ?? 'n/a'} | ${s.agent.seconds?.toFixed(1) ?? 'n/a'} | ${s.ripast.tokens ?? 'n/a'} | ${s.agent.tokens ?? 'n/a'} |`)
+    for (const runner of new Set(results.filter(r => r.caseName === c.name).map(r => r.runner))) {
+      const s = summarize(results.filter(r => r.caseName === c.name && r.runner === runner))
+      lines.push(`| ${c.name} | ${runner} | ${s.ripast.passed}/${s.ripast.runs} | ${s.agent.passed}/${s.agent.runs} | ${s.ripast.seconds?.toFixed(1) ?? 'n/a'} | ${s.agent.seconds?.toFixed(1) ?? 'n/a'} | ${s.ripast.tokens ?? 'n/a'} | ${s.agent.tokens ?? 'n/a'} |`)
+    }
   }
-  lines.push('', 'Source slices from recorded local HEAD commits. No original project files change.', 'No dependencies or generated Nuxt state are copied. Type checks compare baseline diagnostics; these are not full project builds.', 'Vue tasks use up to ten files with static class tokens, plus up to ten unrelated files. Vue grading requires the exact expected diff.', `One run per arm. ${metadata.concurrency} projects run concurrently; each project alternates its two arms. Treat small timing differences as noise.`, 'Timing includes runner startup, model work, refactoring, and the requested snapshot check.', 'The revised Skill is included in the Ripast prompt. Baseline gets ordinary editing tools. Skill loading and CLI installation are excluded.', 'Report comparisons within each runner. Different models and workloads prevent a direct Codex versus OpenCode speed claim.', ...results.filter(r => !r.passed).map(r => `${r.caseName} ${r.arm}: ${r.issues.slice(0, 8).join('; ')}`))
+  lines.push('', 'Source slices from recorded local HEAD commits. No original project files change.', 'No dependencies or generated Nuxt state are copied. Type checks compare baseline diagnostics; these are not full project builds.', 'Vue tasks use up to ten files with static class tokens, plus up to ten unrelated files. Vue grading requires the exact expected diff.', `One run per arm and assigned runner. ${metadata.concurrency} projects run concurrently. ${mode === 'both' ? 'Starting model alternates by task. Codex runs Ripast first; OpenCode runs ordinary editing first.' : 'Method order alternates between projects.'} Treat small timing differences as noise.`, 'Timing includes runner startup, model work, refactoring, and the requested snapshot check.', 'The revised Skill is included in the Ripast prompt. Baseline gets ordinary editing tools. Skill loading and CLI installation are excluded.', mode === 'both' ? 'Both models use the same captured source and task. Different tool stacks and token accounting still limit cross-runner interpretation.' : 'Report comparisons within each runner. Different models and workloads prevent a direct Codex versus OpenCode speed claim.', ...results.filter(r => !r.passed).map(r => `${r.caseName} ${r.runner} ${r.arm}: ${r.issues.slice(0, 8).join('; ')}`))
   writeFileSync(join(out, 'report.md'), `${lines.join('\n')}\n`)
   console.log(lines.join('\n'))
   if (results.some(r => !r.passed))

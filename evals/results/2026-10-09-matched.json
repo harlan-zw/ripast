@@ -1,0 +1,1177 @@
+{
+  "date": "2026-10-09",
+  "metadata": {
+    "opencodeModel": "zai-coding-plan/glm-5.3-flash",
+    "codexModel": "gpt-6-luna",
+    "codexReasoning": "medium",
+    "runner": "both",
+    "batch": "second",
+    "revision": "251bfc11b978a99964d13ec8eed039ff9636beb3",
+    "harnessHashes": {
+      "projects.ts": "f8c6012a840d17dde31ca7bf8d4f0b2d85e189c2eec71f171c7984fbdd2af3b0",
+      "project-cases.ts": "54d70add704f1b1c93a04d0141cdfc21c2a093b2156f136ab6dad307d573c102",
+      "project-check.ts": "5821934e4ff3e0bfd81a9028805a6b46e6f2e5d45db8193540bae6502cf1b515",
+      "project-plan.ts": "2042442b5a717ea2378219b35e87861f8eae7a1db023939277f7a23e20115181",
+      "core.ts": "80061479c0b62fb79014031f0935d8ec7307b0c9de4f9276f349db5698532c58",
+      "codex-runner.ts": "7f1283e06b8336359f528f841c8466715f63058a608779e68cf0d278184f1484"
+    },
+    "started": "2026-10-08T13:41:45.434Z",
+    "skillHash": "eabd2e66a78783d1d598cadf4d45efd9b8f16ff870a24cbb822f0c82dfda1126",
+    "sourceMode": "tracked HEAD source slices",
+    "concurrency": 3
+  },
+  "method": "Ten identical tasks, two methods, two models, one run per combination. Each task captures tracked source once. Starting model alternates. Codex executes Ripast first; OpenCode executes ordinary editing first. Three project pairs execute concurrently. Completed pairs enter speed and token reductions. All attempts enter resource totals.",
+  "sources": [
+    {
+      "name": "unrouting",
+      "revision": "28531572f1a7279db871c8e92ddec670a5e2f0fe",
+      "files": 4,
+      "changedFiles": [
+        "src/index.ts",
+        "src/parse.ts"
+      ],
+      "taskHash": "e0725d427605210b266de0a380ae200f3b0e18c6c87d44a459c6515e224e2a3c"
+    },
+    {
+      "name": "c12",
+      "revision": "874baea49b2f06cd1f8f8eeaf7c2cada7b0db054",
+      "files": 6,
+      "changedFiles": [
+        "src/dotenv.ts",
+        "src/index.ts"
+      ],
+      "taskHash": "fef7153cca5fe9f4308b1f0c03393594123c5a9b053dbacc5513146ffeaf2587"
+    },
+    {
+      "name": "harlanzw.com",
+      "revision": "05b019b8a678ae64a3ed89a2f89e2a5541185394",
+      "files": 17,
+      "changedFiles": [
+        "app/components/PostCard.vue",
+        "app/components/ProjectCard.vue",
+        "app/components/content/ArticleRunnerProjection.vue",
+        "app/components/content/ArticleRunnerSavings.vue",
+        "app/components/content/ProjectList.vue",
+        "app/components/content/SponsorList.vue",
+        "app/components/content/Tweet.vue"
+      ],
+      "taskHash": "075aa43bcc6a5e7a6b7b0b0313e3f2aaeb9c63eaa0bbfb895ad66153d0f0bff8"
+    },
+    {
+      "name": "nuxt-link-checker",
+      "revision": "e07ea4e2fb6acda8d6b04dc004fb98f5e3b558c8",
+      "files": 46,
+      "changedFiles": [
+        "src/build/report.ts",
+        "src/build/util.ts",
+        "src/prerender.ts"
+      ],
+      "taskHash": "f634cba72fe3d79f02c4dbf7127be999cc74a9ba4a1cd473caf751300a8cf4fe"
+    },
+    {
+      "name": "massivemonster.co",
+      "revision": "4a7c316966bcb76487722a0298c6182eb30a2905",
+      "files": 13,
+      "changedFiles": [
+        "app/components/game/GameInfoCard.vue",
+        "app/error.vue",
+        "app/pages/games/cult-of-the-lamb.vue"
+      ],
+      "taskHash": "b45da920869f73c6ea73181105e74680a6ccb30f101f58e66e83f25dbb7c8d02"
+    },
+    {
+      "name": "mdream.dev",
+      "revision": "40a4f34d95119bd670e9313ff6f1b375871cc066",
+      "files": 20,
+      "changedFiles": [
+        "app/components/MarkdownDocumentViewer.vue",
+        "app/components/NumberedList.vue",
+        "app/components/llms-txt/LlmsTxtBrowser.vue",
+        "app/pages/examples.vue",
+        "app/pages/guides/[slug].vue",
+        "app/pages/guides/index.vue",
+        "app/pages/index.vue",
+        "app/pages/insights.vue",
+        "app/pages/llms-txt/[slug].vue",
+        "app/pages/llms-txt/guide.vue"
+      ],
+      "taskHash": "93c7b7336b333cee8bcf71299c7da399e74f8527a443f817e33b86dc02045dd9"
+    },
+    {
+      "name": "nuxt-seo-utils",
+      "revision": "a1547ea4f4115e748668ef1ac6603be8e4f32ffc",
+      "files": 49,
+      "changedFiles": [
+        "src/build-time/generateTagsFromPageDirImages.ts",
+        "src/build-time/generateTagsFromPublicFiles.ts",
+        "src/build-time/iconAssets.test.ts",
+        "src/build-time/iconAssets.ts",
+        "src/const.ts"
+      ],
+      "taskHash": "7fc688a1b32c09374b083542420a98efe50248894fc3381b5f54f3dab6efa33b"
+    },
+    {
+      "name": "nuxt-site-config",
+      "revision": "f98da95381cc93794c8e00fa33d00122f2dec3ee",
+      "files": 5,
+      "changedFiles": [
+        "packages/kit/src/urls.ts",
+        "packages/kit/src/util.ts"
+      ],
+      "taskHash": "c8bc8ce240d64d613108034ebe0a704f9b3db21c89d306a65efb485a0e3c0791"
+    },
+    {
+      "name": "nuxtseo.com",
+      "revision": "ab5fe0fb427ea920f0d6962ec8456dae6dd985bb",
+      "files": 20,
+      "changedFiles": [
+        "apps/admin/app/components/AdminCompetitorDetail.vue",
+        "apps/admin/app/components/AdminFeedbackDetail.vue",
+        "apps/admin/app/components/AdminSiteDetail.vue",
+        "apps/admin/app/components/AdminToolsCharts.client.vue",
+        "apps/admin/app/components/AdminUserDetail.vue",
+        "apps/admin/app/components/AdminUsersCharts.client.vue",
+        "apps/admin/app/pages/admin/activity.vue",
+        "apps/admin/app/pages/admin/cache.vue",
+        "apps/admin/app/pages/admin/dataforseo.vue",
+        "apps/admin/app/pages/admin/emails.vue"
+      ],
+      "taskHash": "b67be7d67245ba9c79c0429b7d574e0398b906e575e37e673f315fdb8c95ed80"
+    },
+    {
+      "name": "unlighthouse.dev",
+      "revision": "48bc5d95ec31d0697d296351988439f0504502b7",
+      "files": 20,
+      "changedFiles": [
+        "app/components/FeedbackButtons.vue",
+        "app/components/Footer.vue",
+        "app/components/Header.vue",
+        "app/components/LearnMenu.vue",
+        "app/components/ShowcaseCard.vue",
+        "app/components/content/AuditImpact.vue",
+        "app/components/content/InteractiveClsPlayground.vue",
+        "app/components/content/InteractiveInpLab.vue",
+        "app/components/content/InteractiveLcpTimeline.vue",
+        "app/components/content/LabVsFieldFlow.vue"
+      ],
+      "taskHash": "33e62faf113106e493ab39ae67841475451a63171b861ebf18e94ab9c5589b2e"
+    }
+  ],
+  "results": [
+    {
+      "caseName": "unrouting",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 8.697821846999998,
+      "tokens": 45458,
+      "issues": [],
+      "tools": 2,
+      "steps": 1,
+      "usage": {
+        "input": 6079,
+        "output": 184,
+        "reasoning": 27,
+        "cacheRead": 39168,
+        "cacheWrite": 0,
+        "total": 45458,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "c12",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 10.387529782,
+      "tokens": 45529,
+      "issues": [],
+      "tools": 2,
+      "steps": 1,
+      "usage": {
+        "input": 6103,
+        "output": 232,
+        "reasoning": 26,
+        "cacheRead": 39168,
+        "cacheWrite": 0,
+        "total": 45529,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "unrouting",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": false,
+      "seconds": 7.337101379999998,
+      "tokens": 27800,
+      "issues": [
+        "Changed AST: src/index.ts",
+        "Changed AST: src/parse.ts",
+        "No successful snapshot check"
+      ],
+      "tools": 1,
+      "steps": 1,
+      "usage": {
+        "input": 3576,
+        "output": 160,
+        "reasoning": 0,
+        "cacheRead": 24064,
+        "cacheWrite": 0,
+        "total": 27800,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "c12",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 19.903952982000003,
+      "tokens": 92147,
+      "issues": [],
+      "tools": 5,
+      "steps": 1,
+      "usage": {
+        "input": 13040,
+        "output": 651,
+        "reasoning": 120,
+        "cacheRead": 78336,
+        "cacheWrite": 0,
+        "total": 92147,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "harlanzw.com",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 80.35719899,
+      "tokens": 95375,
+      "issues": [],
+      "tools": 22,
+      "steps": 8,
+      "usage": {
+        "input": 22646,
+        "output": 1129,
+        "reasoning": 1072,
+        "cacheRead": 70528,
+        "cacheWrite": 0,
+        "total": 95375,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "unrouting",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 76.932576448,
+      "tokens": 78489,
+      "issues": [],
+      "tools": 13,
+      "steps": 10,
+      "usage": {
+        "input": 14666,
+        "output": 710,
+        "reasoning": 841,
+        "cacheRead": 62272,
+        "cacheWrite": 0,
+        "total": 78489,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "c12",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 64.91662435100001,
+      "tokens": 63138,
+      "issues": [],
+      "tools": 10,
+      "steps": 7,
+      "usage": {
+        "input": 15950,
+        "output": 682,
+        "reasoning": 938,
+        "cacheRead": 45568,
+        "cacheWrite": 0,
+        "total": 63138,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "harlanzw.com",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 27.369339433,
+      "tokens": 22449,
+      "issues": [],
+      "tools": 2,
+      "steps": 3,
+      "usage": {
+        "input": 21930,
+        "output": 120,
+        "reasoning": 335,
+        "cacheRead": 64,
+        "cacheWrite": 0,
+        "total": 22449,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "unrouting",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 26.045591010000003,
+      "tokens": 22467,
+      "issues": [],
+      "tools": 2,
+      "steps": 3,
+      "usage": {
+        "input": 12206,
+        "output": 187,
+        "reasoning": 346,
+        "cacheRead": 9728,
+        "cacheWrite": 0,
+        "total": 22467,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "c12",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 38.698540143999985,
+      "tokens": 22609,
+      "issues": [],
+      "tools": 2,
+      "steps": 3,
+      "usage": {
+        "input": 16389,
+        "output": 197,
+        "reasoning": 391,
+        "cacheRead": 5632,
+        "cacheWrite": 0,
+        "total": 22609,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-link-checker",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 9.596502070999996,
+      "tokens": 45482,
+      "issues": [],
+      "tools": 2,
+      "steps": 1,
+      "usage": {
+        "input": 9193,
+        "output": 177,
+        "reasoning": 16,
+        "cacheRead": 36096,
+        "cacheWrite": 0,
+        "total": 45482,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "harlanzw.com",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 39.80218364599999,
+      "tokens": 30394,
+      "issues": [],
+      "tools": 1,
+      "steps": 1,
+      "usage": {
+        "input": 5132,
+        "output": 174,
+        "reasoning": 0,
+        "cacheRead": 25088,
+        "cacheWrite": 0,
+        "total": 30394,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "harlanzw.com",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 17.640066301000015,
+      "tokens": 73666,
+      "issues": [],
+      "tools": 4,
+      "steps": 1,
+      "usage": {
+        "input": 11885,
+        "output": 373,
+        "reasoning": 224,
+        "cacheRead": 61184,
+        "cacheWrite": 0,
+        "total": 73666,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-link-checker",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 19.233825245000016,
+      "tokens": 87396,
+      "issues": [],
+      "tools": 5,
+      "steps": 1,
+      "usage": {
+        "input": 13601,
+        "output": 516,
+        "reasoning": 63,
+        "cacheRead": 73216,
+        "cacheWrite": 0,
+        "total": 87396,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "massivemonster.co",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 57.61206759200001,
+      "tokens": 51256,
+      "issues": [],
+      "tools": 13,
+      "steps": 7,
+      "usage": {
+        "input": 14168,
+        "output": 707,
+        "reasoning": 349,
+        "cacheRead": 36032,
+        "cacheWrite": 0,
+        "total": 51256,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "mdream.dev",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 108.444794541,
+      "tokens": 312498,
+      "issues": [],
+      "tools": 28,
+      "steps": 12,
+      "usage": {
+        "input": 48807,
+        "output": 1740,
+        "reasoning": 1407,
+        "cacheRead": 260544,
+        "cacheWrite": 0,
+        "total": 312498,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-link-checker",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 69.059990334,
+      "tokens": 102250,
+      "issues": [],
+      "tools": 15,
+      "steps": 12,
+      "usage": {
+        "input": 7809,
+        "output": 955,
+        "reasoning": 238,
+        "cacheRead": 93248,
+        "cacheWrite": 0,
+        "total": 102250,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "mdream.dev",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 26.767629107999994,
+      "tokens": 22675,
+      "issues": [],
+      "tools": 2,
+      "steps": 3,
+      "usage": {
+        "input": 9156,
+        "output": 170,
+        "reasoning": 357,
+        "cacheRead": 12992,
+        "cacheWrite": 0,
+        "total": 22675,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "mdream.dev",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 7.629838503999985,
+      "tokens": 30443,
+      "issues": [],
+      "tools": 1,
+      "steps": 1,
+      "usage": {
+        "input": 5188,
+        "output": 167,
+        "reasoning": 0,
+        "cacheRead": 25088,
+        "cacheWrite": 0,
+        "total": 30443,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-link-checker",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 30.293954052000014,
+      "tokens": 29623,
+      "issues": [],
+      "tools": 4,
+      "steps": 4,
+      "usage": {
+        "input": 14504,
+        "output": 178,
+        "reasoning": 221,
+        "cacheRead": 14720,
+        "cacheWrite": 0,
+        "total": 29623,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "massivemonster.co",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 45.06447063199998,
+      "tokens": 39772,
+      "issues": [],
+      "tools": 5,
+      "steps": 5,
+      "usage": {
+        "input": 9891,
+        "output": 283,
+        "reasoning": 286,
+        "cacheRead": 29312,
+        "cacheWrite": 0,
+        "total": 39772,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "massivemonster.co",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 9.013125148000022,
+      "tokens": 30285,
+      "issues": [],
+      "tools": 1,
+      "steps": 1,
+      "usage": {
+        "input": 8119,
+        "output": 150,
+        "reasoning": 0,
+        "cacheRead": 22016,
+        "cacheWrite": 0,
+        "total": 30285,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-seo-utils",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 10.740564367999964,
+      "tokens": 30381,
+      "issues": [],
+      "tools": 1,
+      "steps": 1,
+      "usage": {
+        "input": 5112,
+        "output": 181,
+        "reasoning": 0,
+        "cacheRead": 25088,
+        "cacheWrite": 0,
+        "total": 30381,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "mdream.dev",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 18.629616599000002,
+      "tokens": 83810,
+      "issues": [],
+      "tools": 4,
+      "steps": 1,
+      "usage": {
+        "input": 15741,
+        "output": 505,
+        "reasoning": 236,
+        "cacheRead": 67328,
+        "cacheWrite": 0,
+        "total": 83810,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "massivemonster.co",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 15.976988734999962,
+      "tokens": 71209,
+      "issues": [],
+      "tools": 4,
+      "steps": 1,
+      "usage": {
+        "input": 9432,
+        "output": 445,
+        "reasoning": 148,
+        "cacheRead": 61184,
+        "cacheWrite": 0,
+        "total": 71209,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-seo-utils",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 17.827650827000035,
+      "tokens": 122654,
+      "issues": [],
+      "tools": 7,
+      "steps": 1,
+      "usage": {
+        "input": 10416,
+        "output": 565,
+        "reasoning": 57,
+        "cacheRead": 111616,
+        "cacheWrite": 0,
+        "total": 122654,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-site-config",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 7.74131866400002,
+      "tokens": 30300,
+      "issues": [],
+      "tools": 1,
+      "steps": 1,
+      "usage": {
+        "input": 5044,
+        "output": 168,
+        "reasoning": 0,
+        "cacheRead": 25088,
+        "cacheWrite": 0,
+        "total": 30300,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-site-config",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 17.496308808000002,
+      "tokens": 93808,
+      "issues": [],
+      "tools": 5,
+      "steps": 1,
+      "usage": {
+        "input": 14731,
+        "output": 529,
+        "reasoning": 212,
+        "cacheRead": 78336,
+        "cacheWrite": 0,
+        "total": 93808,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-seo-utils",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 69.03715336499998,
+      "tokens": 86967,
+      "issues": [],
+      "tools": 23,
+      "steps": 9,
+      "usage": {
+        "input": 13803,
+        "output": 1508,
+        "reasoning": 360,
+        "cacheRead": 71296,
+        "cacheWrite": 0,
+        "total": 86967,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxtseo.com",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 93.05886128300004,
+      "tokens": 71736,
+      "issues": [],
+      "tools": 9,
+      "steps": 8,
+      "usage": {
+        "input": 17146,
+        "output": 575,
+        "reasoning": 1791,
+        "cacheRead": 52224,
+        "cacheWrite": 0,
+        "total": 71736,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-site-config",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 64.45724286599999,
+      "tokens": 89436,
+      "issues": [],
+      "tools": 12,
+      "steps": 10,
+      "usage": {
+        "input": 13495,
+        "output": 817,
+        "reasoning": 500,
+        "cacheRead": 74624,
+        "cacheWrite": 0,
+        "total": 89436,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-seo-utils",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 33.59497970700002,
+      "tokens": 30506,
+      "issues": [],
+      "tools": 3,
+      "steps": 4,
+      "usage": {
+        "input": 9330,
+        "output": 272,
+        "reasoning": 296,
+        "cacheRead": 20608,
+        "cacheWrite": 0,
+        "total": 30506,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxt-site-config",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 27.768355053999986,
+      "tokens": 22370,
+      "issues": [],
+      "tools": 2,
+      "steps": 3,
+      "usage": {
+        "input": 14430,
+        "output": 209,
+        "reasoning": 307,
+        "cacheRead": 7424,
+        "cacheWrite": 0,
+        "total": 22370,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxtseo.com",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 40.48245262599998,
+      "tokens": 16923,
+      "issues": [],
+      "tools": 1,
+      "steps": 2,
+      "usage": {
+        "input": 10924,
+        "output": 128,
+        "reasoning": 1263,
+        "cacheRead": 4608,
+        "cacheWrite": 0,
+        "total": 16923,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "unlighthouse.dev",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 53.21919472099998,
+      "tokens": 50019,
+      "issues": [],
+      "tools": 7,
+      "steps": 6,
+      "usage": {
+        "input": 5154,
+        "output": 371,
+        "reasoning": 782,
+        "cacheRead": 43712,
+        "cacheWrite": 0,
+        "total": 50019,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxtseo.com",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 48.95557425900002,
+      "tokens": 30468,
+      "issues": [],
+      "tools": 1,
+      "steps": 1,
+      "usage": {
+        "input": 5210,
+        "output": 170,
+        "reasoning": 0,
+        "cacheRead": 25088,
+        "cacheWrite": 0,
+        "total": 30468,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "unlighthouse.dev",
+      "runner": "opencode",
+      "model": "zai-coding-plan/glm-5.3-flash",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 32.50136121500004,
+      "tokens": 31996,
+      "issues": [],
+      "tools": 4,
+      "steps": 4,
+      "usage": {
+        "input": 2836,
+        "output": 167,
+        "reasoning": 577,
+        "cacheRead": 28416,
+        "cacheWrite": 0,
+        "total": 31996,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "nuxtseo.com",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 24.158962482000003,
+      "tokens": 105147,
+      "issues": [],
+      "tools": 6,
+      "steps": 1,
+      "usage": {
+        "input": 15103,
+        "output": 519,
+        "reasoning": 181,
+        "cacheRead": 89344,
+        "cacheWrite": 0,
+        "total": 105147,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "unlighthouse.dev",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "ripast",
+      "passed": true,
+      "seconds": 7.59044993599999,
+      "tokens": 45676,
+      "issues": [],
+      "tools": 2,
+      "steps": 1,
+      "usage": {
+        "input": 9385,
+        "output": 195,
+        "reasoning": 0,
+        "cacheRead": 36096,
+        "cacheWrite": 0,
+        "total": 45676,
+        "cost": 0
+      }
+    },
+    {
+      "caseName": "unlighthouse.dev",
+      "runner": "codex",
+      "model": "gpt-6-luna",
+      "arm": "agent",
+      "passed": true,
+      "seconds": 28.108650262999987,
+      "tokens": 76097,
+      "issues": [],
+      "tools": 4,
+      "steps": 1,
+      "usage": {
+        "input": 12115,
+        "output": 585,
+        "reasoning": 165,
+        "cacheRead": 63232,
+        "cacheWrite": 0,
+        "total": 76097,
+        "cost": 0
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "runner": "codex",
+      "completedPairs": 9,
+      "projects": [
+        "c12",
+        "harlanzw.com",
+        "nuxt-link-checker",
+        "massivemonster.co",
+        "mdream.dev",
+        "nuxt-seo-utils",
+        "nuxt-site-config",
+        "nuxtseo.com",
+        "unlighthouse.dev"
+      ],
+      "ripastPassed": 10,
+      "agentPassed": 9,
+      "tokenReductionPercent": 60.423806415909986,
+      "timeReductionPercent": 15.375766831375126,
+      "medianPairTokenReductionPercent": 58.74080308419081,
+      "medianPairTimeReductionPercent": 47.81172467904297,
+      "ripastTokens": 318958,
+      "agentTokens": 805934,
+      "ripastSeconds": 151.457086378,
+      "agentSeconds": 178.97602224200003,
+      "paired": [
+        {
+          "name": "c12",
+          "tokenReductionPercent": 50.59090366479646,
+          "timeReductionPercent": 47.81172467904297
+        },
+        {
+          "name": "harlanzw.com",
+          "tokenReductionPercent": 58.74080308419081,
+          "timeReductionPercent": -125.63511364888464
+        },
+        {
+          "name": "nuxt-link-checker",
+          "tokenReductionPercent": 47.958716646070755,
+          "timeReductionPercent": 50.10611800429723
+        },
+        {
+          "name": "massivemonster.co",
+          "tokenReductionPercent": 57.47026359027652,
+          "timeReductionPercent": 43.586834180739984
+        },
+        {
+          "name": "mdream.dev",
+          "tokenReductionPercent": 63.6761722944756,
+          "timeReductionPercent": 59.044575805121305
+        },
+        {
+          "name": "nuxt-seo-utils",
+          "tokenReductionPercent": 75.23032269636538,
+          "timeReductionPercent": 39.753338943943504
+        },
+        {
+          "name": "nuxt-site-config",
+          "tokenReductionPercent": 67.69998294388539,
+          "timeReductionPercent": 55.75456086794499
+        },
+        {
+          "name": "nuxtseo.com",
+          "tokenReductionPercent": 71.02342434876887,
+          "timeReductionPercent": -102.63939022826456
+        },
+        {
+          "name": "unlighthouse.dev",
+          "tokenReductionPercent": 39.97660880192386,
+          "timeReductionPercent": 72.99603550871505
+        }
+      ]
+    },
+    {
+      "runner": "opencode",
+      "completedPairs": 10,
+      "projects": [
+        "unrouting",
+        "c12",
+        "harlanzw.com",
+        "nuxt-link-checker",
+        "massivemonster.co",
+        "mdream.dev",
+        "nuxt-seo-utils",
+        "nuxt-site-config",
+        "nuxtseo.com",
+        "unlighthouse.dev"
+      ],
+      "ripastPassed": 10,
+      "agentPassed": 10,
+      "tokenReductionPercent": 73.89139042154932,
+      "timeReductionPercent": 55.42143700214548,
+      "medianPairTokenReductionPercent": 71.20222881433466,
+      "medianPairTimeReductionPercent": 56.315935643417006,
+      "ripastTokens": 261390,
+      "agentTokens": 1001164,
+      "ripastSeconds": 328.586672981,
+      "agentSeconds": 737.095704491,
+      "paired": [
+        {
+          "name": "unrouting",
+          "tokenReductionPercent": 71.37560677292359,
+          "timeReductionPercent": 66.14491258120721
+        },
+        {
+          "name": "c12",
+          "tokenReductionPercent": 64.19113687478222,
+          "timeReductionPercent": 40.387319071368424
+        },
+        {
+          "name": "harlanzw.com",
+          "tokenReductionPercent": 76.46238532110092,
+          "timeReductionPercent": 65.94040138655659
+        },
+        {
+          "name": "nuxt-link-checker",
+          "tokenReductionPercent": 71.02885085574573,
+          "timeReductionPercent": 56.133857092236624
+        },
+        {
+          "name": "massivemonster.co",
+          "tokenReductionPercent": 22.405181832370847,
+          "timeReductionPercent": 21.779459555001946
+        },
+        {
+          "name": "mdream.dev",
+          "tokenReductionPercent": 92.74395356130279,
+          "timeReductionPercent": 75.31681513963319
+        },
+        {
+          "name": "nuxt-seo-utils",
+          "tokenReductionPercent": 64.9223268596134,
+          "timeReductionPercent": 51.33782598279639
+        },
+        {
+          "name": "nuxt-site-config",
+          "tokenReductionPercent": 74.98770070217809,
+          "timeReductionPercent": 56.919728770081655
+        },
+        {
+          "name": "nuxtseo.com",
+          "tokenReductionPercent": 76.40933422549348,
+          "timeReductionPercent": 56.49801419459739
+        },
+        {
+          "name": "unlighthouse.dev",
+          "tokenReductionPercent": 36.03230772306524,
+          "timeReductionPercent": 38.92925027259913
+        }
+      ]
+    }
+  ],
+  "resources": {
+    "totalTokens": 2460704,
+    "summedSeconds": 1412.1504093189997,
+    "elapsedMinutes": 8.744939579264322,
+    "byRunner": [
+      {
+        "runner": "codex",
+        "runs": 20,
+        "totalTokens": 1198150,
+        "summedSeconds": 346.468031847
+      },
+      {
+        "runner": "opencode",
+        "runs": 20,
+        "totalTokens": 1262554,
+        "summedSeconds": 1065.682377472
+      }
+    ]
+  }
+}
