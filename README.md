@@ -322,7 +322,7 @@ const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cw
 
 The [core exports](./packages/core/src/index.ts) include refactors, scans, declaration trees, formatters, and the `writeChanges` helper.
 
-## Recipes & limitations
+## Limitations
 
 **Scoping with `--glob`.** Pass comma-separated patterns. Prefix a pattern with `!` to exclude matching files:
 
