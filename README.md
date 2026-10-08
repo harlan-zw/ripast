@@ -1,4 +1,9 @@
-<h1>ripast</h1>
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./branding/logo-dark.svg">
+    <img src="./branding/logo-light.svg" alt="ripast" width="432" height="112">
+  </picture>
+</h1>
 
 [![npm version](https://img.shields.io/npm/v/@ripast/cli?color=yellow)](https://npmjs.com/package/@ripast/cli)
 [![npm downloads](https://img.shields.io/npm/dm/@ripast/cli?color=yellow)](https://npm.chart.dev/@ripast/cli)
