@@ -2,6 +2,7 @@ import type { FileChange, FrameworkAdapter } from '@ripast/core/adapter'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { extractTemplateExpressions, rgFiles, scan } from '@ripast/core/adapter'
+import ts from '@typescript/typescript6'
 import { URI } from 'vscode-uri'
 import {
   applyVueImportRewrite,
@@ -97,37 +98,62 @@ function isNuxtProject(cwd: string): boolean {
 }
 
 function nuxtAutoImportScopes(cwd: string): Set<string> {
-  const dirs = new Set(DEFAULT_NUXT_AUTO_IMPORT_DIRS)
-  const configPath = ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mjs', 'nuxt.config.mts']
-    .map(name => join(cwd, name))
-    .find(path => existsSync(path))
-  if (configPath) {
-    try {
-      for (const dir of extractConfiguredDirs(readFileSync(configPath, 'utf8')))
-        dirs.add(dir)
-    }
-    catch {}
-  }
-  const scopes = new Set([...dirs].map(dir => resolve(cwd, stripGlob(dir))))
+  const scopes = new Set<string>()
   const contexts = new Set([cwd, ...rgFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
   for (const context of contexts) {
+    const configPath = ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mjs', 'nuxt.config.mts']
+      .map(name => join(context, name))
+      .find(existsSync)
+    const config = configPath ? literalNuxtConfig(readFileSync(configPath, 'utf8')) : undefined
+    const sourceRoot = resolve(context, literalString(configProperty(config, 'srcDir')) ?? (existsSync(join(context, 'app')) ? 'app' : '.'))
     for (const dir of DEFAULT_NUXT_AUTO_IMPORT_DIRS)
       scopes.add(resolve(context, dir))
+    for (const dir of ['utils', 'composables', 'components', 'middleware'])
+      scopes.add(resolve(sourceRoot, dir))
+    const sharedRoot = resolve(context, literalString(configProperty(configProperty(config, 'dir'), 'shared')) ?? 'shared')
+    for (const dir of ['utils', 'types']) scopes.add(resolve(sharedRoot, dir))
+    for (const dir of configuredNuxtDirs(config)) scopes.add(resolve(sourceRoot, stripGlob(dir)))
     for (const provider of loadNuxtProviderPaths(context))
       scopes.add(provider)
   }
   return scopes
 }
 
-function extractConfiguredDirs(source: string): string[] {
+function literalNuxtConfig(source: string): ts.Expression | undefined {
+  const file = ts.createSourceFile('nuxt.config.ts', source, ts.ScriptTarget.Latest, true)
+  const exported = file.statements.find(ts.isExportAssignment)
+  if (!exported)
+    return undefined
+  const expression = exported.expression
+  return ts.isCallExpression(expression) ? expression.arguments[0] : expression
+}
+
+function configProperty(expression: ts.Expression | undefined, name: string): ts.Expression | undefined {
+  if (!expression)
+    return undefined
+  if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression))
+    return configProperty(expression.expression, name)
+  if (!ts.isObjectLiteralExpression(expression))
+    return undefined
+  const property = expression.properties.find(property => ts.isPropertyAssignment(property)
+    && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === name)
+  return property && ts.isPropertyAssignment(property) ? property.initializer : undefined
+}
+
+function literalString(expression: ts.Expression | undefined): string | undefined {
+  return expression && (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) ? expression.text : undefined
+}
+
+function configuredNuxtDirs(config: ts.Expression | undefined): string[] {
   const dirs: string[] = []
-  for (const match of source.matchAll(/\bdirs\s*:\s*\[([\s\S]*?)\]/g)) {
-    for (const str of match[1].matchAll(/['"`]([^'"`]+)['"`]/g))
-      dirs.push(str[1])
-  }
-  for (const match of source.matchAll(/\bcomponents\s*:\s*\[([\s\S]*?)\]/g)) {
-    for (const str of match[1].matchAll(/(?:path\s*:\s*)?['"`]([^'"`]+)['"`]/g))
-      dirs.push(str[1])
+  for (const array of [configProperty(configProperty(config, 'imports'), 'dirs'), configProperty(config, 'components')]) {
+    if (!array || !ts.isArrayLiteralExpression(array))
+      continue
+    for (const element of array.elements) {
+      const dir = literalString(element) ?? literalString(configProperty(element, 'path'))
+      if (dir)
+        dirs.push(dir)
+    }
   }
   return dirs.filter(dir => !dir.startsWith('#') && !dir.startsWith('~') && !dir.startsWith('@'))
 }
