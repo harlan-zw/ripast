@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { renameSync } from 'node:fs'
 import { describe, it } from 'vitest'
 import { runCssClassRename, runCssClassScan, runMove, runRename, runRenameFile, scan, writeChanges } from '../packages/core/src/index.ts'
-import { assertSolidDiagnostics, makeSolidFixture, solidModuleValue, solidSyntax } from './solid-helpers.ts'
+import { assertSolidDiagnostics, makeSolidFixture, renderSolidFixture, solidModuleValue, solidSyntax } from './solid-helpers.ts'
 
 const options = { vue: false, verify: 'project' as const }
 
@@ -11,6 +11,8 @@ describe('solid TSX refactors', () => {
     const fx = makeSolidFixture()
     try {
       assertSolidDiagnostics(fx)
+      const markup = renderSolidFixture(fx)
+      assert.equal(markup, '<section class="bg-gray-500 text-white text-gray-900"><button>1</button><span>Score: 1</span></section>')
       const result = await runRename('Counter', 'Score', { cwd: fx.dir, ...options })
       assert.deepEqual(result.regressions, [])
       writeChanges(result.changes)
@@ -21,6 +23,7 @@ describe('solid TSX refactors', () => {
       assert.deepEqual(app.imports, [{ from: './Counter', imported: 'Score', local: 'ScoreCounter' }])
       assert.deepEqual(app.tags, ['ScoreCounter'])
       assertSolidDiagnostics(fx)
+      assert.equal(renderSolidFixture(fx), markup)
     }
     finally { fx.cleanup() }
   })
@@ -32,11 +35,13 @@ describe('solid TSX refactors', () => {
     const fx = makeSolidFixture()
     try {
       assertSolidDiagnostics(fx)
+      const markup = renderSolidFixture(fx)
       const result = await runRename(from, to, { cwd: fx.dir, scope: 'src/Counter.tsx', ...options })
       assert.deepEqual(result.regressions, [])
       writeChanges(result.changes)
       assert.deepEqual(solidSyntax(fx, 'src/Counter.tsx').calls, calls)
       assertSolidDiagnostics(fx)
+      assert.equal(renderSolidFixture(fx), markup)
     }
     finally { fx.cleanup() }
   })
@@ -57,6 +62,7 @@ describe('solid TSX refactors', () => {
     const fx = makeSolidFixture()
     try {
       assertSolidDiagnostics(fx)
+      const markup = renderSolidFixture(fx)
       const result = await runMove('Counter', 'src/Counter.tsx', 'src/components/Counter.tsx', { cwd: fx.dir, ...options })
       assert.deepEqual(result.regressions, [])
       writeChanges(result.changes)
@@ -67,10 +73,11 @@ describe('solid TSX refactors', () => {
         { from: 'solid-js', imported: 'createSignal', local: 'createSignal' },
         { from: 'solid-js', imported: 'For', local: 'For' },
         { from: 'solid-js', imported: 'Show', local: 'Show' },
-        { from: '../Counter.tsx', imported: 'CounterProps', local: 'CounterProps' },
+        { from: '../Counter', imported: 'CounterProps', local: 'CounterProps' },
       ].sort(importsByName))
       assert.deepEqual(solidSyntax(fx, 'src/App.tsx').imports, [{ from: './components/Counter', imported: 'Counter', local: 'ScoreCounter' }])
       assertSolidDiagnostics(fx)
+      assert.equal(renderSolidFixture(fx), markup)
     }
     finally { fx.cleanup() }
   })
@@ -79,6 +86,7 @@ describe('solid TSX refactors', () => {
     const fx = makeSolidFixture()
     try {
       assertSolidDiagnostics(fx)
+      const markup = renderSolidFixture(fx)
       const result = await runRenameFile('src/Counter.tsx', 'src/Score.tsx', { cwd: fx.dir, ...options })
       assert.deepEqual(result.regressions, [])
       writeChanges(result.changes)
@@ -88,6 +96,7 @@ describe('solid TSX refactors', () => {
       assert.deepEqual(solidSyntax(fx, 'src/App.tsx').imports, [{ from: './Score', imported: 'Counter', local: 'ScoreCounter' }])
       assert.deepEqual(solidSyntax(fx, 'src/App.tsx').tags, ['ScoreCounter'])
       assertSolidDiagnostics(fx)
+      assert.equal(renderSolidFixture(fx), markup)
     }
     finally { fx.cleanup() }
   })
@@ -107,6 +116,7 @@ describe('solid TSX refactors', () => {
         { name: 'classList', values: ['text-neutral-900'] },
       ])
       assertSolidDiagnostics(fx)
+      assert.match(renderSolidFixture(fx), /class="bg-neutral-500 text-white text-neutral-900"/)
     }
     finally { fx.cleanup() }
   })

@@ -1,12 +1,59 @@
 import type { Fixture } from './helpers.ts'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdirSync, symlinkSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join, relative, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
+import { transformSync } from '@babel/core'
 import ts from 'typescript'
 import { resolveNativeTsc } from '../packages/core/src/index.ts'
 import { makeFixture } from './helpers.ts'
+
+const require = createRequire(import.meta.url)
+const solidPreset = require('babel-preset-solid')
+
+export function renderSolidFixture(fx: Fixture): string {
+  const output = mkdtempSync(join(fx.dir, '.render-'))
+  const source = join(fx.dir, 'src')
+  function emit(directory: string): void {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        emit(path)
+      }
+      else if (/\.tsx?$/.test(path)) {
+        const stripped = ts.transpileModule(fx.read(relative(fx.dir, path)), {
+          fileName: path,
+          compilerOptions: { module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.Preserve, target: ts.ScriptTarget.ES2022 },
+        }).outputText
+        const compiled = transformSync(stripped, {
+          filename: path,
+          babelrc: false,
+          configFile: false,
+          presets: [[solidPreset, { generate: 'ssr' }]],
+        })?.code
+        if (!compiled)
+          throw new Error(`Solid compilation produced no code for ${path}`)
+        const target = join(output, relative(source, path).replace(/\.tsx?$/, '.js'))
+        mkdirSync(dirname(target), { recursive: true })
+        writeFileSync(target, ts.transpileModule(compiled, {
+          compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        }).outputText)
+      }
+    }
+  }
+  try {
+    emit(source)
+    const fixtureRequire = createRequire(join(output, 'App.js'))
+    const { renderToString } = fixtureRequire('solid-js/web')
+    const { App } = fixtureRequire('./App.js')
+    return renderToString(() => App())
+  }
+  finally {
+    rmSync(output, { recursive: true, force: true })
+  }
+}
 
 export function makeSolidFixture(): Fixture {
   const fx = makeFixture({}, false)
