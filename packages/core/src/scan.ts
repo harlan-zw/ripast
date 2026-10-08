@@ -6,7 +6,7 @@ import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifierRanges, parseSource } from './declarations.ts'
 import { listImports } from './imports.ts'
 import { startTsServer } from './ts-server.ts'
-import { parseFile, posToLineCol, rgFiles } from './util.ts'
+import { parseFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 import { extractTemplateExpressions } from './vue-template.ts'
 
 export interface ScanHit {
@@ -73,7 +73,7 @@ export interface UnusedDeclarations {
 
 export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles(pattern, { cwd, glob: opts.glob })
+  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
   const hits: ScanHit[] = []
   for (const f of files) {
     const file = parseFile(f, cwd)
@@ -103,7 +103,7 @@ export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
 
 export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGraph {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles(pattern, { cwd, glob: opts.glob })
+  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
   const hitsByFile = new Map<string, ScanHit[]>()
   const parsed = files.map((f) => {
     const file = parseFile(f, cwd)
@@ -319,11 +319,11 @@ function scanTemplate(
       return ''
     }
   })()
-  if (!source.includes(pattern))
+  if (!source.includes(pattern) && !/\\[ux]/.test(source))
     return
   const exprs = extractTemplateExpressions(source)
   for (const expr of exprs) {
-    if (!expr.code.includes(pattern))
+    if (!expr.code.includes(pattern) && !/\\[ux]/.test(expr.code))
       continue
     let program: any
     try {
