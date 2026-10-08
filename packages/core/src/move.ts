@@ -19,7 +19,7 @@ import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, mergeFileChanges, rgFiles } from './util.ts'
-import { findRegressions } from './verify.ts'
+import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface MoveOptions {
   cwd?: string
@@ -187,7 +187,10 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
       regressions.push(...verified.filter(regression => !consumers.has(regression.file) || !isUnresolvedMoveTarget(regression, toAbs)))
     }
 
-    if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {
+    if (vueEnabled && verifyMode === 'project') {
+      regressions.push(...await findVueRegressions(cwd, changes, tsconfigPath, vueAdapter))
+    }
+    else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {
       const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes)
       regressions.push(...vueRegs)
     }

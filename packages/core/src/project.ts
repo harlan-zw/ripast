@@ -32,10 +32,10 @@ export function projectScriptFiles(cwd: string, glob?: string | string[]): strin
 }
 
 /** Files to verify for a change set: the candidates plus every changed script file. */
-export function verifyScope(mode: VerifyMode, cwd: string, candidates: string[], changedPaths: string[], glob?: string | string[]): string[] {
+export function verifyScope(mode: VerifyMode, cwd: string, candidates: string[], changedPaths: string[]): string[] {
   if (mode === 'none')
     return []
   if (mode === 'project')
-    return projectScriptFiles(cwd, glob)
+    return projectScriptFiles(cwd)
   return [...new Set([...candidates, ...changedPaths])].filter(path => !isVuePath(path))
 }

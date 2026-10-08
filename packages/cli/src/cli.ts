@@ -118,7 +118,7 @@ function profileHeader(): string {
   return `# profile: agent${agent ? ` (${agent})` : ''}`
 }
 
-function resolveCliVerifyMode(verify: unknown, verifyMode: unknown): VerifyMode {
+function resolveCliVerifyMode(verify: unknown, verifyMode: unknown, defaultMode: VerifyMode = 'touched'): VerifyMode {
   if (verifyMode != null) {
     if (verifyMode !== 'none' && verifyMode !== 'touched' && verifyMode !== 'project') {
       process.stderr.write(`ripast: --verify-mode must be "none", "touched", or "project".\n`)
@@ -126,7 +126,7 @@ function resolveCliVerifyMode(verify: unknown, verifyMode: unknown): VerifyMode 
     }
     return verifyMode
   }
-  return resolveVerifyMode(verify as boolean | undefined)
+  return resolveVerifyMode(verify === false ? false : defaultMode)
 }
 
 // Recover from agent quoting bugs where two positional paths get smushed into
@@ -236,12 +236,12 @@ const replaceCmd = defineCommand({
     'target-import': { type: 'string', description: 'Import specifier for the validated replacement, including framework aliases.' },
     'apply': applyArg,
     'verify': verifyArg,
-    'verifyMode': verifyModeArg,
+    'verifyMode': { ...verifyModeArg, description: 'Verification mode: touched, project, or none. Defaults to project; --no-verify maps to none.' },
     'profile': profileArg,
     'json': jsonArg,
   },
   async run({ args }) {
-    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
+    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode, 'project')
     const r = await runReplace(args.from as string, args.to as string, {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       verify: verifyMode,

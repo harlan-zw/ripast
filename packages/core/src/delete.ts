@@ -11,10 +11,10 @@ import { detectFrameworks, loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
-import { isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
-import { findRegressions } from './verify.ts'
+import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface DeleteOptions {
   cwd?: string
@@ -201,6 +201,8 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     const regressions = verifyMode === 'none'
       ? []
       : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd) : [fromAbs])
+    if (verifyMode === 'project')
+      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), nuxtAdapter ?? await loadAdapter('vue')))
 
     return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions }
   }
