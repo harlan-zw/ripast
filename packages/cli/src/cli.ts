@@ -850,9 +850,10 @@ const doctorCmd = defineCommand({
     }
     if (agentProfile && !args.json) {
       process.stdout.write(`${profileHeader()}\n${formatAgentDoctorReport(report)}\n`)
-      return
     }
-    process.stdout.write(formatDoctorReport(report, !!args.json))
+    else {
+      process.stdout.write(formatDoctorReport(report, !!args.json))
+    }
     if (report.findings.length)
       process.exit(1)
   },

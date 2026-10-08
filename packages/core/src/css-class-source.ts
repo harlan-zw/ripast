@@ -2,6 +2,7 @@ import type { RenameMap } from './css-class-token.ts'
 import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { parseSync } from 'oxc-parser'
 import { rewriteClassString, visitClassTokens } from './css-class-token.ts'
 import { applyTextEdits, parseFile, rgFiles, rgFilesMany } from './util.ts'
 
@@ -31,9 +32,12 @@ export function readCssClassSourceFiles(opts: CssClassSourceOptions = {}): CssCl
 }
 
 export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
+  if (!map.size)
+    return []
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs()
-  return readSourceFiles(rgFilesMany([...map.keys()], { cwd, glob }), cwd)
+  // Escapes can encode any part of a class key. Parse those candidates before matching decoded values.
+  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&'], { cwd, glob }), cwd)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {
@@ -98,15 +102,19 @@ function visitScript(file: CssClassSourceFile, visit: (text: string) => void): v
 
 interface ScriptStringSite {
   node: any
+  templateKind?: 'cooked' | 'raw' | 'unknown'
 }
 
 function visitProgramClassStrings(program: any, visit: (text: string) => void): void {
-  visitProgramClassStringSites(program, (site) => {
-    const node = site.node
-    if (node.type === 'Literal' && typeof node.value === 'string')
+  visitProgramClassStringSites(program, ({ node, templateKind }) => {
+    if (node.type === 'Literal' && typeof node.value === 'string') {
       visit(node.value)
-    else if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string')
-      visit(node.value.raw)
+    }
+    else if (node.type === 'TemplateElement') {
+      const value = templateKind === 'cooked' ? node.value.cooked : node.value.raw
+      if (typeof value === 'string')
+        visit(value)
+    }
   })
 }
 
@@ -129,6 +137,20 @@ const CLASS_NAME_RE = /(?:^|[-_])(?:cls|class|classes|className|classList|active
 function walkProgram(node: any, classContext: boolean, classObjectKeyContext: boolean, visit: (site: ScriptStringSite) => void): void {
   if (!node || typeof node !== 'object')
     return
+
+  if (node.type === 'TemplateLiteral' || node.type === 'TaggedTemplateExpression') {
+    const tagged = node.type === 'TaggedTemplateExpression'
+    const template = tagged ? node.quasi : node
+    const rawTag = tagged && node.tag.type === 'MemberExpression' && !node.tag.computed && node.tag.object?.name === 'String' && node.tag.property?.name === 'raw'
+    const templateKind = tagged ? rawTag ? 'raw' : 'unknown' : 'cooked'
+    if (classContext) {
+      for (const quasi of template.quasis)
+        visit({ node: quasi, templateKind })
+    }
+    for (const expression of template.expressions)
+      walkProgram(expression, classContext, classObjectKeyContext, visit)
+    return
+  }
 
   if (node.type === 'Literal' && typeof node.value === 'string') {
     if (classContext)
@@ -216,7 +238,13 @@ function nodeName(node: any): string | null {
   return null
 }
 
-const NESTED_STRING_RE = /(['"`])((?:\\.|(?!\1)[^\\])*)\1/g
+const CLASS_EXPRESSION_PREFIX = 'cn('
+
+function parseClassExpression(expression: string): { source: string, program: any | null } {
+  const source = `${CLASS_EXPRESSION_PREFIX}${expression})`
+  const { program, errors } = parseSync('ripast-class-expression.ts', source)
+  return { source, program: errors.length ? null : program }
+}
 
 function visitVueClassAttributes(source: string, visit: (value: string, start: number, end: number, dynamic: boolean) => void): void {
   const ast = parseSfc(source).descriptor.template?.ast
@@ -225,11 +253,11 @@ function visitVueClassAttributes(source: string, visit: (value: string, start: n
       if (prop.type === 6 && prop.name === 'class' && prop.value) {
         const { start, end, source: raw } = prop.value.loc
         const quoted = raw.startsWith('"') || raw.startsWith('\'')
-        visit(source.slice(start.offset + Number(quoted), end.offset - Number(quoted)), start.offset + Number(quoted), end.offset - Number(quoted), false)
+        visit(prop.value.content, start.offset + Number(quoted), end.offset - Number(quoted), false)
       }
       else if (prop.type === 7 && prop.name === 'bind' && prop.arg?.isStatic && prop.arg.content === 'class' && prop.exp) {
         const { start, end } = prop.exp.loc
-        visit(source.slice(start.offset, end.offset), start.offset, end.offset, true)
+        visit(prop.exp.content, start.offset, end.offset, true)
       }
     }
     for (const child of node.children ?? []) walk(child)
@@ -244,7 +272,9 @@ function visitVueTemplateClassAttrs(source: string, visit: (text: string) => voi
       visit(value)
     }
     else {
-      for (const nested of value.matchAll(NESTED_STRING_RE)) visit(nested[2])
+      const { program } = parseClassExpression(value)
+      if (program)
+        visitProgramClassStrings(program, visit)
     }
   })
 }
@@ -278,7 +308,7 @@ function rewriteScript(file: CssClassSourceFile, map: RenameMap): string {
 
 function rewriteStringsInProgram(source: string, program: any, map: RenameMap, offset: number): string {
   const edits: { start: number, end: number, replacement: string }[] = []
-  visitProgramClassStringSites(program, ({ node }) => {
+  visitProgramClassStringSites(program, ({ node, templateKind }) => {
     if (node.type === 'Literal' && typeof node.value === 'string') {
       if (!mapIncludesAny(node.value, map))
         return
@@ -288,20 +318,41 @@ function rewriteStringsInProgram(source: string, program: any, map: RenameMap, o
     }
     else if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
       const raw: string = node.value.raw
-      if (!mapIncludesAny(raw, map))
+      const value = templateKind === 'cooked' ? node.value.cooked : raw
+      if (templateKind === 'unknown' || typeof value !== 'string' || !mapIncludesAny(value, map))
         return
-      const rewritten = rewriteClassString(raw, map)
-      if (rewritten !== raw)
-        edits.push({ start: node.start + offset, end: node.end + offset, replacement: rewritten })
+      const rewritten = rewriteClassString(value, map)
+      if (rewritten === value)
+        return
+      // Raw tags expose source escapes. Refuse replacements that introduce template syntax.
+      if (templateKind === 'raw' && ([...map.values()].some(replacement => /`|\$\{/.test(replacement)) || /(?:^|[^\\])(?:\\\\)*\\$/.test(rewritten)))
+        return
+      const range = templateContentRange(source, node, offset)
+      if (!range)
+        return
+      const replacement = templateKind === 'cooked' ? JSON.stringify(rewritten).slice(1, -1).replace(/`/g, '\\`').replace(/\$\{/g, '\\${') : rewritten
+      edits.push({ ...range, replacement })
     }
   })
   return applyTextEdits(source, edits)
 }
 
+function templateContentRange(source: string, node: any, offset: number): { start: number, end: number } | null {
+  const start = node.start + offset
+  const end = node.end + offset
+  if (source.slice(start, end) === node.value.raw)
+    return { start, end }
+  const contentStart = start + 1
+  const contentEnd = end - (node.tail ? 1 : 2)
+  if ((source[start] === '`' || source[start] === '}') && source.slice(contentStart, contentEnd) === node.value.raw && source.slice(contentEnd, end) === (node.tail ? '`' : '${'))
+    return { start: contentStart, end: contentEnd }
+  return null
+}
+
 function rewriteVue(file: CssClassSourceFile, map: RenameMap): string {
   let out = file.source
   const parsed = parseFile(file.abs, file.cwd)
-  if (parsed.program && mapIncludesAny(parsed.scriptSource, map))
+  if (parsed.program)
     out = rewriteScriptWithin(out, parsed.scriptStart, parsed.scriptEnd, parsed.scriptSource, parsed.program, map)
   out = rewriteVueTemplateClassAttrs(out, map)
   out = rewriteVueStyleBlocks(out, map)
@@ -318,13 +369,25 @@ function rewriteScriptWithin(full: string, start: number, end: number, scriptSou
 function rewriteVueTemplateClassAttrs(source: string, map: RenameMap): string {
   const edits: { start: number, end: number, replacement: string }[] = []
   visitVueClassAttributes(source, (value, start, end, dynamic) => {
-    if (!mapIncludesAny(value, map))
+    if (!dynamic && !mapIncludesAny(value, map))
       return
     const replacement = dynamic ? rewriteDynamicClassExpr(value, map) : rewriteClassString(value, map)
-    if (replacement !== value)
-      edits.push({ start, end, replacement })
+    if (replacement !== value) {
+      const quote = source[start - 1]
+      const encoded = encodeAttributeValue(replacement, dynamic ? quote : undefined)
+      edits.push({ start, end, replacement: !dynamic && quote !== '"' && quote !== '\'' ? `"${encoded}"` : encoded })
+    }
   })
   return applyTextEdits(source, edits)
+}
+
+function encodeAttributeValue(value: string, quote?: string): string {
+  let encoded = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  if (quote !== '\'')
+    encoded = encoded.replace(/"/g, '&quot;')
+  if (quote !== '"')
+    encoded = encoded.replace(/'/g, '&#39;')
+  return encoded
 }
 
 function encodeStringLiteral(value: string, quote: string): string {
@@ -333,11 +396,10 @@ function encodeStringLiteral(value: string, quote: string): string {
 }
 
 function rewriteDynamicClassExpr(expr: string, map: RenameMap): string {
-  return expr.replace(NESTED_STRING_RE, (match, quote, inner) => {
-    if (!mapIncludesAny(inner, map))
-      return match
-    return quote + rewriteClassString(inner, map) + quote
-  })
+  const { source, program } = parseClassExpression(expr)
+  if (!program)
+    return expr
+  return rewriteStringsInProgram(source, program, map, 0).slice(CLASS_EXPRESSION_PREFIX.length, -1)
 }
 
 function rewriteVueStyleBlocks(source: string, map: RenameMap): string {

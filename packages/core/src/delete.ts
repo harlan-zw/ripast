@@ -1,14 +1,16 @@
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
-import { readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
+import { parse } from '@vue/compiler-sfc'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
-import { pruneUnusedImports } from './imports.ts'
-import { projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { listImports, pruneUnusedImports } from './imports.ts'
+import { isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { rgFiles } from './util.ts'
+import { posToLineCol, rgFiles } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface DeleteOptions {
@@ -32,7 +34,8 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   const cwd = opts.cwd ?? process.cwd()
   const verifyMode = resolveVerifyMode(opts.verify)
   const fromAbs = resolve(cwd, fromPath)
-  const candidatePaths = rgFiles(symbol, { cwd })
+  // Escaped identifiers and namespace use need not contain the symbol's text.
+  const candidatePaths = rgFiles('', { cwd, listAll: true })
 
   const before = readFileSync(fromAbs, 'utf8')
   const parsed = parseSource(fromAbs, before)
@@ -48,11 +51,78 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
 
   const server = await startTsServer(cwd)
   try {
+    const vueScripts = new Map<string, string>()
+    for (const path of candidatePaths) {
+      const source = readFileSync(path, 'utf8')
+      let script = source
+      let scriptPath = path
+      if (!isVuePath(path)) {
+        server.open(path)
+      }
+      else {
+        const { descriptor, errors } = parse(source, { filename: path })
+        if (errors.length) {
+          const failure = errors[0]!
+          const position = 'loc' in failure ? failure.loc?.start : undefined
+          throw new Error(`ripast delete: cannot inspect ${relative(cwd, path)}:${position?.line ?? 1}:${position?.column ?? 1} because its Vue source has parse errors.`)
+        }
+        const blocks = [descriptor.script, descriptor.scriptSetup].filter(block => block !== null)
+        for (const block of blocks) {
+          const location = `${relative(cwd, path)}:${block.loc.start.line}:${block.loc.start.column}`
+          if (block.src)
+            throw new Error(`ripast delete: cannot inspect an external script at ${location}. Use an inline script first.`)
+          if (block.lang && !['ts', 'tsx', 'js', 'jsx'].includes(block.lang))
+            throw new Error(`ripast delete: cannot inspect the script language at ${location}. Use JavaScript or TypeScript first.`)
+        }
+        const extension = blocks.some(block => block.lang === 'tsx' || block.lang === 'jsx') ? 'tsx' : 'ts'
+        scriptPath = inspectionPath(path, extension)
+        const text = source.replace(/[^\r\n]/g, ' ').split('')
+        for (const block of blocks) {
+          for (let i = 0; i < block.content.length; i++)
+            text[block.loc.start.offset + i] = block.content[i]!
+        }
+        script = text.join('')
+        server.open(scriptPath, script)
+        vueScripts.set(scriptPath, path)
+      }
+      if (!decl.exported)
+        continue
+      for (const imp of listImports(script, scriptPath)) {
+        const namespace = imp.namespaceImport
+        if (!namespace)
+          continue
+        // Probe the export through the namespace, including wildcard barrels.
+        // Reflective and dynamic namespace usage cannot be proved unused.
+        const importText = script.slice(imp.start, imp.end)
+        const access = `${namespace.name}.${symbol}`
+        const probe = `${importText}\n${access};\ntype __RipastNamespace = ${access};`
+        const probePath = inspectionPath(path, 'ts')
+        server.open(probePath, probe)
+        const offsets = [probe.indexOf(access), probe.lastIndexOf(access)].map(offset => offset + namespace.name.length + 1)
+        let resolvedExport = false
+        for (const offset of offsets) {
+          const definitions = await server.definition(probePath, offset)
+          resolvedExport ||= definitions.length > 0
+          if (!definitions.some(site => site.path === fromAbs && site.start >= decl.start && site.start < decl.end))
+            continue
+          const { line, col } = posToLineCol(source, namespace.start)
+          throw new Error(`ripast delete: cannot prove "${symbol}" is unused through a namespace import at ${relative(cwd, path)}:${line}:${col}. Use named imports first.`)
+        }
+        if (!resolvedExport) {
+          const moduleOffset = parseSource(probePath, importText).program.body[0].source.start + 1
+          const modules = await server.definition(probePath, moduleOffset)
+          if (!modules.length) {
+            const { line, col } = posToLineCol(source, namespace.start)
+            throw new Error(`ripast delete: cannot resolve a namespace import at ${relative(cwd, path)}:${line}:${col}. Use a resolvable import first.`)
+          }
+        }
+      }
+    }
     const references: DeleteReference[] = []
     for (const ref of await server.references(fromAbs, decl.nameStart)) {
       if (ref.path === fromAbs && ref.start >= decl.start && ref.start < decl.end)
         continue
-      references.push({ file: relative(cwd, ref.path), line: ref.line, col: ref.col })
+      references.push({ file: relative(cwd, vueScripts.get(ref.path) ?? ref.path), line: ref.line, col: ref.col })
     }
     references.sort((a, b) => `${a.file}\0${a.line}\0${a.col}`.localeCompare(`${b.file}\0${b.line}\0${b.col}`))
     if (references.length) {
@@ -75,4 +145,11 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   finally {
     server.dispose()
   }
+}
+
+function inspectionPath(path: string, extension: 'ts' | 'tsx'): string {
+  let candidate = `${path}.${randomUUID()}.${extension}`
+  while (existsSync(candidate))
+    candidate = `${path}.${randomUUID()}.${extension}`
+  return candidate
 }
