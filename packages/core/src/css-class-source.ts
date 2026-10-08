@@ -37,7 +37,7 @@ export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSour
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs()
   // Escapes can encode any part of a class key. Parse those candidates before matching decoded values.
-  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&'], { cwd, glob }), cwd)
+  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&', '+'], { cwd, glob }), cwd)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {
@@ -45,7 +45,7 @@ export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare
     visitVue(file, text => visitClassTokens(text, visit))
   }
   else if (isCss(file.abs)) {
-    visitCss(file.source, visit)
+    visitCss(file.source, visit, cssSyntax(file.abs))
   }
   else {
     visitScript(file, text => visitClassTokens(text, visit))
@@ -56,7 +56,7 @@ export function rewriteCssClassTokensInFile(file: CssClassSourceFile, map: Renam
   if (isVue(file.abs))
     return rewriteVue(file, map)
   if (isCss(file.abs))
-    return rewriteCss(file.source, map)
+    return rewriteCss(file.source, map, cssSyntax(file.abs))
   return rewriteScript(file, map)
 }
 
@@ -100,29 +100,26 @@ function visitScript(file: CssClassSourceFile, visit: (text: string) => void): v
     visitProgramClassStrings(parsed.program, visit)
 }
 
-type ScriptStringSite = {
-  _tag: 'String'
-  node: any
-  templateKind?: 'cooked' | 'raw' | 'unknown'
-} | {
-  _tag: 'ClassListKey'
-  node: any
-  shorthand: boolean
-}
+type ScriptStringSite
+  = | { _tag: 'Literal', node: any }
+    | { _tag: 'Template', node: any, templateKind: 'cooked' | 'raw' | 'unknown' }
+    | { _tag: 'ObjectKey', node: any, shorthand: boolean }
+    | { _tag: 'Concatenation', node: any, value: string }
 
 function visitProgramClassStrings(program: any, visit: (text: string) => void): void {
   visitProgramClassStringSites(program, (site) => {
     const { node } = site
-    if (site._tag === 'ClassListKey') {
-      visit(node.name)
-      return
+    if (site._tag === 'Concatenation') {
+      visit(site.value)
     }
-    const { templateKind } = site
-    if (node.type === 'Literal' && typeof node.value === 'string') {
+    else if (site._tag === 'ObjectKey') {
+      visit(node.name)
+    }
+    else if (site._tag === 'Literal') {
       visit(node.value)
     }
-    else if (node.type === 'TemplateElement') {
-      const value = templateKind === 'cooked' ? node.value.cooked : node.value.raw
+    else {
+      const value = site.templateKind === 'cooked' ? node.value.cooked : node.value.raw
       if (typeof value === 'string')
         visit(value)
     }
@@ -138,16 +135,46 @@ function visitVue(file: CssClassSourceFile, visit: (text: string) => void): void
   if (parsed.program)
     visitProgramClassStrings(parsed.program, visit)
   visitVueTemplateClassAttrs(file.source, visit)
-  visitVueStyleBlocks(file.source, body => visitCss(body, text => visitClassTokens(text, visit)))
+  visitVueStyleBlocks(file.source, (body, lang) => visitCss(body, text => visitClassTokens(text, visit), cssSyntax(lang)))
 }
 
 const CLASS_CALLEE_RE = /^(?:cva|cn|clsx|classNames|classnames|twJoin|twMerge)$/
 const CLASS_ATTR_RE_SCRIPT = /^(?:class|className)$/
 const CLASS_NAME_RE = /(?:^|[-_])(?:cls|class|classes|className|classList|activeClass|inactiveClass|exactActiveClass|ui|slots|variants|compoundVariants|defaultVariants)(?:$|[-_])/i
 
-function walkProgram(node: any, classContext: boolean, classObjectKeyContext: boolean | 'classList', visit: (site: ScriptStringSite) => void): void {
+function walkProgram(node: any, classContext: boolean, classObjectKeyContext: boolean, visit: (site: ScriptStringSite) => void): void {
   if (!node || typeof node !== 'object')
     return
+
+  if (node.type === 'ConditionalExpression') {
+    walkProgram(node.test, false, false, visit)
+    walkProgram(node.consequent, classContext, classObjectKeyContext, visit)
+    walkProgram(node.alternate, classContext, classObjectKeyContext, visit)
+    return
+  }
+
+  if (node.type === 'LogicalExpression') {
+    walkProgram(node.left, node.operator === '&&' ? false : classContext, false, visit)
+    walkProgram(node.right, classContext, classObjectKeyContext, visit)
+    return
+  }
+
+  if (node.type === 'BinaryExpression') {
+    const concatenation = node.operator === '+' && classContext
+    if (!concatenation) {
+      walkProgram(node.left, false, false, visit)
+      walkProgram(node.right, false, false, visit)
+      return
+    }
+    const value = staticClassString(node)
+    if (value !== undefined) {
+      visit({ _tag: 'Concatenation', node, value })
+      return
+    }
+    walkProgram(node.left, concatenation, false, boundaryVisit(visit, hasClassBoundary(node.right, 'start'), 'end'))
+    walkProgram(node.right, concatenation, false, boundaryVisit(visit, hasClassBoundary(node.left, 'end'), 'start'))
+    return
+  }
 
   if (node.type === 'TemplateLiteral' || node.type === 'TaggedTemplateExpression') {
     const tagged = node.type === 'TaggedTemplateExpression'
@@ -156,7 +183,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
     const templateKind = tagged ? rawTag ? 'raw' : 'unknown' : 'cooked'
     if (classContext) {
       for (const quasi of template.quasis)
-        visit({ _tag: 'String', node: quasi, templateKind })
+        visit({ _tag: 'Template', node: quasi, templateKind })
     }
     for (const expression of template.expressions)
       walkProgram(expression, classContext, classObjectKeyContext, visit)
@@ -165,45 +192,67 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
 
   if (node.type === 'Literal' && typeof node.value === 'string') {
     if (classContext)
-      visit({ _tag: 'String', node })
+      visit({ _tag: 'Literal', node })
     return
   }
   if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
     if (classContext)
-      visit({ _tag: 'String', node })
+      visit({ _tag: 'Template', node, templateKind: 'unknown' })
     return
   }
 
   if (node.type === 'CallExpression') {
     const nextClassContext = classContext || isClassCallee(node.callee)
+    const cva = node.callee.type === 'Identifier' && node.callee.name === 'cva'
     walkProgram(node.callee, false, false, visit)
-    for (const arg of node.arguments ?? [])
-      walkProgram(arg, nextClassContext, nextClassContext, visit)
+    for (const [index, arg] of (node.arguments ?? []).entries()) {
+      if (cva && index === 1 && arg.type === 'ObjectExpression') {
+        for (const property of arg.properties) {
+          if (property.type !== 'Property')
+            continue
+          const name = nodeName(property.key)
+          if (name === 'variants')
+            walkProgram(property.value, true, false, visit)
+          else if (name === 'compoundVariants')
+            walkProgram(property.value, false, false, visit)
+        }
+      }
+      else {
+        walkProgram(arg, nextClassContext, nextClassContext, visit)
+      }
+    }
     return
   }
 
   if (node.type === 'VariableDeclarator') {
     walkProgram(node.id, false, false, visit)
-    walkProgram(node.init, classContext || isClassName(node.id), nodeName(node.id) === 'classList' ? 'classList' : false, visit)
+    walkProgram(node.init, classContext || isClassName(node.id), nodeName(node.id) === 'classList', visit)
     return
   }
 
   if (node.type === 'Property') {
     const keyMatches = isClassName(node.key)
     const valueContext = classContext || keyMatches
-    if (classObjectKeyContext === 'classList' && node.key.type === 'Identifier' && !node.computed)
-      visit({ _tag: 'ClassListKey', node: node.key, shorthand: node.shorthand })
-    else if (classObjectKeyContext)
-      walkProgram(node.key, true, true, visit)
-    else
+    if (classObjectKeyContext) {
+      if (!node.computed && node.key.type === 'Identifier') {
+        visit({ _tag: 'ObjectKey', node: node.key, shorthand: Boolean(node.shorthand) })
+      }
+      else {
+        walkProgram(node.key, true, false, visit)
+      }
+      walkProgram(node.value, false, false, visit)
+      return
+    }
+    else {
       walkProgram(node.key, false, false, visit)
-    walkProgram(node.value, classObjectKeyContext === 'classList' ? false : valueContext, nodeName(node.key) === 'classList' ? 'classList' : false, visit)
+    }
+    walkProgram(node.value, valueContext, nodeName(node.key) === 'classList', visit)
     return
   }
 
   if (node.type === 'JSXAttribute') {
     const attrContext = classContext || isClassName(node.name) || isJsxClassAttr(node.name)
-    walkProgram(node.value, attrContext, nodeName(node.name) === 'classList' ? 'classList' : false, visit)
+    walkProgram(node.value, attrContext, nodeName(node.name) === 'classList', visit)
     return
   }
 
@@ -217,6 +266,37 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
     else {
       walkProgram(value, classContext, classObjectKeyContext, visit)
     }
+  }
+}
+
+function staticClassString(node: any): string | undefined {
+  if (node?.type === 'ParenthesizedExpression')
+    return staticClassString(node.expression)
+  if (node?.type === 'Literal' && typeof node.value === 'string')
+    return node.value
+  if (node?.type !== 'BinaryExpression' || node.operator !== '+')
+    return undefined
+  const left = staticClassString(node.left)
+  const right = staticClassString(node.right)
+  return left === undefined || right === undefined ? undefined : left + right
+}
+
+function hasClassBoundary(node: any, edge: 'start' | 'end'): boolean {
+  if (node?.type === 'ParenthesizedExpression')
+    return hasClassBoundary(node.expression, edge)
+  const value = staticClassString(node)
+  if (value !== undefined)
+    return !value || /\s/.test(edge === 'start' ? value[0] : value.at(-1)!)
+  return node?.type === 'ConditionalExpression' && hasClassBoundary(node.consequent, edge) && hasClassBoundary(node.alternate, edge)
+}
+
+function boundaryVisit(visit: (site: ScriptStringSite) => void, safe: boolean, edge: 'start' | 'end'): (site: ScriptStringSite) => void {
+  if (safe)
+    return visit
+  return (site) => {
+    const value = site._tag === 'Concatenation' ? site.value : site._tag === 'Literal' ? site.node.value : undefined
+    if (typeof value === 'string' && (!value || /\s/.test(edge === 'start' ? value[0] : value.at(-1)!)))
+      visit(site)
   }
 }
 
@@ -292,16 +372,86 @@ function visitVueTemplateClassAttrs(source: string, visit: (text: string) => voi
   })
 }
 
-function visitVueStyleBlocks(source: string, visit: (body: string) => void): void {
+function visitVueStyleBlocks(source: string, visit: (body: string, lang: string) => void): void {
   for (const style of parseSfc(source).descriptor.styles)
-    visit(style.content)
+    visit(style.content, style.lang ?? 'css')
 }
 
-const APPLY_RE = /@apply[ \t]+(\S[^;}\n]*)/g
+interface CssSyntax {
+  lineComments: boolean
+  indented: boolean
+}
 
-function visitCss(source: string, onToken: (bare: string) => void): void {
-  for (const match of source.matchAll(APPLY_RE))
-    visitClassTokens(match[1], onToken)
+function cssSyntax(path: string): CssSyntax {
+  const lang = path.split('.').at(-1)
+  return { lineComments: lang === 'scss' || lang === 'sass' || lang === 'less', indented: lang === 'sass' }
+}
+
+function visitCss(source: string, onToken: (bare: string) => void, syntax: CssSyntax): void {
+  visitCssApplyRanges(source, syntax, (start, end) => visitClassTokens(source.slice(start, end), onToken))
+}
+
+function visitCssApplyRanges(source: string, syntax: CssSyntax, visit: (start: number, end: number) => void): void {
+  let applyStart = -1
+  let depth = 0
+  let quote = ''
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i]
+    if (quote) {
+      if (char === '\\')
+        i++
+      else if (char === quote)
+        quote = ''
+      continue
+    }
+    if (syntax.lineComments && char === '/' && source[i + 1] === '/' && !depth) {
+      if (applyStart !== -1)
+        visit(applyStart, i)
+      const end = source.indexOf('\n', i + 2)
+      i = end === -1 ? source.length : end - 1
+      if (applyStart !== -1)
+        applyStart = i + 1
+      continue
+    }
+    if (char === '/' && source[i + 1] === '*' && !depth) {
+      if (applyStart !== -1)
+        visit(applyStart, i)
+      const end = source.indexOf('*/', i + 2)
+      i = end === -1 ? source.length : end + 1
+      if (applyStart !== -1)
+        applyStart = i + 1
+      continue
+    }
+    if (char === '"' || char === '\'') {
+      quote = char
+      continue
+    }
+    if (applyStart === -1) {
+      if (source.startsWith('@apply', i) && /\s/.test(source[i + 6] ?? '')) {
+        i += 6
+        applyStart = i
+      }
+      continue
+    }
+    if (!depth && source.startsWith('!important', i) && /\s/.test(source[i - 1] ?? '') && /[\s;}]/.test(source[i + 10] ?? ';')) {
+      visit(applyStart, i)
+      i += 9
+      applyStart = i + 1
+      continue
+    }
+    if (char === '[') {
+      depth++
+    }
+    else if (char === ']' && depth) {
+      depth--
+    }
+    else if (!depth && (char === ';' || char === '}' || char === '{' || (syntax.indented && (char === '\n' || char === '\r')))) {
+      visit(applyStart, i)
+      applyStart = -1
+    }
+  }
+  if (applyStart !== -1)
+    visit(applyStart, source.length)
 }
 
 function mapIncludesAny(input: string, map: RenameMap): boolean {
@@ -323,23 +473,25 @@ function rewriteStringsInProgram(source: string, program: any, map: RenameMap, o
   const edits: { start: number, end: number, replacement: string }[] = []
   visitProgramClassStringSites(program, (site) => {
     const { node } = site
-    if (site._tag === 'ClassListKey') {
-      const rewritten = rewriteClassString(node.name, map)
-      if (rewritten !== node.name) {
-        const key = encodeStringLiteral(rewritten, '\'')
-        edits.push({ start: node.start + offset, end: node.end + offset, replacement: site.shorthand ? `${key}: ${node.name}` : key })
-      }
-      return
+    if (site._tag === 'Concatenation') {
+      const rewritten = rewriteClassString(site.value, map)
+      if (rewritten !== site.value)
+        edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, '"') })
     }
-    const { templateKind } = site
-    if (node.type === 'Literal' && typeof node.value === 'string') {
+    else if (site._tag === 'ObjectKey') {
+      const rewritten = rewriteClassString(node.name, map)
+      if (rewritten !== node.name)
+        edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, '"') + (site.shorthand ? `: ${node.name}` : '') })
+    }
+    else if (site._tag === 'Literal') {
       if (!mapIncludesAny(node.value, map))
         return
       const rewritten = rewriteClassString(node.value, map)
       if (rewritten !== node.value)
         edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, source[node.start + offset]) })
     }
-    else if (node.type === 'TemplateElement' && typeof node.value?.raw === 'string') {
+    else if (site._tag === 'Template' && typeof node.value?.raw === 'string') {
+      const { templateKind } = site
       const raw: string = node.value.raw
       const value = templateKind === 'cooked' ? node.value.cooked : raw
       if (templateKind === 'unknown' || typeof value !== 'string' || !mapIncludesAny(value, map))
@@ -430,15 +582,20 @@ function rewriteVueStyleBlocks(source: string, map: RenameMap): string {
   for (const style of parseSfc(source).descriptor.styles) {
     if (!mapIncludesAny(style.content, map))
       continue
-    const replacement = rewriteCss(style.content, map)
+    const replacement = rewriteCss(style.content, map, cssSyntax(style.lang ?? 'css'))
     if (replacement !== style.content)
       edits.push({ start: style.loc.start.offset, end: style.loc.end.offset, replacement })
   }
   return applyTextEdits(source, edits)
 }
 
-const APPLY_REWRITE_RE = /(@apply[ \t]+)(\S[^;}\n]*)/g
-
-function rewriteCss(source: string, map: RenameMap): string {
-  return source.replace(APPLY_REWRITE_RE, (_match, prefix, tokens) => prefix + rewriteClassString(tokens, map))
+function rewriteCss(source: string, map: RenameMap, syntax: CssSyntax): string {
+  const edits: { start: number, end: number, replacement: string }[] = []
+  visitCssApplyRanges(source, syntax, (start, end) => {
+    const value = source.slice(start, end)
+    const replacement = rewriteClassString(value, map)
+    if (replacement !== value)
+      edits.push({ start, end, replacement })
+  })
+  return applyTextEdits(source, edits)
 }

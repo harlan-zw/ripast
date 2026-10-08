@@ -13,7 +13,7 @@ import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { applyTextEdits, parseSourceFile, rgFiles } from './util.ts'
+import { applyTextEdits, parseSourceFile, rgFiles, rgFilesMany } from './util.ts'
 import { findRegressions } from './verify.ts'
 
 export interface RenameOptions {
@@ -48,7 +48,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   const verifyMode = resolveVerifyMode(opts.verify)
   const vueEnabled = opts.vue ?? true
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles(from, { cwd, glob: opts.glob }))
+  const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }))
   const scriptCandidates = candidatePaths.filter(path => !isVue(path))
 
   const declarationPaths = opts.scope
@@ -67,6 +67,22 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     throw new Error(`ripast rename: "${from}" is declared in multiple files (${[...uniqueFiles].join(', ')}). Pass --scope <file> to pick one, or --all to rename every occurrence.`)
   }
 
+  if (from !== to) {
+    for (const path of scriptCandidates) {
+      const source = readFileSync(path, 'utf8')
+      if (!source.includes('\\u'))
+        continue
+      walk(parseSource(path, source).program, {
+        enter(node: any) {
+          if (node.type !== 'Identifier' || node.name !== from || !source.slice(node.start, node.end).includes('\\u'))
+            return
+          if (!declarations.some(declaration => declaration.filePath === path && declaration.pos === node.start))
+            throw new Error(`ripast rename: TypeScript cannot resolve escaped references to "${from}" in ${relative(cwd, path)}`)
+        },
+      })
+    }
+  }
+
   const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
   const scopes = vueAdapter?.autoImportScopes?.(cwd) ?? new Set<string>()
   const autoImportSites = declarations.filter(decl => decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))
@@ -80,6 +96,8 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     await timedAsync(profile, 'rename transform', async () => {
       for (const decl of declarations) {
         const edits = await server.rename(decl.filePath, decl.pos, to)
+        if (!edits.size && from !== to)
+          throw new Error(`ripast rename: TypeScript could not rename declaration "${from}" in ${relative(cwd, decl.filePath)}`)
         for (const [path, fileEdits] of edits) {
           const unique = editsByPath.get(path) ?? new Map<string, LspTextEdit>()
           for (const edit of fileEdits) {
@@ -196,6 +214,7 @@ function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], 
 function findDeclarations(paths: string[], name: string, allowMultiple = false): Declaration[] {
   const out: Declaration[] = []
   const locals: Declaration[] = []
+  const parameters: Declaration[] = []
   for (const path of paths) {
     const source = readFileSync(path, 'utf8')
     const { program } = parseSource(path, source)
@@ -203,52 +222,53 @@ function findDeclarations(paths: string[], name: string, allowMultiple = false):
       if (decl.name === name)
         out.push({ _tag: 'TopLevel', filePath: path, source, pos: decl.nameStart })
     }
-    for (const statement of program.body) {
-      const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement
-      if (declaration?.type !== 'VariableDeclaration')
-        continue
-      for (const variable of declaration.declarations) {
-        if (variable.id.type === 'Identifier')
-          continue
-        for (const pos of bindingPositions(variable.id, name))
-          out.push({ _tag: 'TopLevel', filePath: path, source, pos })
+    const addPattern = (pattern: any, tag: Declaration['_tag'], list = tag === 'TopLevel' ? out : locals): void => {
+      if (!pattern)
+        return
+      if (pattern.type === 'Identifier') {
+        if (pattern.name === name) {
+          if (!list.some(decl => decl.filePath === path && decl.pos === pattern.start))
+            list.push({ _tag: tag, filePath: path, source, pos: pattern.start })
+        }
+      }
+      else if (pattern.type === 'ObjectPattern') {
+        for (const property of pattern.properties ?? []) addPattern(property.value ?? property.argument, tag, list)
+      }
+      else if (pattern.type === 'ArrayPattern') {
+        for (const element of pattern.elements ?? []) addPattern(element, tag, list)
+      }
+      else if (pattern.type === 'AssignmentPattern') {
+        addPattern(pattern.left, tag, list)
+      }
+      else if (pattern.type === 'RestElement') {
+        addPattern(pattern.argument, tag, list)
+      }
+      else if (pattern.type === 'TSParameterProperty') {
+        addPattern(pattern.parameter, tag, list)
+      }
+    }
+    for (const statement of program.body ?? []) {
+      const node = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement
+      if (node?.type === 'VariableDeclaration') {
+        for (const declarator of node.declarations) addPattern(declarator.id, 'TopLevel')
       }
     }
     walk(program, {
       enter(node: any) {
-        if (node.type === 'VariableDeclarator') {
-          for (const pos of bindingPositions(node.id, name))
-            locals.push({ _tag: 'Local', filePath: path, source, pos })
-        }
-        else if (NAMED_DECLARATION_TYPES.has(node.type) && node.id?.name === name) {
-          locals.push({ _tag: 'Local', filePath: path, source, pos: node.id.start })
-        }
+        if (node.type === 'VariableDeclarator' || NAMED_DECLARATION_TYPES.has(node.type) || node.type === 'FunctionExpression' || node.type === 'ClassExpression')
+          addPattern(node.id, 'Local')
+        for (const parameter of node.params ?? []) addPattern(parameter, 'Local', parameters)
+        if (node.type === 'CatchClause')
+          addPattern(node.param, 'Local', parameters)
       },
     })
   }
   // Keep top-level renames from changing unrelated local shadows.
   if (out.length)
     return out
+  if (allowMultiple || !locals.length)
+    locals.push(...parameters)
   if (!allowMultiple && locals.length > new Set(locals.map(d => d.filePath)).size)
     throw new Error(`ripast rename: "${name}" has multiple declarations in one file. Pass --all to rename every occurrence.`)
   return locals
-}
-
-function bindingPositions(pattern: any, name: string): number[] {
-  if (!pattern)
-    return []
-  switch (pattern.type) {
-    case 'Identifier':
-      return pattern.name === name ? [pattern.start] : []
-    case 'ArrayPattern':
-      return pattern.elements.flatMap((element: any) => bindingPositions(element, name))
-    case 'ObjectPattern':
-      return pattern.properties.flatMap((property: any) => bindingPositions(property.value ?? property.argument, name))
-    case 'AssignmentPattern':
-      return bindingPositions(pattern.left, name)
-    case 'RestElement':
-      return bindingPositions(pattern.argument, name)
-    default:
-      return []
-  }
 }
