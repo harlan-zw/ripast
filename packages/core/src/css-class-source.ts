@@ -2,6 +2,7 @@ import type { RenameMap } from './css-class-token.ts'
 import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { decode } from 'html-entities'
 import { parseSync } from 'oxc-parser'
 import { rewriteClassString, visitClassTokens } from './css-class-token.ts'
 import { applyTextEdits, parseFile, rgFiles, rgFilesMany } from './util.ts'
@@ -105,11 +106,12 @@ type ScriptStringSite
     | { _tag: 'Template', node: any, templateKind: 'cooked' | 'raw' | 'unknown' }
     | { _tag: 'ObjectKey', node: any, shorthand: boolean }
     | { _tag: 'Concatenation', node: any, value: string }
+    | { _tag: 'JsxAttribute', node: any, value: string }
 
 function visitProgramClassStrings(program: any, visit: (text: string) => void): void {
   visitProgramClassStringSites(program, (site) => {
     const { node } = site
-    if (site._tag === 'Concatenation') {
+    if (site._tag === 'Concatenation' || site._tag === 'JsxAttribute') {
       visit(site.value)
     }
     else if (site._tag === 'ObjectKey') {
@@ -226,7 +228,7 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
 
   if (node.type === 'VariableDeclarator') {
     walkProgram(node.id, false, false, visit)
-    walkProgram(node.init, classContext || isClassName(node.id), false, visit)
+    walkProgram(node.init, classContext || isClassName(node.id), nodeName(node.id) === 'classList', visit)
     return
   }
 
@@ -246,13 +248,18 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
     else {
       walkProgram(node.key, false, false, visit)
     }
-    walkProgram(node.value, valueContext, false, visit)
+    walkProgram(node.value, valueContext, nodeName(node.key) === 'classList', visit)
     return
   }
 
   if (node.type === 'JSXAttribute') {
     const attrContext = classContext || isClassName(node.name) || isJsxClassAttr(node.name)
-    walkProgram(node.value, attrContext, false, visit)
+    if (node.value?.type === 'Literal' && typeof node.value.value === 'string') {
+      if (attrContext)
+        visit({ _tag: 'JsxAttribute', node: node.value, value: decodeJsxAttribute(node.value.value) })
+      return
+    }
+    walkProgram(node.value, attrContext, nodeName(node.name) === 'classList', visit)
     return
   }
 
@@ -267,6 +274,16 @@ function walkProgram(node: any, classContext: boolean, classObjectKeyContext: bo
       walkProgram(value, classContext, classObjectKeyContext, visit)
     }
   }
+}
+
+function decodeJsxAttribute(value: string): string {
+  // JSX requires semicolons and HTML4 names. Numeric references do not use HTML's control-character remapping.
+  return value.replace(/&(?:#(\d+)|#x([\da-fA-F]+)|[0-9a-zA-Z]+);/g, (entity: string, decimal: string | undefined, hexadecimal: string | undefined) => {
+    if (decimal === undefined && hexadecimal === undefined)
+      return decode(entity, { level: 'html4', scope: 'strict' })
+    const codePoint = Number.parseInt(decimal ?? hexadecimal!, decimal === undefined ? 16 : 10)
+    return codePoint <= 0x10FFFF ? String.fromCodePoint(codePoint) : entity
+  })
 }
 
 function staticClassString(node: any): string | undefined {
@@ -473,7 +490,14 @@ function rewriteStringsInProgram(source: string, program: any, map: RenameMap, o
   const edits: { start: number, end: number, replacement: string }[] = []
   visitProgramClassStringSites(program, (site) => {
     const { node } = site
-    if (site._tag === 'Concatenation') {
+    if (site._tag === 'JsxAttribute') {
+      const rewritten = rewriteClassString(site.value, map)
+      if (rewritten !== site.value) {
+        const quote = source[node.start + offset]
+        edits.push({ start: node.start + offset, end: node.end + offset, replacement: quote + encodeAttributeValue(rewritten, quote) + quote })
+      }
+    }
+    else if (site._tag === 'Concatenation') {
       const rewritten = rewriteClassString(site.value, map)
       if (rewritten !== site.value)
         edits.push({ start: node.start + offset, end: node.end + offset, replacement: encodeStringLiteral(rewritten, '"') })

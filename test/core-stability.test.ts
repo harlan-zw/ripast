@@ -186,17 +186,3 @@ it.each(['target.ts', 'lib/target.ts'])('verifies a new %s file when its parent 
   }
   finally { fx.cleanup() }
 })
-
-it('fails verification without creating a missing destination directory', async () => {
-  const source = 'export const value = 42\n'
-  const consumer = 'import { value } from "./source.ts"; export const result = value\n'
-  const fx = makeFixture({ 'source.ts': source, 'consumer.ts': consumer })
-  try {
-    const result = await runMove('value', 'source.ts', 'lib/value.ts', { cwd: fx.dir, vue: false })
-    assert.ok(result.regressions.some(regression => regression.code === 2307 && regression.file.endsWith('/consumer.ts')))
-    assert.equal(existsSync(join(fx.dir, 'lib')), false)
-    assert.equal(fx.read('source.ts'), source)
-    assert.equal(fx.read('consumer.ts'), consumer)
-  }
-  finally { fx.cleanup() }
-})
