@@ -145,12 +145,13 @@ it.each(['~', 'src', 'tool'])('uses generated local alias %s to discover app pro
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-it.each([undefined, false])('refuses partial mixed local and global Nuxt renames with verify %s', async (verify) => {
+it.each([undefined, false])('renames mixed local and global Nuxt app consumers with verify %s', async (verify) => {
   const { dir } = appFixture()
   try {
-    const source = '<script setup lang="ts">function local() { const format = (value: number) => value; return format(1) }; const label = format(7)</script><template>{{ format(8) }} {{ label }}</template>'
+    const source = '<script setup lang="ts">function local() { const format = (value: number) => value; return format(1) }; const label = format(7) + ":" + local()</script><template>{{ format(8) }} {{ label }}</template>'
     writeFileSync(join(dir, 'app/pages/index.vue'), source)
-    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verify }), /unresolved Nuxt auto-import uses remain/)
+    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verify })
+    assert.equal(labelFromVue(result.changes.find(change => change.rel === 'app/pages/index.vue')!.after, {}, moduleExports(result.changes.find(change => change.rel === 'app/utils/format.ts')!.after)), '#7:1')
     assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
     assert.equal(typeof moduleExports(readFileSync(join(dir, 'app/utils/format.ts'), 'utf8')).format === 'function', true)
   }
@@ -210,7 +211,7 @@ it.each([false, true])('resolves nested consumer imports despite shadowed aliase
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-it.each([undefined, false])('refuses to rename another provider global with verify %s', async (verify) => {
+it.each([undefined, false])('preserves another active provider when renaming an inactive provider with verify %s', async (verify) => {
   const dir = fixture()
   try {
     writeFileSync(join(dir, 'utils/active.ts'), 'export function format(value: number) { return value * 10 }')
@@ -219,7 +220,8 @@ const format: typeof import('../utils/active')['format']
 } export {}`)
     const source = '<script setup lang="ts">const label = format(7)</script><template>{{ format(8) }} {{ label }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), source)
-    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify }), /another Nuxt auto-import provider/)
+    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify })
+    assert.equal(result.changes.find(change => change.rel === 'pages/index.vue'), undefined)
     assert.equal(labelFromVue(source, {}, moduleExports(readFileSync(join(dir, 'utils/active.ts'), 'utf8'))), 70)
     assert.equal(readFileSync(join(dir, 'pages/index.vue'), 'utf8'), source)
     assert.equal(typeof moduleExports(readFileSync(join(dir, 'utils/format.ts'), 'utf8')).format, 'function')
@@ -227,7 +229,7 @@ const format: typeof import('../utils/active')['format']
   finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
-it.each([undefined, false])('refuses edits to another nested Nuxt provider with verify %s', async (verify) => {
+it.each([undefined, false])('preserves another nested Nuxt provider when renaming with verify %s', async (verify) => {
   const dir = fixture()
   try {
     mkdirSync(join(dir, 'apps/site/.nuxt'), { recursive: true })
@@ -239,7 +241,9 @@ const format: typeof import('../../../utils/active')['format']
     const child = '<script setup lang="ts">const label = format(8)</script><template>{{ format(9) }} {{ label }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), root)
     writeFileSync(join(dir, 'apps/site/page.vue'), child)
-    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify }), /another Nuxt auto-import provider/)
+    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify })
+    assert.equal(result.changes.find(change => change.rel === 'apps/site/page.vue'), undefined)
+    assert.equal(labelFromVue(result.changes.find(change => change.rel === 'pages/index.vue')!.after, {}, moduleExports(result.changes.find(change => change.rel === 'utils/format.ts')!.after)), '#7')
     assert.equal(labelFromVue(child, {}, moduleExports(readFileSync(join(dir, 'utils/active.ts'), 'utf8'))), 80)
     assert.equal(readFileSync(join(dir, 'pages/index.vue'), 'utf8'), root)
     assert.equal(readFileSync(join(dir, 'apps/site/page.vue'), 'utf8'), child)

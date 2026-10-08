@@ -18,6 +18,7 @@ import { loadNuxtProviderPaths, nuxtConsumerContext } from './nuxt-bindings.ts'
 import { inspectNuxtAutoImportConsumers, validateNuxtAutoImportRename } from './nuxt-delete.ts'
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
 import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
+import { planNuxtAutoImportRename } from './nuxt-rename.ts'
 import { createVueService, workspaceEditToChanges } from './service.ts'
 
 export { parseComponent, parseComponentSource } from './component-parse.ts'
@@ -51,6 +52,7 @@ const adapter: FrameworkAdapter = {
   isGeneratedPath: isGeneratedNuxtPath,
   inspectAutoImportConsumers: inspectNuxtAutoImportConsumers,
   validateAutoImportRename: validateNuxtAutoImportRename,
+  planAutoImportRename: planNuxtAutoImportRename,
   filterGeneratedChanges: removeGeneratedNuxtChanges,
   addExplicitImports: ctx => addNuxtExplicitImports({ ...ctx, scan }),
   async finalizeFileRename(cwd, oldAbs, newAbs, existingChanges) {

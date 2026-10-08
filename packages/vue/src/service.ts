@@ -1,10 +1,11 @@
-import type { FileChange } from '@ripast/core/adapter'
+import type { FileChange, TextEdit } from '@ripast/core/adapter'
 import type { LanguageService, LanguageServiceEnvironment, ProjectContext } from '@volar/language-service'
 import type { TypeScriptProjectHost } from '@volar/typescript'
 import type { WorkspaceEdit } from 'vscode-languageserver-protocol'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
+import { applyTextEdits, offsetOfPosition } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
 import { createLanguage, createLanguageService, createUriMap, FileType } from '@volar/language-service'
 import { createLanguageServiceHost, resolveFileLanguageId } from '@volar/typescript'
@@ -246,6 +247,7 @@ export function workspaceEditToChanges(
   vue: VueService,
   cwd: string,
   filter?: (fileName: string) => boolean,
+  transformEdits?: (path: string, source: string, edits: TextEdit[]) => TextEdit[],
 ): FileChange[] {
   const out: FileChange[] = []
   const seen = new Set<string>()
@@ -261,7 +263,13 @@ export function workspaceEditToChanges(
     if (before === undefined)
       return
     const doc = TextDocument.create(uriStr, 'plaintext', 0, before)
-    const after = TextDocument.applyEdits(doc, edits as any)
+    const after = transformEdits
+      ? applyTextEdits(before, transformEdits(fileName, before, edits.map(edit => ({
+          start: offsetOfPosition(before, edit.range.start),
+          end: offsetOfPosition(before, edit.range.end),
+          replacement: edit.newText,
+        }))))
+      : TextDocument.applyEdits(doc, edits as any)
     if (after === before)
       return
     out.push({

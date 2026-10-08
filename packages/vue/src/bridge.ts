@@ -1,4 +1,4 @@
-import type { FileChange, Regression, RenameSite } from '@ripast/core/adapter'
+import type { AutoImportRenamePlan, FileChange, Regression, RenameSite } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { posToLineCol, rewriteTemplateReferences } from '@ripast/core/adapter'
@@ -14,6 +14,7 @@ export async function applyVueRename(
   from: string,
   to: string,
   sites: RenameSite[],
+  autoImportPlan?: AutoImportRenamePlan,
 ): Promise<FileChange[]> {
   const vue = createVueService(tsconfigPath, cwd)
   try {
@@ -24,13 +25,15 @@ export async function applyVueRename(
       const edits = await vue.service.getRenameEdits(uri, { line: line - 1, character: col - 1 }, to)
       if (!edits)
         continue
-      const vueChanges = workspaceEditToChanges(edits, vue, cwd, fileName => fileName.endsWith('.vue'))
+      const vueChanges = workspaceEditToChanges(edits, vue, cwd, fileName => fileName.endsWith('.vue'), autoImportPlan?.transformEdits)
       for (const c of vueChanges) {
         if (byPath.has(c.path))
           continue
         byPath.set(c.path, c)
       }
     }
+    if (autoImportPlan)
+      return [...byPath.values()]
     // Volar misses Vue template references: component tag usage and pure-template-only
     // identifier refs (used in {{ }} but not in script). Sweep .vue consumers that
     // mention `from` and apply a template-AST post-pass.

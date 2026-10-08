@@ -6,17 +6,15 @@ import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource } from './declarations.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
-import { applyLspEdits, startTsServer } from './ts-server.ts'
-import { applyTextEdits, mergeFileChanges, parseFile, parseSourceFile, rgFiles, spliceScript } from './util.ts'
+import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
+import { applyTextEdits, parseSourceFile, rgFiles } from './util.ts'
 import { findRegressions } from './verify.ts'
-import { rewriteTemplateReferences } from './vue-template.ts'
 
 export interface RenameOptions {
   cwd?: string
@@ -69,6 +67,13 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     throw new Error(`ripast rename: "${from}" is declared in multiple files (${[...uniqueFiles].join(', ')}). Pass --scope <file> to pick one, or --all to rename every occurrence.`)
   }
 
+  const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
+  const scopes = vueAdapter?.autoImportScopes?.(cwd) ?? new Set<string>()
+  const autoImportSites = declarations.filter(decl => decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))
+  const autoImportPlan = autoImportSites.length
+    ? timed(profile, 'nuxt rename plan', () => vueAdapter?.planAutoImportRename?.({ cwd, from, to, sites: autoImportSites }))
+    : undefined
+
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
     const editsByPath = new Map<string, Map<string, LspTextEdit>>()
@@ -92,16 +97,21 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
         if (isVue(path))
           continue
         const before = readFileSync(path, 'utf8')
-        const after = applyLspEdits(before, [...edits.values()])
+        const after = autoImportPlan
+          ? applyTextEdits(before, autoImportPlan.transformEdits(path, before, [...edits.values()].map(edit => ({
+              start: offsetOfPosition(before, edit.range.start),
+              end: offsetOfPosition(before, edit.range.end),
+              replacement: edit.newText,
+            }))))
+          : applyLspEdits(before, [...edits.values()])
         if (after !== before)
           out.push({ path, rel: relative(cwd, path), before, after })
       }
       return out
     })
 
-    const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
     if (vueAdapter && tsconfigPath && timed(profile, 'vue prefilter', () => vueAdapter.hasFilesContaining(cwd, from))) {
-      const vueChanges = await timedAsync(profile, 'vue rename', () => vueAdapter.applyRename(tsconfigPath, cwd, from, to, declarations))
+      const vueChanges = await timedAsync(profile, 'vue rename', () => vueAdapter.applyRename(tsconfigPath, cwd, from, to, declarations, autoImportPlan))
       for (const vc of vueChanges) {
         if (!changes.some(c => c.path === vc.path))
           changes.push(vc)
@@ -109,15 +119,13 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     }
 
     if (vueAdapter?.autoImportScopes) {
-      const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
-      if (declarations.some(decl => decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))) {
-        removeVueLocalBindingChanges(changes, from)
-        const fallbackChanges = timed(profile, 'nuxt rename fallback', () => applyNuxtBareIdentifierRename(vueAdapter, cwd, from, to, changes))
-        mergeFileChanges(changes, fallbackChanges)
-        for (const decl of declarations) {
-          if (decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))
-            vueAdapter.validateAutoImportRename?.({ cwd, symbol: from, fromAbs: decl.filePath, changes, scopes })
+      if (autoImportSites.length) {
+        for (const change of autoImportPlan?.changes ?? []) {
+          if (!changes.some(existing => existing.path === change.path))
+            changes.push(change)
         }
+        for (const decl of autoImportSites)
+          vueAdapter.validateAutoImportRename?.({ cwd, symbol: from, fromAbs: decl.filePath, changes, scopes })
       }
       if (scopes.size)
         vueAdapter.filterGeneratedChanges?.(cwd, changes)
@@ -181,131 +189,6 @@ function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], 
   const shown = stale.slice(0, 10)
   const more = stale.length > 10 ? ` (+${stale.length - 10} more)` : ''
   return [`"${from}" is still imported by ${stale.length} file(s) not rewritten (likely consumed via a package re-export, outside the TypeScript project): ${shown.join(', ')}${more}. Rename those imports manually or widen --glob.`]
-}
-
-function applyNuxtBareIdentifierRename(vueAdapter: { isGeneratedPath?: (cwd: string, path: string) => boolean }, cwd: string, from: string, to: string, changes: FileChange[]): FileChange[] {
-  const byPath = new Map(changes.map(change => [change.path, change]))
-  const out: FileChange[] = []
-  for (const path of rgFiles(from, { cwd })) {
-    if (vueAdapter.isGeneratedPath?.(cwd, path))
-      continue
-    const file = parseFile(path, cwd)
-    const before = byPath.get(path)?.before ?? file.fullSource
-    const current = byPath.get(path)?.after ?? before
-    const currentFile = current === file.fullSource ? file : parseSourceFile(path, current, cwd)
-    if (scriptDeclaresBinding(currentFile.scriptSource, from))
-      continue
-    const script = rewriteScriptIdentifiers(currentFile.scriptSource, from, to)
-    let after = spliceScript(currentFile, script)
-    if (currentFile.isSfc)
-      after = rewriteTemplateReferences(after, from, to)
-    if (after === current)
-      continue
-    out.push({
-      path,
-      rel: relative(cwd, path),
-      before,
-      after,
-    })
-  }
-  return out
-}
-
-function removeVueLocalBindingChanges(changes: FileChange[], from: string): void {
-  for (let i = changes.length - 1; i >= 0; i--) {
-    const change = changes[i]
-    if (isVue(change.path) && scriptDeclaresBinding(change.before, from, false))
-      changes.splice(i, 1)
-  }
-}
-
-function scriptDeclaresBinding(source: string, name: string, includeImports: boolean = true): boolean {
-  source = extractScriptSource(source) ?? source
-  if (!source.includes(name))
-    return false
-  let program: any
-  try {
-    program = parseSync('script.ts', source).program
-  }
-  catch {
-    return false
-  }
-  let found = false
-  walk(program, {
-    enter(node: any) {
-      if (found)
-        return
-      if (node.type === 'VariableDeclarator' && bindingIncludes(node.id, name)) {
-        found = true
-        return
-      }
-      if (NAMED_DECLARATION_TYPES.has(node.type) && node.id?.name === name) {
-        found = true
-        return
-      }
-      if (includeImports && node.type === 'ImportSpecifier' && (node.local?.name ?? node.imported?.name) === name) {
-        found = true
-        return
-      }
-      if (includeImports && (node.type === 'ImportDefaultSpecifier' || node.type === 'ImportNamespaceSpecifier') && node.local?.name === name)
-        found = true
-    },
-  })
-  return found
-}
-
-function extractScriptSource(source: string): string | null {
-  const match = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/i.exec(source)
-  return match?.[1] ?? null
-}
-
-function bindingIncludes(node: any, name: string): boolean {
-  if (!node)
-    return false
-  if (node.type === 'Identifier')
-    return node.name === name
-  if (node.type === 'ObjectPattern')
-    return (node.properties ?? []).some((prop: any) => bindingIncludes(prop.value ?? prop.argument ?? prop.key, name))
-  if (node.type === 'ArrayPattern')
-    return (node.elements ?? []).some((element: any) => bindingIncludes(element, name))
-  if (node.type === 'AssignmentPattern')
-    return bindingIncludes(node.left, name)
-  if (node.type === 'RestElement')
-    return bindingIncludes(node.argument, name)
-  return false
-}
-
-function rewriteScriptIdentifiers(source: string, from: string, to: string): string {
-  if (!source.includes(from))
-    return source
-  let program: any
-  try {
-    program = parseSync('script.ts', source).program
-  }
-  catch {
-    return source
-  }
-  const edits: { start: number, end: number }[] = []
-  walk(program, {
-    enter(node: any, parent: any) {
-      if (node.type !== 'Identifier' || node.name !== from)
-        return
-      if (parent) {
-        if (parent.type === 'ImportSpecifier' || parent.type === 'ImportDefaultSpecifier' || parent.type === 'ImportNamespaceSpecifier')
-          return
-        if (parent.type === 'VariableDeclarator' && parent.id === node)
-          return
-        if (NAMED_DECLARATION_TYPES.has(parent.type) && parent.id === node)
-          return
-        if (parent.type === 'MemberExpression' && !parent.computed && parent.property === node)
-          return
-        if ((parent.type === 'Property' || parent.type === 'ObjectProperty') && !parent.computed && parent.key === node && parent.value !== node)
-          return
-      }
-      edits.push({ start: node.start, end: node.end })
-    },
-  })
-  return applyTextEdits(source, edits.map(edit => ({ ...edit, replacement: to })))
 }
 
 /** Prefer top-level declarations; fall back to local declarations. */
