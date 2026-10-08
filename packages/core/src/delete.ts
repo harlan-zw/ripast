@@ -36,7 +36,8 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   const cwd = opts.cwd ?? process.cwd()
   const verifyMode = resolveVerifyMode(opts.verify)
   const fromAbs = resolve(cwd, fromPath)
-  const candidatePaths = rgFiles(symbol, { cwd })
+  // Escaped identifiers and namespace use need not contain the symbol's text.
+  const candidatePaths = rgFiles('', { cwd, listAll: true })
 
   const before = readFileSync(fromAbs, 'utf8')
   const parsed = parseSource(fromAbs, before)
