@@ -13,11 +13,12 @@ export interface Regression {
 }
 
 /** Project verification includes Vue consumers even when only scripts change. */
-export async function findVueRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, adapter: FrameworkAdapter | null): Promise<Regression[]> {
+export async function findVueRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, loadVueAdapter: () => Promise<FrameworkAdapter | null>): Promise<Regression[]> {
   if (!changes.length || !rgFiles('', { cwd, glob: '*.vue', listAll: true }).length)
     return []
   if (!tsconfigPath)
     throw new Error('ripast: Vue verification requires a tsconfig. Prepare the project before applying changes.')
+  const adapter = await loadVueAdapter()
   if (!adapter)
     throw new Error('ripast: Vue verification requires @ripast/vue. Install the adapter before applying changes.')
   return adapter.regressions(tsconfigPath, cwd, changes)

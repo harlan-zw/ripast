@@ -161,7 +161,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     }
 
     if (vueEnabled && verifyMode === 'project') {
-      regressions.push(...await findVueRegressions(cwd, verificationChanges, tsconfigPath, vueAdapter))
+      regressions.push(...await findVueRegressions(cwd, verificationChanges, tsconfigPath, async () => vueAdapter))
     }
     else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
       const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, verificationChanges)

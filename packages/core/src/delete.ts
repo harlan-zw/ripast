@@ -202,7 +202,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
       ? []
       : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd) : [fromAbs])
     if (verifyMode === 'project')
-      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), nuxtAdapter ?? await loadAdapter('vue')))
+      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), async () => nuxtAdapter ?? await loadAdapter('vue')))
 
     return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions }
   }

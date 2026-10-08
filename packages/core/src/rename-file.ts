@@ -111,7 +111,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
         after: selfChange?.after ?? readFileSync(oldAbs, 'utf8'),
       }]
       if (opts.vue !== false && verifyMode === 'project') {
-        regressions.push(...await findVueRegressions(cwd, vueChanges, tsconfigPath, vueAdapter))
+        regressions.push(...await findVueRegressions(cwd, vueChanges, tsconfigPath, async () => vueAdapter))
       }
       else if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue'))) {
         regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, vueChanges))

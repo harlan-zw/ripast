@@ -188,7 +188,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     }
 
     if (vueEnabled && verifyMode === 'project') {
-      regressions.push(...await findVueRegressions(cwd, changes, tsconfigPath, vueAdapter))
+      regressions.push(...await findVueRegressions(cwd, changes, tsconfigPath, async () => vueAdapter))
     }
     else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {
       const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes)

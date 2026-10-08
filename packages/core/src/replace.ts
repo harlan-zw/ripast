@@ -64,7 +64,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
       ? []
       : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path)))
     if (verifyMode === 'project')
-      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), await loadAdapter('vue')))
+      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), () => loadAdapter('vue')))
     return { changes, scanned: candidatePaths.length, regressions }
   }
   finally {
