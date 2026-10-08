@@ -213,12 +213,12 @@ it.each([
   const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-dual-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
-    const source = `<script lang="ts">${normalSource}</script>
+    const source = `<script lang="ts">${normalSource} /*${'normal padding '.repeat(30)}*/</script>
 <script setup lang="ts">
 function local(format: (value: number) => number) { return format(7) }
 const label = format(local(value => value))
 </script>
-<template>{{ label }}<Widget v-slot="{ format }">{{ format(1) }}</Widget>{{ format(2) }}</template>
+<template>{{ label }}</template>
 `
     writeFileSync(join(dir, 'pages/dual.vue'), source)
     const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })

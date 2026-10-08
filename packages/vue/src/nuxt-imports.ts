@@ -1,6 +1,7 @@
 import type { FileChange, ScanFn } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { relative } from 'node:path'
+import { rgFiles } from '@ripast/core/adapter'
 import { parse } from '@vue/compiler-sfc'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
@@ -20,21 +21,12 @@ export interface ExplicitImportContext {
  * insert an explicit named import from `toAbs`.
  */
 export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[] {
-  const { cwd, symbols, toAbs, fromAbs, existingChanges, noScriptError, scan } = ctx
+  const { cwd, symbols, toAbs, fromAbs, existingChanges, noScriptError } = ctx
   const byPath = new Map(existingChanges.map(change => [change.path, change]))
   const aliases = loadNuxtPathAliases(cwd)
-  const consumerSymbols = new Map<string, Set<string>>()
-  for (const symbol of symbols) {
-    const hits = scan(symbol, { cwd, kinds: ['identifier-reference'] })
-    for (const hit of hits) {
-      const abs = resolve(cwd, hit.file)
-      if (!consumerSymbols.has(abs))
-        consumerSymbols.set(abs, new Set())
-      consumerSymbols.get(abs)!.add(symbol)
-    }
-  }
   const out: FileChange[] = []
-  for (const [filePath, neededSymbols] of consumerSymbols) {
+  const neededSymbols = new Set(symbols)
+  for (const filePath of rgFiles('', { cwd, listAll: true })) {
     if (isGeneratedNuxtPath(cwd, filePath))
       continue
     if (filePath === fromAbs || filePath === toAbs)
