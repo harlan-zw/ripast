@@ -549,7 +549,7 @@ function buildPotentialReferenceNames(paths: string[], cwd: string): Set<string>
     const ignored = ignoredTopLevelNameRanges(file.program as any, file.scriptStart)
     walk(file.program as any, {
       enter(node: any) {
-        const name = identifierName(node)
+        const name = potentialReferenceName(node)
         if (!name)
           return
         const start = (node.start ?? 0) + file.scriptStart
@@ -562,9 +562,14 @@ function buildPotentialReferenceNames(paths: string[], cwd: string): Set<string>
   return out
 }
 
-function identifierName(node: any): string | null {
+function potentialReferenceName(node: any): string | null {
   if (node?.type === 'Identifier' || node?.type === 'JSXIdentifier')
     return node.name ?? null
+  // String imports and computed namespace access can reference exported names.
+  if (node?.type === 'Literal' && typeof node.value === 'string')
+    return node.value
+  if (node?.type === 'TemplateElement')
+    return node.value.cooked ?? null
   return null
 }
 
@@ -582,7 +587,7 @@ function ignoredTopLevelNameRanges(program: any, offset: number): SourceRange[] 
       pushNodeRange(ranges, node.declaration?.id, offset)
       continue
     }
-    if (node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' || node.type === 'ExportAllDeclaration')
+    if (node.type === 'ImportDeclaration' || node.type === 'ExportAllDeclaration')
       continue
     switch (declaration.type) {
       case 'FunctionDeclaration':

@@ -1,13 +1,15 @@
 import type { ProfileEvent, ProfileSink } from '@ripast/core'
+import type { BenchFixture } from './fixture.ts'
 import { performance } from 'node:perf_hooks'
-import { buildDeclarationTree, buildScanGraph, runMove, runRename, runRenameFile, scan } from '@ripast/core'
+import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, runMove, runRename, runRenameFile, scan } from '@ripast/core'
 import { makeBenchFixture } from './fixture.ts'
 
 interface BenchCase {
   name: string
   runs?: number
   profile?: boolean
-  fn: (profile?: ProfileSink) => void | Promise<void>
+  tsconfig?: string
+  fn: (fixture: BenchFixture, profile?: ProfileSink) => void | Promise<void>
 }
 
 interface BenchResult {
@@ -32,117 +34,77 @@ const SCAN_HITS_PER_SYMBOL = IMPORTERS_PER_SYMBOL * 2 + 1
 
 const benches: BenchCase[] = [
   {
+    name: 'unused exported',
+    fn: async (fixture) => {
+      const result = await buildUnusedDeclarations({ cwd: fixture.dir, exports: 'exported' })
+      assertCount('unused exported declarations', result.files.reduce((count, file) => count + file.declarations.length, 0), FILE_COUNT * 3 + 2)
+    },
+  },
+  {
     name: 'rename-file nested config verify',
-    fn: async () => {
+    tsconfig: 'app/.nuxt/tsconfig.app.json',
+    fn: async (fixture) => {
       const tsconfig = 'app/.nuxt/tsconfig.app.json'
-      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL, tsconfig })
-      try {
-        const result = await runRenameFile('src/hot.ts', 'src/renamed.ts', { cwd: fixture.dir, tsconfig })
-        assertCount('rename-file changes', result.changes.length, IMPORTERS_PER_SYMBOL)
-        assertCount('rename-file regressions', result.regressions.length, 0)
-      }
-      finally {
-        fixture.cleanup()
-      }
+      const result = await runRenameFile('src/hot.ts', 'src/renamed.ts', { cwd: fixture.dir, tsconfig })
+      assertCount('rename-file changes', result.changes.length, IMPORTERS_PER_SYMBOL)
+      assertCount('rename-file regressions', result.regressions.length, 0)
     },
   },
   {
     name: 'scan identifier',
-    fn: () => {
-      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL })
-      try {
-        const hits = scan('hotSymbol', { cwd: fixture.dir })
-        assertCount('scan identifier hits', hits.length, SCAN_HITS_PER_SYMBOL)
-      }
-      finally {
-        fixture.cleanup()
-      }
+    fn: (fixture) => {
+      const hits = scan('hotSymbol', { cwd: fixture.dir })
+      assertCount('scan identifier hits', hits.length, SCAN_HITS_PER_SYMBOL)
     },
   },
   {
     name: 'scan graph',
-    fn: () => {
-      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL })
-      try {
-        const graph = buildScanGraph('hotSymbol', { cwd: fixture.dir })
-        assertCount('scan graph nodes', graph.nodes.length, IMPORTERS_PER_SYMBOL + 1)
-      }
-      finally {
-        fixture.cleanup()
-      }
+    fn: (fixture) => {
+      const graph = buildScanGraph('hotSymbol', { cwd: fixture.dir })
+      assertCount('scan graph nodes', graph.nodes.length, IMPORTERS_PER_SYMBOL + 1)
     },
   },
   {
     name: 'tree exported',
-    fn: () => {
-      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL })
-      try {
-        const tree = buildDeclarationTree({ cwd: fixture.dir, exports: 'exported' })
-        assertCount('tree files', tree.files.length, FILE_COUNT + 3)
-      }
-      finally {
-        fixture.cleanup()
-      }
+    fn: (fixture) => {
+      const tree = buildDeclarationTree({ cwd: fixture.dir, exports: 'exported' })
+      assertCount('tree files', tree.files.length, FILE_COUNT + 3)
     },
   },
   {
     name: 'rename no verify',
     profile: true,
-    fn: async (profile) => {
-      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL })
-      try {
-        const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verify: false, vue: false, profile })
-        assertCount('rename no verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 1)
-      }
-      finally {
-        fixture.cleanup()
-      }
+    fn: async (fixture, profile) => {
+      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verify: false, vue: false, profile })
+      assertCount('rename no verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 1)
     },
   },
   {
     name: 'rename verify',
     runs: Math.max(3, Math.min(RUNS, 5)),
     profile: true,
-    fn: async (profile) => {
-      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL })
-      try {
-        const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verify: true, vue: false, profile })
-        assertCount('rename verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 1)
-        assertCount('rename verify regressions', result.regressions.length, 0)
-      }
-      finally {
-        fixture.cleanup()
-      }
+    fn: async (fixture, profile) => {
+      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verify: true, vue: false, profile })
+      assertCount('rename verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 1)
+      assertCount('rename verify regressions', result.regressions.length, 0)
     },
   },
   {
     name: 'move no verify',
     profile: true,
-    fn: async (profile) => {
-      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL })
-      try {
-        const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verify: false, vue: false, profile })
-        assertCount('move no verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 2)
-      }
-      finally {
-        fixture.cleanup()
-      }
+    fn: async (fixture, profile) => {
+      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verify: false, vue: false, profile })
+      assertCount('move no verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 2)
     },
   },
   {
     name: 'move verify',
     runs: Math.max(3, Math.min(RUNS, 5)),
     profile: true,
-    fn: async (profile) => {
-      const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL })
-      try {
-        const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verify: true, vue: false, profile })
-        assertCount('move verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 2)
-        assertCount('move verify regressions', result.regressions.length, 0)
-      }
-      finally {
-        fixture.cleanup()
-      }
+    fn: async (fixture, profile) => {
+      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verify: true, vue: false, profile })
+      assertCount('move verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 2)
+      assertCount('move verify regressions', result.regressions.length, 0)
     },
   },
 ]
@@ -159,16 +121,14 @@ async function main(): Promise<void> {
 
   const results: BenchResult[] = []
   for (const bench of benches) {
-    await bench.fn()
+    await measure(bench)
     const times: number[] = []
     const profiles: ProfileEvent[][] = []
     const runs = bench.runs ?? RUNS
     for (let i = 0; i < runs; i++) {
       const events: ProfileEvent[] = []
       const profile = bench.profile ? (event: ProfileEvent) => events.push(event) : undefined
-      const start = performance.now()
-      await bench.fn(profile)
-      times.push(performance.now() - start)
+      times.push(await measure(bench, profile))
       if (bench.profile)
         profiles.push(events)
     }
@@ -191,6 +151,18 @@ async function main(): Promise<void> {
       for (const phase of result.phases!)
         console.log(`  ${pad(phase.phase, 22)} ${fmt(phase.medianMs)}  ${phase.pct.toFixed(1).padStart(5)}%`)
     }
+  }
+}
+
+async function measure(bench: BenchCase, profile?: ProfileSink): Promise<number> {
+  const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL, tsconfig: bench.tsconfig })
+  try {
+    const start = performance.now()
+    await bench.fn(fixture, profile)
+    return performance.now() - start
+  }
+  finally {
+    fixture.cleanup()
   }
 }
 
