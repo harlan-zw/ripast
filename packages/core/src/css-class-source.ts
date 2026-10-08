@@ -36,7 +36,7 @@ export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSour
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs()
   // Escapes can encode any part of a class key. Parse those candidates before matching decoded values.
-  return readSourceFiles(rgFilesMany([...map.keys(), '\\'], { cwd, glob }), cwd)
+  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&'], { cwd, glob }), cwd)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {
@@ -228,7 +228,7 @@ function visitVueClassAttributes(source: string, visit: (value: string, start: n
       if (prop.type === 6 && prop.name === 'class' && prop.value) {
         const { start, end, source: raw } = prop.value.loc
         const quoted = raw.startsWith('"') || raw.startsWith('\'')
-        visit(source.slice(start.offset + Number(quoted), end.offset - Number(quoted)), start.offset + Number(quoted), end.offset - Number(quoted), false)
+        visit(prop.value.content, start.offset + Number(quoted), end.offset - Number(quoted), false)
       }
       else if (prop.type === 7 && prop.name === 'bind' && prop.arg?.isStatic && prop.arg.content === 'class' && prop.exp) {
         const { start, end } = prop.exp.loc
@@ -324,10 +324,17 @@ function rewriteVueTemplateClassAttrs(source: string, map: RenameMap): string {
     if (!mapIncludesAny(value, map))
       return
     const replacement = dynamic ? rewriteDynamicClassExpr(value, map) : rewriteClassString(value, map)
-    if (replacement !== value)
-      edits.push({ start, end, replacement })
+    if (replacement !== value) {
+      const quote = source[start - 1]
+      const encoded = dynamic ? replacement : encodeAttributeValue(replacement)
+      edits.push({ start, end, replacement: !dynamic && quote !== '"' && quote !== '\'' ? `"${encoded}"` : encoded })
+    }
   })
   return applyTextEdits(source, edits)
+}
+
+function encodeAttributeValue(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
 function encodeStringLiteral(value: string, quote: string): string {

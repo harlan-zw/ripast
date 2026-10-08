@@ -43,7 +43,8 @@ describe('quoted arbitrary class variants', () => {
       expect(errors).toEqual([])
       const element = descriptor.template!.ast!.children.find((node: any) => node.type === 1) as any
       expect(element.props[0].value.content).toBe(`${prefix}new-token new-token`)
-      expect(after).toBe(before.replaceAll('old-token', 'new-token'))
+      expect(after.slice(0, after.indexOf('<div'))).toBe(before.slice(0, before.indexOf('<div')))
+      expect(after.slice(after.indexOf(' />'))).toBe(before.slice(before.indexOf(' />')))
       expect(readFileSync(join(fx.dir, 'Page.vue'), 'utf8')).toBe(before)
     }
     finally { fx.cleanup() }
