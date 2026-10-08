@@ -48,6 +48,8 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
 
   const server = await startTsServer(cwd)
   try {
+    for (const path of candidatePaths)
+      server.open(path)
     const references: DeleteReference[] = []
     for (const ref of await server.references(fromAbs, decl.nameStart)) {
       if (ref.path === fromAbs && ref.start >= decl.start && ref.start < decl.end)
