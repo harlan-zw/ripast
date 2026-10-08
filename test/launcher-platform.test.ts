@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync } from 'node:fs'
+import { chmodSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import process from 'node:process'
 import { it } from 'vitest'
@@ -23,7 +23,7 @@ it.each(['pnpm', 'npm'] as const)('launcher runs %s shims with literal arguments
     })
     assert.equal(child.status, 0, child.stderr)
     const result = JSON.parse(fx.read('record.json'))
-    assert.equal(result.cwd.toLowerCase(), fx.dir.toLowerCase())
+    assert.equal(realpathSync(result.cwd), realpathSync(fx.dir))
     const expected = manager === 'pnpm'
       ? ['dlx', '--package=@ripast/cli', '--package=@ripast/vue', 'ripast', ...args]
       : ['exec', '--yes', result.args[2], '--package=@ripast/cli', '--package=@ripast/vue', '--', 'ripast', ...args]

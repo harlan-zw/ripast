@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer'
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { posToLineCol } from './util.ts'
@@ -267,7 +267,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     for (const location of locations ?? []) {
       if (!location.uri.startsWith('file:'))
         continue
-      const path = pathOf(location.uri)
+      const path = resolve(cwd, relative(cwd, pathOf(location.uri)))
       let text = texts.get(path)
       if (text === undefined) {
         try {
@@ -306,7 +306,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
         position: positionOf(path, offset),
         newName,
       })
-      return workspaceEditByPath(edit)
+      return workspaceEditByPath(edit, cwd)
     },
     async references(path, offset) {
       open(path)
@@ -333,7 +333,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       const edit = await request('workspace/willRenameFiles', {
         files: [{ oldUri: uriOf(oldPath), newUri: uriOf(newPath) }],
       })
-      return workspaceEditByPath(edit)
+      return workspaceEditByPath(edit, cwd)
     },
     async diagnostics(paths) {
       const out = new Map<string, LspDiagnostic[]>()
@@ -376,10 +376,10 @@ function languageIdOf(path: string): string {
   return 'typescript'
 }
 
-function workspaceEditByPath(edit: any): Map<string, LspTextEdit[]> {
+function workspaceEditByPath(edit: any, cwd: string): Map<string, LspTextEdit[]> {
   const byPath = new Map<string, LspTextEdit[]>()
   const add = (uri: string, edits: LspTextEdit[]): void => {
-    const path = pathOf(uri)
+    const path = resolve(cwd, relative(cwd, pathOf(uri)))
     byPath.set(path, [...(byPath.get(path) ?? []), ...edits])
   }
   for (const [uri, edits] of Object.entries<LspTextEdit[]>(edit?.changes ?? {}))

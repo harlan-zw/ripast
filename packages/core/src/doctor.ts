@@ -632,7 +632,7 @@ function findOrphanTests(tree: DeclarationTree, _cwd: string): DoctorFinding[] {
       continue
     // Ignore tests that live in dedicated dirs (integration/e2e) where colocation
     // isn't expected. Match path segments only, not the .test. infix.
-    const dirSegments = file.file.split('/').slice(0, -1)
+    const dirSegments = file.file.split(/[\\/]/).slice(0, -1)
     if (dirSegments.some(seg => /^(?:tests?|__tests__|e2e|integration|fixtures)$/.test(seg)))
       continue
     out.push({
@@ -737,7 +737,7 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
   const needsIndex = checks.has('dangling-reexport') || checks.has('stale-reexport') || checks.has('stale-import') || checks.has('inconsistent-import-path') || checks.has('circular-dep')
   const index = needsIndex ? buildDoctorIndex({ cwd, glob: opts.glob }) : null
   const adapters = await loadDoctorAdapters(cwd, opts)
-  const entries = new Set(opts.entry ?? [])
+  const entries = new Set((opts.entry ?? []).map(file => relative(cwd, resolve(cwd, file))))
   for (const adapter of adapters) {
     for (const entry of adapter.entryFiles?.(cwd) ?? [])
       entries.add(entry)
@@ -763,9 +763,9 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
   for (const adapter of adapters)
     findings.push(...adapter.extraFindings?.(cwd, adapterIndex ? { index: adapterIndex } : undefined) ?? [])
   const ignores = buildIgnoreIndex(cwd, findings)
-  const changedSet = opts.changedFiles ? new Set(opts.changedFiles) : null
+  const changedSet = opts.changedFiles ? new Set(opts.changedFiles.map(file => resolve(cwd, file))) : null
   const filtered = findings.filter((f) => {
-    if (changedSet && !changedSet.has(f.file))
+    if (changedSet && !changedSet.has(resolve(cwd, f.file)))
       return false
     if (isIgnored(ignores, f))
       return false

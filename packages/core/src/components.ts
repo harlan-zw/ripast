@@ -1,4 +1,5 @@
 import type { ComponentInfo, ComponentUsageInfo } from './adapter.ts'
+import { isAbsolute, relative, sep } from 'node:path'
 import process from 'node:process'
 import { detectFrameworks, loadAdapter } from './adapter.ts'
 
@@ -139,7 +140,8 @@ export function formatAgentInventory(inv: ComponentInventory): string {
 
 function relativeToCwd(abs: string): string {
   const cwd = process.cwd()
-  return abs.startsWith(`${cwd}/`) ? abs.slice(cwd.length + 1) : abs
+  const rel = relative(cwd, abs)
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) ? rel : abs
 }
 
 export function formatDetail(detail: ComponentDetail): string {

@@ -6,7 +6,7 @@ import type { TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
@@ -138,7 +138,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
       }
     })
 
-    const fromBasename = fromPath.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+    const fromBasename = basename(fromAbs, extname(fromAbs))
     const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
     if (vueAdapter && tsconfigPath && fromBasename && timed(profile, 'vue prefilter', () => vueAdapter.hasFilesContaining(cwd, fromBasename))) {
       const vueChanges = await timedAsync(profile, 'vue import rewrite', () => vueAdapter.applyImportRewrite(tsconfigPath, cwd, fromAbs, toAbs))
