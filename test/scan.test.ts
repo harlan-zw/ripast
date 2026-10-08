@@ -320,6 +320,22 @@ it.each(['"accessed"', '`accessed`'])('buildUnusedDeclarations keeps exported na
   finally { fx.cleanup() }
 })
 
+it.each([
+  'export const { value = used } = {}',
+  'export const [value = used] = []',
+  'export const { [used]: value } = { 1: 2 }',
+  'const { value = used } = {}',
+])('buildUnusedDeclarations keeps references inside binding patterns: %s', async (declaration) => {
+  const fx = makeFixture({
+    'source.ts': `export const used = 1\n${declaration}\nconsole.log(value)\n`,
+  })
+  try {
+    const unused = await buildUnusedDeclarations({ cwd: fx.dir, exports: 'exported' })
+    assert.deepEqual(unused.files, [])
+  }
+  finally { fx.cleanup() }
+})
+
 it('buildUnusedDeclarations handles JavaScript files when a tsconfig exists', async () => {
   const fx = makeFixture({
     'tsconfig.json': JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext' }, include: ['src/**/*.ts'] }),

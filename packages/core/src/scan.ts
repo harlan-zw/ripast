@@ -615,9 +615,8 @@ function pushNodeRange(ranges: SourceRange[], node: any, offset: number): void {
 function pushBindingNameRange(ranges: SourceRange[], node: any, offset: number): void {
   if (node?.type === 'Identifier' && typeof node.start === 'number' && typeof node.name === 'string') {
     ranges.push({ start: node.start + offset, end: node.start + offset + node.name.length })
-    return
   }
-  pushNodeRange(ranges, node, offset)
+  // Destructuring patterns can contain references in computed keys and defaults.
 }
 
 function importSpecifiers(program: any): string[] {

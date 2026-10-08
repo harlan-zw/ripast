@@ -39,3 +39,26 @@ it('commands refuse positional names used as ignored options', async () => {
   })
   await assert.rejects(runCommand(command, { rawArgs: ['hits', '--pattern=ignored'] }), /Unknown option: --pattern/)
 })
+
+it.each(['--no-scope', '--scope', '--scope='])('commands refuse invalid string options %s before running', async (option) => {
+  let ran = false
+  const command = defineStrictCommand({
+    args: { scope: { type: 'string' } },
+    run() { ran = true },
+  })
+  await assert.rejects(runCommand(command, { rawArgs: [option] }), /--scope requires a non-empty string/)
+  assert.equal(ran, false)
+})
+
+it.each([
+  { rawArgs: ['--changed'], changed: '', json: false },
+  { rawArgs: ['--changed', '--json'], changed: '', json: true },
+  { rawArgs: ['--changed', 'HEAD~1', '--json'], changed: 'HEAD~1', json: true },
+])('commands preserve optional values and following flags: $rawArgs', async ({ rawArgs, changed, json }) => {
+  const command = defineStrictCommand({
+    args: { changed: { type: 'string' }, json: { type: 'boolean', default: false } },
+    run({ args }) { return { changed: args.changed, json: args.json } },
+  }, ['changed'])
+  const result = await runCommand(command, { rawArgs })
+  assert.deepEqual(result.result, { changed, json })
+})
