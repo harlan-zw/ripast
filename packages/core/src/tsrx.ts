@@ -1,8 +1,8 @@
-import type { compile_to_volar_mappings } from '@ripast/tsrx/compiler'
+import type { compile_to_volar_mappings } from 'ripide-tsrx/compiler'
 import { createRequire } from 'node:module'
 
 export function resolveTsrxModule(from: string, entry: 'compiler' | 'package.json'): string {
-  const specifier = `@ripast/tsrx/${entry}`
+  const specifier = `ripide-tsrx/${entry}`
   try {
     return createRequire(from).resolve(specifier)
   }
@@ -19,11 +19,11 @@ export function parseTsrxSource(path: string, source: string) {
     compiler = require(resolveTsrxModule(path, 'compiler'))
   }
   catch (cause) {
-    throw new Error(`ripast: ${path} requires @ripast/tsrx and a project-local Octane compiler for TSRX support`, { cause })
+    throw new Error(`ripide: ${path} requires ripide-tsrx and a project-local Octane compiler for TSRX support`, { cause })
   }
   const result = compiler.compile_to_volar_mappings(source, path, { loose: true })
   if (result.errors.length) {
-    throw new Error(`ripast: cannot parse ${path}: ${result.errors.map(error => error.message).join('; ')}`)
+    throw new Error(`ripide: cannot parse ${path}: ${result.errors.map(error => error.message).join('; ')}`)
   }
   return { program: result.sourceAst, comments: [] }
 }

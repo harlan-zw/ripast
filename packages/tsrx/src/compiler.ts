@@ -9,6 +9,6 @@ export function compile_to_volar_mappings(source: string, path: string, options?
     return compiler.compileToVolarMappings(source, path, { ...options, loose: true })
   }
   catch (cause) {
-    throw new Error(`ripast: cannot parse ${path}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause })
+    throw new Error(`ripide: cannot parse ${path}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause })
   }
 }

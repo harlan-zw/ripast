@@ -3,8 +3,9 @@ import { execFileSync, spawn } from 'node:child_process'
 import { cpSync, mkdirSync, readFileSync, renameSync, symlinkSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { resolveNativeTsc, runMove, runRename, runRenameFile, scan, writeChanges } from '@ripast/core'
+import { resolveNativeTsc, runMove, runRename, runRenameFile, scan, writeChanges } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const require = createRequire(import.meta.url)
@@ -68,7 +69,7 @@ describe('next App Router fixture', () => {
   it('finds shared helpers in server, client, and route consumers', () => {
     const fx = makeNextFixture()
     try {
-      const hits = scan('formatCount', { cwd: fx.dir })
+      const hits = scan('formatCount', { ...{ cwd: fx.dir }, engine: vueServices() })
       expect(hits.filter(hit => hit.kind === 'identifier-reference').map(hit => hit.file).sort()).toEqual([
         'app/api/status/route.ts',
         'app/page.tsx',
@@ -82,7 +83,7 @@ describe('next App Router fixture', () => {
     const fx = makeNextFixture()
     try {
       checkProject(fx.dir)
-      const result = await runRename('formatCount', 'displayCount', { cwd: fx.dir, vue: false, verify: 'project' })
+      const result = await runRename('formatCount', 'displayCount', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
       expect(result.regressions).toEqual([])
       expect(result.changes.map(change => change.rel).sort()).toEqual([
         'app/api/status/route.ts',
@@ -92,8 +93,8 @@ describe('next App Router fixture', () => {
       ])
       writeChanges(result.changes)
       checkProject(fx.dir)
-      expect(scan('formatCount', { cwd: fx.dir })).toEqual([])
-      expect(scan('displayCount', { cwd: fx.dir }).filter(hit => hit.kind === 'identifier-reference')).toHaveLength(3)
+      expect(scan('formatCount', { ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([])
+      expect(scan('displayCount', { ...{ cwd: fx.dir }, engine: vueServices() }).filter(hit => hit.kind === 'identifier-reference')).toHaveLength(3)
     }
     finally { fx.cleanup() }
   })
@@ -102,15 +103,14 @@ describe('next App Router fixture', () => {
     const fx = makeNextFixture()
     try {
       checkProject(fx.dir)
-      const renamed = await runRename('Counter', 'CountButton', { cwd: fx.dir, vue: false, verify: 'project' })
+      const renamed = await runRename('Counter', 'CountButton', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
       expect(renamed.regressions).toEqual([])
       writeChanges(renamed.changes)
 
-      const file = await runRenameFile('components/Counter.tsx', 'components/controls/CountButton.tsx', {
+      const file = await runRenameFile('components/Counter.tsx', 'components/controls/CountButton.tsx', { ...{
         cwd: fx.dir,
-        vue: false,
-        verify: 'project',
-      })
+        verifyMode: 'project',
+      }, engine: vueServices() })
       expect(file.regressions).toEqual([])
       writeChanges(file.changes)
       mkdirSync(dirname(file.fileMove.to), { recursive: true })
@@ -118,11 +118,10 @@ describe('next App Router fixture', () => {
       if (file.selfChange)
         fx.write('components/controls/CountButton.tsx', file.selfChange.after)
 
-      const moved = await runMove('formatCount', 'lib/count.ts', 'lib/display.ts', {
+      const moved = await runMove('formatCount', 'lib/count.ts', 'lib/display.ts', { ...{
         cwd: fx.dir,
-        vue: false,
-        verify: 'project',
-      })
+        verifyMode: 'project',
+      }, engine: vueServices() })
       expect(moved.regressions).toEqual([])
       writeChanges(moved.changes)
       checkProject(fx.dir)

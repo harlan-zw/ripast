@@ -6,7 +6,7 @@ import { it } from 'vitest'
 import { scan } from '../packages/core/src/scan.ts'
 import { makeFixture } from './helpers.ts'
 
-const launcher = resolve('packages/cli/bin/ripast.mjs')
+const launcher = resolve('packages/cli/bin/ripide.mjs')
 const config = {
   compilerOptions: {
     target: 'ES2022',
@@ -20,7 +20,7 @@ const config = {
     jsxImportSource: 'octane',
   },
   tsrx: { compiler: 'octane' },
-  contentMappers: [{ package: '@tsrx/content-mapper', extensions: ['.tsrx'], options: { compiler: '@ripast/tsrx/compiler' } }],
+  contentMappers: [{ package: '@tsrx/content-mapper', extensions: ['.tsrx'], options: { compiler: 'ripide-tsrx/compiler' } }],
   include: ['**/*.ts', '**/*.tsrx'],
 }
 
@@ -63,7 +63,7 @@ function command(cwd: string, args: string[], externalCode = true) {
     cwd,
     encoding: 'utf8',
     timeout: 20000,
-    env: { ...process.env, RIPAST_RUN_EXTERNAL_CODE: externalCode ? '1' : '0' },
+    env: { ...process.env, RIPIDE_RUN_EXTERNAL_CODE: externalCode ? '1' : '0' },
   })
 }
 
@@ -163,7 +163,7 @@ it('tsrx semantic operations require external-code opt-in before writing', () =>
   try {
     const result = command(fx.dir, ['rename', 'oldFn', 'newFn', '--scope', 'helper.ts', '--apply'], false)
     assert.notEqual(result.status, 0)
-    assert.match(result.stderr, /RIPAST_RUN_EXTERNAL_CODE=1/)
+    assert.match(result.stderr, /RIPIDE_RUN_EXTERNAL_CODE=1/)
     assert.equal(fx.read('helper.ts'), files['helper.ts'])
   }
   finally { fx.cleanup() }
@@ -265,6 +265,18 @@ it('tsrx initializes a project with no ordinary TypeScript files before renaming
     const result = command(fx.dir, ['rename', 'target', 'next', '--scope', 'Only.tsrx', '--apply'])
     assert.equal(result.status, 0, result.stderr)
     assert.equal(fx.read('Only.tsrx'), source.replaceAll('target', 'next'))
+  }
+  finally { fx.cleanup() }
+})
+
+it('tsrx refuses mixed framework semantic plans before writing', () => {
+  const fx = fixture({ 'View.vue': '<script setup lang="ts">import { oldFn } from "./helper.ts"; const value = oldFn()</script><template>{{ value }}</template>\n' })
+  try {
+    const result = command(fx.dir, ['rename', 'oldFn', 'newFn', '--scope', 'helper.ts', '--apply'])
+    assert.notEqual(result.status, 0, result.stdout)
+    assert.match(result.stdout + result.stderr, /TSRX.*framework extensions/)
+    assert.equal(fx.read('helper.ts'), files['helper.ts'])
+    assert.equal(fx.read('Card.tsrx'), files['Card.tsrx'])
   }
   finally { fx.cleanup() }
 })

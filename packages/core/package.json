@@ -1,22 +1,22 @@
 {
-  "name": "@ripast/core",
+  "name": "ripide-api",
   "type": "module",
-  "version": "0.6.1",
-  "description": "AST refactor engine for AI coding agents. Deterministic rename, move, find-usages, and tailwind/CSS class migration across TypeScript. Framework adapters loaded via @ripast/<framework> packages.",
+  "version": "0.7.1",
+  "description": "AST refactor engine for AI coding agents. Deterministic rename, move, find-usages, and tailwind/CSS class migration across TypeScript. Framework adapters loaded via ripide-<framework> packages.",
   "author": {
     "name": "Harlan Wilton",
     "email": "harlan@harlanzw.com",
     "url": "https://harlanzw.com/"
   },
   "license": "MIT",
-  "homepage": "https://github.com/harlan-zw/ripast#readme",
+  "homepage": "https://github.com/harlan-zw/ripide#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/harlan-zw/ripast.git",
+    "url": "git+https://github.com/harlan-zw/ripide.git",
     "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/harlan-zw/ripast/issues"
+    "url": "https://github.com/harlan-zw/ripide/issues"
   },
   "keywords": [
     "ast",
@@ -53,18 +53,18 @@
     "dev:prepare": "obuild --stub"
   },
   "dependencies": {
-    "@vue/compiler-sfc": "^3.5.43",
     "diff": "^9.0.0",
+    "hookable": "^6.1.2",
     "html-entities": "^2.6.0",
     "ignore": "^7.0.12",
-    "magic-string": "^1.4.2",
-    "oxc-parser": "^0.152.0",
+    "magic-string": "^1.4.3",
+    "oxc-parser": "^0.153.0",
     "oxc-walker": "^1.1.1",
     "picomatch": "^4.0.7",
     "std-env": "^4.3.0",
     "typescript-native": "npm:typescript@7.1.0-dev.20260905.1"
   },
   "devDependencies": {
-    "@ripast/tsrx": "workspace:*"
+    "ripide-tsrx": "workspace:*"
   }
 }

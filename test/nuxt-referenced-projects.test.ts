@@ -3,14 +3,17 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove, runRename, runRenameFile } from '@ripast/core'
-import vueAdapter from '@ripast/vue'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
+import { runMove, runRename, runRenameFile } from 'ripide-api'
+import { createVueExtension } from 'ripide-vue'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
+
+const vueAdapter = createVueExtension().semantic!
 
 function fixture(alias: boolean) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-reference-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-reference-'))
   cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
   rmSync(join(dir, 'pages'), { recursive: true, force: true })
   mkdirSync(join(dir, 'app/utils'), { recursive: true })
@@ -35,11 +38,11 @@ function fixture(alias: boolean) {
   return { dir, component, unrelated, specifier }
 }
 
-it.each([{ alias: false, verify: false }, { alias: true, verify: false }, { alias: false, verify: true }, { alias: true, verify: true }])('renames referenced template-only imports with %j', async ({ alias, verify }) => {
+it.each([{ alias: false, verifyMode: 'none' as const }, { alias: true, verifyMode: 'none' as const }, { alias: false, verifyMode: 'touched' as const }, { alias: true, verifyMode: 'touched' as const }])('renames referenced template-only imports with %j', async ({ alias, verifyMode }) => {
   const fx = fixture(alias)
   try {
     const metadata = readFileSync(join(fx.dir, '.nuxt/imports.d.ts'), 'utf8')
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verify })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     assert.equal(result.changes.some(change => change.rel.includes('.nuxt/')), false)
     assert.equal(readFileSync(join(fx.dir, '.nuxt/imports.d.ts'), 'utf8'), metadata)
@@ -76,7 +79,7 @@ it.each([{ alias: false, verify: false }, { alias: true, verify: false }, { alia
 it('keeps unrelated new errors visible with generated verification overlays', async () => {
   const fx = fixture(false)
   try {
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verify: false })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = join(fx.dir, 'app/utils/format.ts')
     const source = readFileSync(provider, 'utf8')
     const plan = vueAdapter.planAutoImportRename!({ cwd: fx.dir, from: 'format', to: 'pretty', sites: [{ filePath: provider, source, pos: source.indexOf('format') }] })
@@ -130,8 +133,8 @@ it.each(['move', 'rename-file'])('rewrites referenced-project Vue imports during
   const fx = fixture(false)
   try {
     const result = operation === 'move'
-      ? await runMove('format', 'app/utils/format.ts', 'app/utils/pretty.ts', { cwd: fx.dir, verify: false })
-      : await runRenameFile('app/utils/format.ts', 'app/utils/pretty.ts', { cwd: fx.dir, verify: false })
+      ? await runMove('format', 'app/utils/format.ts', 'app/utils/pretty.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
+      : await runRenameFile('app/utils/format.ts', 'app/utils/pretty.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     const consumer = result.changes.find(change => change.rel === 'app/components/Explicit.vue')
     assert.ok(consumer, 'The explicit consumer must follow the moved provider.')
     assert.match(consumer.after, /from ['"]\.\.\/utils\/pretty['"]/)

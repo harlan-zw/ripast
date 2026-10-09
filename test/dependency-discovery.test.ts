@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { runCssClassRename, writeChanges } from '@ripast/core'
-import { rgFiles, rgFilesMany } from '@ripast/core/adapter'
+import { runCssClassRename, writeChanges } from 'ripide-api'
+import { rgFiles, rgFilesMany } from 'ripide-api/adapter'
 import { it, vi } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const files = {
@@ -16,7 +17,7 @@ const files = {
 it('cSS rename plans and applies only project files by default without Git ignore rules', async () => {
   const fx = makeFixture(files, false)
   try {
-    const result = await runCssClassRename(new Map([['card', 'panel']]), { cwd: fx.dir })
+    const result = await runCssClassRename(new Map([['card', 'panel']]), { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.deepEqual(result.changes.map(change => change.rel), ['src/App.vue'])
     assert.equal(fx.read('src/App.vue'), files['src/App.vue'])
     writeChanges(result.changes)
@@ -37,13 +38,15 @@ it.each([false, true])('cLI CSS rename preserves dependencies with apply=%s', (a
       'css-class-rename',
       'card',
       'panel',
+      '--profile',
+      'full',
       '--json',
       ...(apply ? ['--apply'] : []),
     ], { cwd: fx.dir, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
     const output = JSON.parse(result.stdout)
-    assert.equal(output.applied, apply)
-    assert.deepEqual(output.changes.map((change: { path: string }) => change.path), ['src/App.vue'])
+    assert.equal(output._tag, apply ? 'Applied' : 'Preview')
+    assert.deepEqual(output.data.changes.map((change: { path: string }) => change.path), ['src/App.vue'])
     assert.equal(fx.read('src/App.vue'), apply ? files['src/App.vue'].replace('card', 'panel') : files['src/App.vue'])
     assert.equal(fx.read('node_modules/dummy/Widget.vue'), files['node_modules/dummy/Widget.vue'])
     assert.equal(fx.read('packages/app/node_modules/other/Widget.vue'), files['packages/app/node_modules/other/Widget.vue'])
@@ -65,7 +68,7 @@ it.each([
   [['!node_modules/**', '**/node_modules/**/*.vue'], ['packages/app/node_modules/other/Widget.vue']],
 ] as const)('discovery preserves dependency opt-in and fallback parity for %j', (glob, expected) => {
   const fx = makeFixture(files, false)
-  const opts = { cwd: fx.dir, glob: glob ? [...glob] : undefined }
+  const opts = { engine: vueServices(), cwd: fx.dir, glob: glob ? [...glob] : undefined }
   const paths = (values: string[]) => values.map(path => relative(fx.dir, path)).sort()
   const check = () => {
     assert.deepEqual(paths(rgFiles('card', opts)), expected)

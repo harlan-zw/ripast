@@ -11,7 +11,7 @@ import { posToLineCol, rgFiles } from './util.ts'
 
 // Client for the native TypeScript language server (TypeScript 7+, `tsc --lsp`).
 // Semantics (rename, references, definitions, diagnostics, file renames) come
-// from the server. ripast owns candidate discovery, text edits, diffing, and
+// from the server. ripide owns candidate discovery, text edits, diffing, and
 // verification policy.
 
 export interface LspPosition {
@@ -73,13 +73,19 @@ export interface TsServer {
 export interface TsServerOptions {
   /** Path to the native `tsc` binary. Defaults to the bundled `typescript-native` platform package. */
   binary?: string
+  /** Arguments for an explicitly supplied server executable. */
+  args?: string[]
+  /** Maximum wait for each request, including initialization. Defaults to 30 seconds. */
+  requestTimeoutMs?: number
+  /** Cancels all work and terminates this operation-owned server. */
+  signal?: AbortSignal
   /** Configured project to load before serving refactor requests. */
   tsconfig?: string
 }
 
-const DEBUG = !!process.env.RIPAST_DEBUG
+const DEBUG = !!process.env.RIPIDE_DEBUG
 
-// ripast renames everywhere. By default the server keeps re-export names
+// ripide renames everywhere. By default the server keeps re-export names
 // stable (`export { renamed as original }`) and leaves consumers untouched.
 // Sent as initializationOptions (raw preference names) and as the answer to
 // every workspace/configuration section (VS Code-style paths).
@@ -89,7 +95,7 @@ const PREFERENCES = {
 }
 
 export function resolveNativeTsc(tsrxCwd?: string): string {
-  const override = process.env.RIPAST_NATIVE_TSC
+  const override = process.env.RIPIDE_NATIVE_TSC
   if (override)
     return override
   const platformPkg = `@typescript/typescript-${process.platform}-${process.arch}`
@@ -102,11 +108,11 @@ export function resolveNativeTsc(tsrxCwd?: string): string {
     platformJson = createRequire(pkgJson).resolve(`${platformPkg}/package.json`)
   }
   catch {
-    throw new Error(`ripast: native TypeScript binary not found for ${process.platform}-${process.arch}. Install ${platformPkg}, or set RIPAST_NATIVE_TSC to a TypeScript 7 tsc binary.`)
+    throw new Error(`ripide: native TypeScript binary not found for ${process.platform}-${process.arch}. Install ${platformPkg}, or set RIPIDE_NATIVE_TSC to a TypeScript 7 tsc binary.`)
   }
   const exe = join(dirname(platformJson), 'lib', process.platform === 'win32' ? 'tsc.exe' : 'tsc')
   if (!existsSync(exe))
-    throw new Error(`ripast: native TypeScript binary missing at ${exe}.`)
+    throw new Error(`ripide: native TypeScript binary missing at ${exe}.`)
   return exe
 }
 
@@ -121,15 +127,20 @@ interface OpenDocument {
 }
 
 export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Promise<TsServer> {
+  const requestTimeoutMs = opts.requestTimeoutMs ?? 30_000
+  if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0)
+    throw new Error('TypeScript request deadline must be a positive number')
+  if (opts.signal?.aborted)
+    throw new Error('TypeScript server startup cancelled', { cause: opts.signal.reason })
   const tsrxFiles = rgFiles('', { cwd, glob: '*.tsrx', listAll: true })
-  const runExternalCode = process.env.RIPAST_RUN_EXTERNAL_CODE === '1'
+  const runExternalCode = process.env.RIPIDE_RUN_EXTERNAL_CODE === '1'
   if (tsrxFiles.length && !runExternalCode)
-    throw new Error('ripast: TSRX semantic operations require RIPAST_RUN_EXTERNAL_CODE=1 and a configured .tsrx content mapper')
+    throw new Error('ripide: TSRX semantic operations require RIPIDE_RUN_EXTERNAL_CODE=1 and a configured .tsrx content mapper')
   const binary = opts.binary ?? resolveNativeTsc(tsrxFiles.length ? cwd : undefined)
   const tsconfig = opts.tsconfig ? resolve(cwd, opts.tsconfig) : undefined
   const tsconfigText = tsconfig ? readFileSync(tsconfig, 'utf8') : undefined
   const preferences = tsconfig ? { ...PREFERENCES, customConfigFileName: basename(tsconfig) } : PREFERENCES
-  const proc: ChildProcessWithoutNullStreams = spawn(binary, ['--lsp', '--stdio'], { cwd, stdio: 'pipe' })
+  const proc: ChildProcessWithoutNullStreams = spawn(binary, opts.args ?? ['--lsp', '--stdio'], { cwd, stdio: 'pipe' })
   const pending = new Map<number, Pending>()
   const documents = new Map<string, OpenDocument>()
   const stderrTail: string[] = []
@@ -138,18 +149,24 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
   let terminalError: Error | undefined
   let hasTsrxMapper = false
   let mapperWait: { resolve: () => void, reject: (error: Error) => void } | undefined
+  let shutdownTimer: ReturnType<typeof setTimeout> | undefined
 
   const stop = (error: Error): void => {
     if (terminalError)
       return
     terminalError = error
     mapperWait?.reject(error)
+    opts.signal?.removeEventListener('abort', abort)
     for (const entry of pending.values())
       entry.reject(error)
     pending.clear()
     // Cancel queued writes before terminating the reader on every platform.
     proc.stdin.destroy()
     proc.kill()
+    if (proc.pid && proc.exitCode === null && proc.signalCode === null) {
+      // A stalled child may ignore SIGTERM. Bound its operation-owned lifetime.
+      shutdownTimer = setTimeout(() => proc.kill('SIGKILL'), 1000)
+    }
   }
 
   const write = (message: object): void => {
@@ -160,6 +177,13 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     proc.stdin.write(body)
   }
 
+  const abort = (): void => {
+    for (const id of pending.keys())
+      write({ jsonrpc: '2.0', method: '$/cancelRequest', params: { id } })
+    stop(new Error('TypeScript server operation cancelled', { cause: opts.signal?.reason }))
+  }
+  opts.signal?.addEventListener('abort', abort, { once: true })
+
   const stderrHint = (): string => stderrTail.length ? `: ${stderrTail.join(' ').trim()}` : ''
 
   const request = (method: string, params: unknown): Promise<any> => {
@@ -167,7 +191,19 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       return Promise.reject(terminalError)
     const id = ++seq
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
+      const timer = setTimeout(() => {
+        stop(new Error(`TypeScript request deadline exceeded: ${method} (${requestTimeoutMs}ms)`))
+      }, requestTimeoutMs)
+      pending.set(id, {
+        resolve(value) {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        reject(error) {
+          clearTimeout(timer)
+          reject(error)
+        },
+      })
       write({ jsonrpc: '2.0', id, method, params })
     })
   }
@@ -198,7 +234,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
         return
       pending.delete(message.id)
       if (message.error)
-        entry.reject(new Error(`ripast: TypeScript server error ${message.error.code}: ${message.error.message}`))
+        entry.reject(new Error(`ripide: TypeScript server error ${message.error.code}: ${message.error.message}`))
       else
         entry.resolve(message.result)
     }
@@ -229,20 +265,21 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       stderrTail.shift()
   })
   proc.on('exit', (code) => {
-    stop(new Error(`ripast: TypeScript server exited with code ${code}${stderrHint()}`))
+    clearTimeout(shutdownTimer)
+    stop(new Error(`ripide: TypeScript server exited with code ${code}${stderrHint()}`))
   })
   proc.on('error', (error) => {
-    stop(new Error(`ripast: could not start TypeScript server at ${binary}: ${error.message}`))
+    stop(new Error(`ripide: could not start TypeScript server at ${binary}: ${error.message}`, { cause: error }))
   })
   proc.stdin.on('error', (error) => {
     // A queued write can fail after disposal. Its requests already have the terminal error.
-    stop(new Error(`ripast: TypeScript server input failed: ${error.message}${stderrHint()}`))
+    stop(new Error(`ripide: TypeScript server input failed: ${error.message}${stderrHint()}`))
   })
 
   await request('initialize', {
     processId: process.pid,
     rootUri: pathToFileURL(cwd).href,
-    workspaceFolders: [{ uri: pathToFileURL(cwd).href, name: 'ripast' }],
+    workspaceFolders: [{ uri: pathToFileURL(cwd).href, name: 'ripide' }],
     initializationOptions: { ...preferences, runExternalCode },
     capabilities: {
       workspace: {
@@ -332,7 +369,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       // Native TypeScript discovers configured TSRX-only projects from these hints.
       // Wait for synchronization registration before opening mapped documents.
       await request('custom/setContentMapperContributions', {
-        contributions: [{ contributorId: 'ripast-tsrx', extensions: ['.tsrx'] }],
+        contributions: [{ contributorId: 'ripide-tsrx', extensions: ['.tsrx'] }],
         openDocuments: tsrxFiles.map(path => ({ uri: uriOf(path) })),
       })
       if (!hasTsrxMapper) {
@@ -344,7 +381,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
               reject(error)
             else resolve()
           }
-          const timer = setTimeout(() => finish(new Error('ripast: no TSRX content mapper was registered. Configure @tsrx/content-mapper for .tsrx with @ripast/tsrx/compiler and use a compatible TypeScript 7.1 build')), 5000)
+          const timer = setTimeout(() => finish(new Error('ripide: no TSRX content mapper was registered. Configure @tsrx/content-mapper for .tsrx with ripide-tsrx/compiler and use a compatible TypeScript 7.1 build')), 5000)
           mapperWait = { resolve: () => finish(), reject: finish }
           if (terminalError)
             finish(terminalError)
@@ -352,7 +389,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       }
     }
     catch (cause) {
-      const error = cause instanceof Error ? cause : new Error('ripast: TSRX content mapper initialization failed', { cause })
+      const error = cause instanceof Error ? cause : new Error('ripide: TSRX content mapper initialization failed', { cause })
       stop(error)
       throw error
     }
@@ -361,13 +398,13 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
   for (const path of tsrxFiles) {
     open(path)
     const report = await request('textDocument/diagnostic', { textDocument: { uri: uriOf(path) } }).catch((cause) => {
-      const error = new Error('ripast: no TSRX content mapper could load the source. Configure @tsrx/content-mapper for .tsrx', { cause })
+      const error = new Error('ripide: no TSRX content mapper could load the source. Configure @tsrx/content-mapper for .tsrx', { cause })
       stop(error)
       throw error
     })
     const failure = report?.items?.find((diagnostic: LspDiagnostic) => /^(?:TSRX)?77100[0-3]$/.test(String(diagnostic.code)))
     if (failure) {
-      const error = new Error(`ripast: TSRX content mapper failed for ${path}: ${failure.message}`)
+      const error = new Error(`ripide: TSRX content mapper failed for ${path}: ${failure.message}`)
       stop(error)
       throw error
     }
@@ -422,7 +459,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     open,
     textOf,
     dispose() {
-      stop(new Error('ripast: TypeScript server disposed.'))
+      stop(new Error('ripide: TypeScript server disposed.'))
     },
   }
 }

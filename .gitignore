@@ -19,7 +19,7 @@ coverage
 .npmrc
 .claude/
 CONTEXT.md
-.ripast-tmp-*/
+.ripide-tmp-*/
 *.tgz
 
 # PR Lens writes its previews here. They are rebuilt on demand.

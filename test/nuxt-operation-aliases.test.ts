@@ -3,12 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove } from '@ripast/core'
+import { runMove } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 
 function fixture() {
-  const cwd = mkdtempSync(join(tmpdir(), 'ripast-nuxt-operation-'))
+  const cwd = mkdtempSync(join(tmpdir(), 'ripide-nuxt-operation-'))
   const write = (path: string, source: string) => {
     mkdirSync(join(cwd, path, '..'), { recursive: true })
     writeFileSync(join(cwd, path), source)
@@ -38,12 +39,12 @@ function evaluate(source: string, require: (specifier: string) => unknown, globa
 it('refreshes generated provider aliases between move operations', async () => {
   const fx = fixture()
   try {
-    const first = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verify: false })
+    const first = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.cwd, verifyMode: 'none' as const }, engine: vueServices() })
     const destination = evaluate(first.changes.find(change => change.rel === 'lib/format.ts')!.after, () => assert.fail('unexpected import'))
     assert.equal(evaluate(first.changes.find(change => change.rel === 'app/pages/consumer.ts')!.after, () => destination).result, 8)
 
     fx.configure('app/active', 'lib')
-    const second = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verify: false })
+    const second = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.cwd, verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(second.changes.find(change => change.rel === 'app/pages/consumer.ts'), undefined)
     const active = evaluate(readFileSync(join(fx.cwd, 'app/active/format.ts'), 'utf8'), () => assert.fail('unexpected import'))
     assert.equal(evaluate(readFileSync(join(fx.cwd, 'app/pages/consumer.ts'), 'utf8'), () => assert.fail('unexpected import'), active).result, 70)
@@ -56,7 +57,7 @@ it('refreshes consumer import aliases between move operations', async () => {
   try {
     for (const destination of ['lib', 'other']) {
       fx.configure('app/utils', destination)
-      const result = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verify: false })
+      const result = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.cwd, verifyMode: 'none' as const }, engine: vueServices() })
       const provider = evaluate(result.changes.find(change => change.rel === 'lib/format.ts')!.after, () => assert.fail('unexpected import'))
       const consumer = result.changes.find(change => change.rel === 'app/pages/consumer.ts')!
       const value = evaluate(consumer.after, (specifier) => {

@@ -1,12 +1,12 @@
-import type { FileChange, ScanFn } from '@ripast/core/adapter'
+import type { FileChange, ScanFn } from 'ripide-api/adapter'
 import type { PathAlias } from './nuxt-paths.ts'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { rgFiles } from '@ripast/core/adapter'
 import { parse } from '@vue/compiler-sfc'
-import { loadNuxtBindingNames, nuxtConsumerContext } from './nuxt-bindings.ts'
+import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
+import { rgVueFiles } from './source.ts'
 
 export interface ExplicitImportContext {
   cwd: string
@@ -28,26 +28,36 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
   const out: FileChange[] = []
   const byContext = new Map<string, Map<string, string>>()
   const aliasesByContext = new Map<string, PathAlias[]>()
-  for (const filePath of rgFiles('', { cwd, listAll: true })) {
+  for (const filePath of rgVueFiles('', { cwd, listAll: true })) {
     if (isGeneratedNuxtPath(cwd, filePath))
       continue
     if (filePath === fromAbs || filePath === toAbs)
       continue
     const context = nuxtConsumerContext(filePath, cwd)
-    let names = byContext.get(context)
+    const key = nuxtImportMetadataPaths(context, filePath).join('|')
+    let names = byContext.get(key)
     if (!names) {
       names = new Map()
       for (const symbol of symbols) {
-        const binding = loadNuxtBindingNames(context, symbol, fromAbs)
-        if (binding._tag === 'Unknown')
-          throw new Error(`ripast: cannot resolve Nuxt auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
+        const binding = loadNuxtBindingNames(context, symbol, fromAbs, filePath)
+        if (binding._tag === 'Unknown') {
+          const provider = loadNuxtBindingNames(nuxtConsumerContext(fromAbs, cwd), symbol, fromAbs)
+          const possibleNames = new Set([symbol, ...provider._tag === 'Resolved' ? provider.names : []])
+          if (!unboundNuxtSymbols(filePath, byPath.get(filePath)?.after ?? readFileSync(filePath, 'utf8'), possibleNames).size) {
+            names = undefined
+            break
+          }
+          throw new Error(`ripide: cannot resolve Nuxt auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
+        }
         for (const name of binding.names) {
           if (names.has(name) && names.get(name) !== symbol)
-            throw new Error(`ripast: cannot resolve the Nuxt auto-import binding "${name}". Run Nuxt prepare first.`)
+            throw new Error(`ripide: cannot resolve the Nuxt auto-import binding "${name}". Run Nuxt prepare first.`)
           names.set(name, symbol)
         }
       }
-      byContext.set(context, names)
+      if (!names)
+        continue
+      byContext.set(key, names)
     }
     if (!names.size)
       continue

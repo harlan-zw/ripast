@@ -1,11 +1,11 @@
 # Octane TSRX support
 
-This optional package adds authored-source parsing and a native TypeScript content-mapper bridge for Octane `.tsrx` files. Plain TypeScript and Vue keep Ripast's existing compiler. TSRX semantic operations use this package's pinned native TypeScript build.
+This optional package adds authored-source parsing and a native TypeScript content-mapper bridge for Octane `.tsrx` files. Plain TypeScript and Vue keep RipIDE's existing compiler. TSRX semantic operations use this package's pinned native TypeScript build.
 
 Requires Node 22.22.2 or newer. Install the optional adapter in the consumer project, keeping its existing Octane version:
 
 ```sh
-bun add --dev @ripast/cli @ripast/tsrx @tsrx/content-mapper
+bun add --dev ripide ripide-tsrx @tsrx/content-mapper
 ```
 
 Add the mapper to the consumer's tsconfig, retaining its other compiler options:
@@ -16,7 +16,7 @@ Add the mapper to the consumer's tsconfig, retaining its other compiler options:
     {
       "package": "@tsrx/content-mapper",
       "extensions": [".tsrx"],
-      "options": { "compiler": "@ripast/tsrx/compiler" }
+      "options": { "compiler": "ripide-tsrx/compiler" }
     }
   ],
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.tsrx"]
@@ -26,13 +26,13 @@ Add the mapper to the consumer's tsconfig, retaining its other compiler options:
 Scanning requires the adapter and the project-local Octane compiler. Semantic operations additionally require explicit external-code opt-in. The CLI refuses a missing or broken mapper before writing:
 
 ```sh
-bunx --package @ripast/cli ripast scan oldFn --profile full
+bunx --package ripide ripide scan oldFn --profile full
 
-RIPAST_RUN_EXTERNAL_CODE=1 bunx --package @ripast/cli ripast \
+RIPIDE_RUN_EXTERNAL_CODE=1 bunx --package ripide ripide \
   rename oldFn newFn --scope src/helper.ts --profile full
 
 # Apply after reviewing the preview
-RIPAST_RUN_EXTERNAL_CODE=1 bunx --package @ripast/cli ripast \
+RIPIDE_RUN_EXTERNAL_CODE=1 bunx --package ripide ripide \
   rename oldFn newFn --scope src/helper.ts --apply
 ```
 
@@ -41,7 +41,7 @@ RIPAST_RUN_EXTERNAL_CODE=1 bunx --package @ripast/cli ripast \
 Known limits:
 
 - This adapter targets Octane. Other TSRX compilers are not qualified.
-- A code block renders one output node. Wrap sibling `@if` and `@for` outputs in `<>…</>`. Octane 0.10.2's Volar compiler throws instead of returning a diagnostic for the invalid bare form; Ripast refuses to write it.
+- A code block renders one output node. Wrap sibling `@if` and `@for` outputs in `<>…</>`. Octane 0.10.2's Volar compiler throws instead of returning a diagnostic for the invalid bare form; RipIDE refuses to write it.
 - Moving or deleting a declaration authored in TSRX, CSS class migrations, mixed Vue/TSRX projects, and monorepo-wide project references are not qualified.
 - A successful CLI rename is not a full application build. Keep the consumer's existing typecheck and build gates.
 

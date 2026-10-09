@@ -3,13 +3,14 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove } from '@ripast/core'
 import { compileScript, parse } from '@vue/compiler-sfc'
+import { runMove } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 
 it('preserves local Vue bindings when moving a Nuxt auto-import out of scope', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-move-safety-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-move-safety-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     const source = `<script setup lang="ts">
@@ -19,7 +20,7 @@ const label = format(7)
 <template>{{ label }} {{ format(1) }}</template>
 `
     writeFileSync(join(dir, 'pages/local.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/local.vue')?.after ?? source
     const { descriptor } = parse(transformed)
     const compiled = compileScript(descriptor, { id: 'local' })
@@ -43,11 +44,11 @@ it.each([
   `<script setup lang="ts">defineProps<{ format: (value: number) => string }>()</script><template>{{ format(1) }}</template>`,
   `<script setup lang="ts">defineProps(['format'])</script><template>{{ format(1) }}</template>`,
 ])('preserves locally resolved Vue consumers during Nuxt moves: %s', async (source) => {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-local-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-local-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     writeFileSync(join(dir, 'pages/local.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(result.changes.find(change => change.rel === 'pages/local.vue'), undefined)
     assert.equal(readFileSync(join(dir, 'pages/local.vue'), 'utf8'), source)
   }
@@ -57,7 +58,7 @@ it.each([
 })
 
 it.each([false, true])('preserves imported prop types and refuses prop capture: free script use %s', async (freeUse) => {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-prop-binding-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-prop-binding-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     writeFileSync(join(dir, 'types.ts'), 'export interface Props { format: (value: number) => string }')
@@ -72,12 +73,12 @@ ${freeUse ? 'const label = format(7)' : ''}
     writeFileSync(join(dir, 'pages/props.vue'), source)
     if (freeUse) {
       await assert.rejects(
-        () => runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false }),
+        () => runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() }),
         /Use an explicit import alias before moving it/,
       )
     }
     else {
-      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
       assert.equal(result.changes.find(change => change.rel === 'pages/props.vue'), undefined)
     }
     assert.equal(readFileSync(join(dir, 'pages/props.vue'), 'utf8'), source)
@@ -93,11 +94,11 @@ it.each([
   `const { format } = { format: (value: number) => value * 10 }; export const label = format(7)`,
   `function local(format: (value: number) => number) { return format(7) }; export const label = local(value => value * 10)`,
 ])('preserves locally bound TypeScript consumers during Nuxt moves: %s', async (source) => {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-ts-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-ts-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     writeFileSync(join(dir, 'consumer.ts'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'consumer.ts')?.after ?? source
     const exports = {}
     runInNewContext(ts.transpileModule(transformed, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
@@ -110,7 +111,7 @@ it.each([
 })
 
 it('imports free uses while preserving function parameters and existing import aliases', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-mixed-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-mixed-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     const source = `import { format as other } from './lib/format'
@@ -118,7 +119,7 @@ function local(format: (value: number) => number) { return format(7) }
 export const labels = [local(value => value * 10), format(2), other(3)]
 `
     writeFileSync(join(dir, 'consumer.ts'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'consumer.ts')!.after
     const exports = {}
     runInNewContext(ts.transpileModule(transformed, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
@@ -139,7 +140,7 @@ export const labels = [local(value => value * 10), format(2), other(3)]
 })
 
 it('imports normal-script free uses without capturing setup-local bindings', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-normal-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-normal-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     const source = `<script lang="ts">export const normalLabel = format(2)</script>
@@ -150,7 +151,7 @@ const label = format(7)
 <template>{{ label }}</template>
 `
     writeFileSync(join(dir, 'pages/dual.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/dual.vue')!.after
     const { descriptor } = parse(transformed)
     const compiled = compileScript(descriptor, { id: 'dual' })
@@ -180,7 +181,7 @@ const label = format(7)
 })
 
 it('handles imported macro types without compiling their runtime props', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-props-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-props-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     writeFileSync(join(dir, 'types.ts'), 'export interface Props { label: string }')
@@ -192,7 +193,7 @@ const label = format(7)
 <template>{{ label }}</template>
 `
     writeFileSync(join(dir, 'pages/props.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/props.vue')!.after
     const { descriptor } = parse(transformed)
     const setup = ts.createSourceFile('setup.ts', descriptor.scriptSetup!.content, ts.ScriptTarget.Latest, true)
@@ -208,9 +209,9 @@ const label = format(7)
 
 it.each([
   `export default { name: 'Dual' }`,
-  `function __ripastSetup() { return 1 }; export default {}`,
+  `function __ripideSetup() { return 1 }; export default {}`,
 ])('imports into script setup when a normal script appears first: %s', async (normalSource) => {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-dual-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-dual-'))
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     const source = `<script lang="ts">${normalSource} /*${'normal padding '.repeat(30)}*/</script>
@@ -221,7 +222,7 @@ const label = format(local(value => value))
 <template>{{ label }}</template>
 `
     writeFileSync(join(dir, 'pages/dual.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verify: false })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/dual.vue')!.after
     const { descriptor } = parse(transformed)
     const compiled = compileScript(descriptor, { id: 'dual' })

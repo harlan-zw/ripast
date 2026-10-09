@@ -1,24 +1,24 @@
 import type { FileChange, TextEdit } from './util.ts'
+import type { DiagnosticRecorder } from './verification.ts'
 import type { Regression } from './verify.ts'
-import type { TemplateExpression } from './vue-template.ts'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 
-// Adapter SDK entry. @ripast/<framework> packages import from here.
-export { isInsideAutoImportScope } from './nuxt.ts'
-export { scan } from './scan.ts'
-export type { ScanHit, ScanOptions } from './scan.ts'
+export { cssSyntax, encodeAttributeValue, mapIncludesAny, rewriteCss, rewriteStringsInProgram, visitCss, visitProgramClassStrings } from './css-class-source.ts'
+export type { CssClassSourceFile } from './css-class-source.ts'
+
+export { completeClassBounds, rewriteClassString, visitClassTokens } from './css-class-token.ts'
+export type { RenameMap } from './css-class-token.ts'
 
 export type ScanFn = typeof import('./scan.ts').scan
+export { diagnosticRegressions } from './diagnostic-matching.ts'
+// Adapter SDK entry. ripide-<framework> packages import from here.
+export { scan } from './scan.ts'
+export type { ScanHit, ScanOptions } from './scan.ts'
 export { offsetOfPosition } from './ts-server.ts'
 export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
-export type { TextEdit } from './util.ts'
-export type { FileChange } from './util.ts'
-export type { Regression } from './verify.ts'
-export { extractTemplateExpressions, hyphenateVueName, parseVueTemplateAst, rewriteTemplateReferences } from './vue-template.ts'
-export type { TemplateExpression } from './vue-template.ts'
 
-export type FrameworkName = 'vue' | 'nuxt' | 'svelte'
+export type FrameworkName = string
+
+export interface SourceExpression { code: string, offsetInSource: number }
 
 export interface RenameSite {
   filePath: string
@@ -29,6 +29,8 @@ export interface RenameSite {
 export interface AutoImportRenamePlan {
   changes: FileChange[]
   verificationChanges: FileChange[]
+  /** Consumers whose generated barrel uses a different provider for this name. */
+  unrelatedGeneratedImports?: Set<string>
   transformEdits: (path: string, source: string, edits: TextEdit[]) => TextEdit[]
 }
 
@@ -43,9 +45,6 @@ export interface AddExplicitImportsContext {
 
 export interface FrameworkAdapter {
   name: string
-  capabilities?: {
-    nuxt?: boolean
-  }
 
   hasFilesContaining: (cwd: string, pattern: string) => boolean
 
@@ -76,9 +75,8 @@ export interface FrameworkAdapter {
     tsconfigPath: string,
     cwd: string,
     changes: FileChange[],
+    onChecked?: DiagnosticRecorder,
   ) => Promise<Regression[]>
-
-  extractTemplateExpressions?: (source: string) => TemplateExpression[]
 
   autoImportScopes?: (cwd: string) => Set<string>
 
@@ -103,11 +101,14 @@ export interface FrameworkAdapter {
     scopes: Set<string>
   }) => void
 
-  /** Whether `filePath` is a framework-generated file (e.g. Nuxt's `.nuxt/`). */
+  /** Whether filePath is generated source. */
   isGeneratedPath?: (cwd: string, filePath: string) => boolean
 
   /** Drop changes targeting framework-generated paths. Mutates `changes` in place. */
   filterGeneratedChanges?: (cwd: string, changes: FileChange[]) => void
+
+  /** Prove an unresolved consumer specifier points at the planned destination. */
+  isPlannedImportTarget?: (cwd: string, consumer: string, specifier: string, target: string) => boolean
 
   /**
    * After a move/rename that takes a symbol or file out of an auto-import scope,
@@ -166,12 +167,14 @@ export interface DoctorContextFile {
 }
 
 export interface DoctorAdapter {
+  /** Names of the framework checks registered by this adapter. */
+  checks: readonly string[]
   /** Files the framework treats as entries (won't be flagged as orphans). Paths relative to cwd. */
   entryFiles?: (cwd: string) => string[]
   /** Return true to drop a finding (false-positive filter). */
   filterFinding?: (cwd: string, finding: DoctorFinding) => boolean
   /** Framework-specific checks. Receives a shared parse context to avoid re-reading files. */
-  extraFindings?: (cwd: string, ctx?: DoctorContext) => DoctorFinding[]
+  extraFindings?: (cwd: string, ctx: DoctorContext | undefined, checks: ReadonlySet<string>) => DoctorFinding[]
 }
 
 export interface ComponentInfo {
@@ -181,7 +184,7 @@ export interface ComponentInfo {
   aliases: string[]
   file: string
   rel: string
-  kind: 'sfc' | 'define-component'
+  kind: string
   layer?: string
   scope: 'auto-import' | 'global' | 'explicit'
   shadowed: boolean
@@ -195,69 +198,12 @@ export interface ComponentUsageInfo {
   rel: string
   line: number
   col: number
-  form: 'tag-pascal' | 'tag-kebab' | 'resolveComponent' | 'dynamic-is-literal' | 'dynamic-is-binding'
+  form: string
   binding?: string
 }
 
-const cache = new Map<FrameworkName, FrameworkAdapter | null>()
+export type { TextEdit } from './util.ts'
+export type { FileChange } from './util.ts'
 
-export async function loadAdapter(name: FrameworkName): Promise<FrameworkAdapter | null> {
-  if (cache.has(name))
-    return cache.get(name) ?? null
-
-  const tryImport = async (spec: string): Promise<FrameworkAdapter | null> => {
-    try {
-      const mod = await import(spec)
-      return (mod.default ?? mod) as FrameworkAdapter
-    }
-    catch { return null }
-  }
-
-  const adapterName = name === 'nuxt' ? 'vue' : name
-  const external = await tryImport(`@ripast/${adapterName}`)
-  const bundledVue = new URL('../../vue/src/index.ts', import.meta.url).href
-  const resolved = external ?? (adapterName === 'vue' ? await tryImport(bundledVue) : null)
-  const adapter = name === 'nuxt' && resolved
-    ? { ...resolved, capabilities: { ...resolved.capabilities, nuxt: true } }
-    : resolved
-
-  cache.set(name, adapter)
-  return adapter
-}
-
-export function detectFrameworks(cwd: string): FrameworkName[] {
-  const out: FrameworkName[] = []
-  const seen = new Set<string>()
-  let dir = cwd
-  for (let i = 0; i < 6; i++) {
-    const pkgPath = join(dir, 'package.json')
-    if (existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-        const allDeps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies }
-        for (const [name, marker] of [
-          ['nuxt', ['nuxt', '@nuxt/kit']] as const,
-          ['vue', ['vue']] as const,
-          ['svelte', ['svelte', '@sveltejs/kit']] as const,
-        ]) {
-          if (seen.has(name))
-            continue
-          if (marker.some(m => allDeps[m])) {
-            out.push(name as FrameworkName)
-            seen.add(name)
-          }
-        }
-      }
-      catch {}
-    }
-    const parent = join(dir, '..')
-    if (parent === dir)
-      break
-    dir = parent
-  }
-  return out
-}
-
-export function resetAdapterCache(): void {
-  cache.clear()
-}
+export type { DiagnosticRecorder } from './verification.ts'
+export type { Regression } from './verify.ts'

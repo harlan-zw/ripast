@@ -4,6 +4,7 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
 import { runDelete } from '../packages/core/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([
@@ -17,7 +18,7 @@ it.each([
     'tsconfig.json': JSON.stringify({ compilerOptions: { module: 'ESNext', moduleResolution: 'bundler', allowImportingTsExtensions: true, noEmit: true }, files: ['source.ts'] }),
   })
   try {
-    await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir }), /still has.*reference[\s\S]*consumer\.ts/)
+    await assert.rejects(runDelete('helper', 'source.ts', { ...{ cwd: fx.dir }, engine: vueServices() }), /still has.*reference[\s\S]*consumer\.ts/)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/consumer.ts`).href)})).${expression})`], { encoding: 'utf8' })
     assert.equal(output.trim(), '42')
   }

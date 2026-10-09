@@ -30,7 +30,7 @@ const TSCONFIG = JSON.stringify({
 export function makeBenchFixture(opts: BenchFixtureOptions = {}): BenchFixture {
   const fileCount = opts.files ?? 500
   const importersPerSymbol = opts.importersPerSymbol ?? 160
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-bench-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-bench-'))
 
   const config = JSON.parse(TSCONFIG)
   config.include = [join(dir, 'src/**/*.ts')]

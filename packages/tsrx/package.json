@@ -1,8 +1,8 @@
 {
-  "name": "@ripast/tsrx",
+  "name": "ripide-tsrx",
   "type": "module",
-  "version": "0.6.1",
-  "description": "Octane compiler bridge for Ripast's native TSRX content mapper.",
+  "version": "0.7.1",
+  "description": "Octane compiler bridge for RipIDE's native TSRX content mapper.",
   "license": "MIT",
   "exports": {
     "./package.json": "./package.json",
@@ -11,13 +11,19 @@
       "default": "./dist/compiler.mjs"
     }
   },
-  "files": ["dist"],
-  "engines": { "node": ">=22.22.2" },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.22.2"
+  },
   "scripts": {
     "build": "obuild",
     "dev:prepare": "obuild --stub"
   },
-  "peerDependencies": { "octane": ">=0.9.0" },
+  "peerDependencies": {
+    "octane": ">=0.9.0"
+  },
   "dependencies": {
     "@tsrx/content-mapper": "0.1.2",
     "typescript-native": "npm:typescript@7.1.0-dev.20260930.4"

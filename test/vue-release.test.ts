@@ -1,7 +1,8 @@
-import { runVueTemplateUnwrap, runVueTemplateWrap, scan } from '@ripast/core'
-import { parseComponentSource } from '@ripast/vue'
 import { parse } from '@vue/compiler-sfc'
+import { scan } from 'ripide-api'
+import { parseComponentSource, runVueTemplateUnwrap, runVueTemplateWrap } from 'ripide-vue'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 function templateTags(source: string): string[] {
@@ -53,7 +54,7 @@ describe('vue release regressions', () => {
       'Page.vue': '<script setup>\nconst count = 1\n</script>\n<template>\n  <div>{{ count }}</div>\n</template>',
     }, false)
     try {
-      const hits = scan('count', { cwd: fx.dir, kinds: ['identifier-reference'] })
+      const hits = scan('count', { ...{ cwd: fx.dir, kinds: ['identifier-reference'] }, engine: vueServices() })
       expect(hits.map(hit => ({ line: hit.line, col: hit.col }))).toEqual([{ line: 5, col: 11 }])
     }
     finally { fx.cleanup() }
@@ -62,8 +63,8 @@ describe('vue release regressions', () => {
   it('excludes static directive argument names from identifier references', () => {
     const fx = makeFixture({ 'Page.vue': '<template><div :title="label" :[field]="label" /></template>' }, false)
     try {
-      expect(scan('title', { cwd: fx.dir, kinds: ['identifier-reference'] })).toEqual([])
-      expect(scan('field', { cwd: fx.dir, kinds: ['identifier-reference'] }).map(hit => hit.col)).toEqual([33])
+      expect(scan('title', { ...{ cwd: fx.dir, kinds: ['identifier-reference'] }, engine: vueServices() })).toEqual([])
+      expect(scan('field', { ...{ cwd: fx.dir, kinds: ['identifier-reference'] }, engine: vueServices() }).map(hit => hit.col)).toEqual([33])
     }
     finally { fx.cleanup() }
   })

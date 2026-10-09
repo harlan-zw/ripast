@@ -1,5 +1,5 @@
 {
-  "name": "ripast-monorepo",
+  "name": "ripide-monorepo",
   "type": "module",
   "private": true,
   "packageManager": "pnpm@12.3.4",
@@ -9,13 +9,13 @@
     "url": "https://harlanzw.com/"
   },
   "license": "MIT",
-  "homepage": "https://github.com/harlan-zw/ripast#readme",
+  "homepage": "https://github.com/harlan-zw/ripide#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/harlan-zw/ripast.git"
+    "url": "git+https://github.com/harlan-zw/ripide.git"
   },
   "bugs": {
-    "url": "https://github.com/harlan-zw/ripast/issues"
+    "url": "https://github.com/harlan-zw/ripide/issues"
   },
   "engines": {
     "node": ">=22.13"
@@ -33,16 +33,14 @@
     "test:watch": "vitest",
     "smoke:package": "node --experimental-strip-types scripts/smoke-package.ts",
     "release": "bumpp --recursive",
+    "release:deprecate": "node --experimental-strip-types scripts/release.ts deprecate",
     "release:download": "node --experimental-strip-types scripts/release.ts download",
     "release:publish": "node --experimental-strip-types scripts/release.ts publish"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^9.5.1",
     "@babel/core": "^7.29.7",
-    "@ripast/cli": "workspace:*",
-    "@ripast/core": "workspace:*",
-    "@ripast/tsrx": "workspace:*",
-    "@ripast/vue": "workspace:*",
+    "ripide-tsrx": "workspace:*",
     "@tsrx/content-mapper": "0.1.2",
     "@types/babel__core": "^7.20.5",
     "@types/node": "^26.6.4",
@@ -56,12 +54,15 @@
     "citty": "^0.2.2",
     "eslint": "^10.12.0",
     "next": "^16.4.0",
-    "obuild": "^0.4.43",
+    "obuild": "^0.4.44",
     "octane": "0.10.2",
     "publint": "^0.3.25",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "solid-js": "^1.9.16",
+    "ripide": "workspace:*",
+    "ripide-api": "workspace:*",
+    "ripide-vue": "workspace:*",
+    "solid-js": "^1.9.17",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^5.0.3",

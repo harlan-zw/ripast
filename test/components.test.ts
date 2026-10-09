@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { parseComponentSource } from '../packages/vue/src/component-parse.ts'
 import { findComponentUsages } from '../packages/vue/src/component-usages.ts'
 import { listComponents } from '../packages/vue/src/components.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const LAYERED_FIXTURE = resolve(__dirname, 'fixtures/nuxt-layers')
@@ -149,8 +150,7 @@ defineProps<MyProps>()
     const tsFile = `import { defineComponent } from 'vue'
 export default defineComponent({
   props: { size: { type: Number, required: true, default: 10 }, label: String },
-  emits: ['click'],
-})`
+  emits: ['click'] })`
     const r = parseComponentSource('/x/E.ts', tsFile)
     expect(r.props.map(p => p.name).sort()).toEqual(['label', 'size'])
     const size = r.props.find(p => p.name === 'size')!
@@ -285,7 +285,7 @@ export {}
       const names = list.map(c => c.name).sort()
       expect(names).toEqual(['AdminFieldBadge', 'AdminFieldsAdminFieldBadge'])
       const { buildComponentInventory } = await import('../packages/core/src/components.ts')
-      const inv = await buildComponentInventory({ cwd: fx.dir })
+      const inv = await buildComponentInventory({ ...{ cwd: fx.dir }, engine: vueServices() })
       expect(inv.duplicates).toHaveLength(0)
     }
     finally { fx.cleanup() }
@@ -307,7 +307,7 @@ export {}
     }, false)
     try {
       const { buildComponentDetail } = await import('../packages/core/src/components.ts')
-      const detail = await buildComponentDetail('AdminFieldBadge', { cwd: fx.dir })
+      const detail = await buildComponentDetail('AdminFieldBadge', { ...{ cwd: fx.dir }, engine: vueServices() })
       expect(detail).not.toBeNull()
       expect(detail!.component.registeredName).toBe('AdminFieldBadge')
       expect(detail!.component.rel).toBe('layers/admin/app/components/AdminFieldBadge.vue')

@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
-import { findRegressions, startTsServer } from '@ripast/core'
+import { findRegressions, startTsServer } from 'ripide-api'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
