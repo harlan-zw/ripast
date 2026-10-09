@@ -6,7 +6,7 @@ import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifierRanges, parseSource } from './declarations.ts'
 import { listImports } from './imports.ts'
 import { startTsServer } from './ts-server.ts'
-import { parseFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+import { parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 import { extractTemplateExpressions } from './vue-template.ts'
 
 export interface ScanHit {
@@ -60,6 +60,86 @@ export interface DeclarationTreeFile {
 
 export interface DeclarationTree {
   files: DeclarationTreeFile[]
+}
+
+export interface DeclarationCacheOptions {
+  maxEntries?: number
+  /** Bound retained source and analysis payloads, measured as UTF-16 bytes. */
+  maxBytes?: number
+}
+
+export interface DeclarationCacheStats {
+  hits: number
+  misses: number
+  evictions: number
+  entries: number
+  bytes: number
+}
+
+export interface DeclarationCache {
+  inspect: (path: string, source: string, cwd: string) => DeclarationTreeFile | null
+  stats: () => DeclarationCacheStats
+  clear: () => void
+}
+
+export interface DeclarationTreeOptions extends ScanOptions {
+  exports?: ExportFilter
+  cache?: DeclarationCache
+}
+
+type DeclarationFileAnalysis = Omit<DeclarationTreeFile, 'file'>
+
+/** Instance-owned syntax analysis. Every lookup checks actual content; no semantic results are retained. */
+export function createDeclarationCache(opts: DeclarationCacheOptions = {}): DeclarationCache {
+  const maxEntries = opts.maxEntries ?? 1024
+  const maxBytes = opts.maxBytes ?? 16 * 1024 * 1024
+  if (!Number.isSafeInteger(maxEntries) || maxEntries <= 0 || !Number.isSafeInteger(maxBytes) || maxBytes <= 0)
+    throw new Error('Declaration cache bounds must be a positive safe integer.')
+  const entries = new Map<string, { source: string, analysis: DeclarationFileAnalysis | null, bytes: number }>()
+  let hits = 0
+  let misses = 0
+  let evictions = 0
+  let bytes = 0
+  const remove = (key: string) => {
+    const entry = entries.get(key)!
+    entries.delete(key)
+    return entry.bytes
+  }
+  return {
+    inspect(path, source, cwd) {
+      const abs = resolve(cwd, path)
+      const cached = entries.get(abs)
+      let analysis: DeclarationFileAnalysis | null
+      if (cached && cached.source === source) {
+        hits++
+        analysis = cached.analysis
+        entries.delete(abs)
+        entries.set(abs, cached)
+      }
+      else {
+        misses++
+        if (cached)
+          bytes -= remove(abs)
+        analysis = inspectDeclarationFile(abs, source, cwd)
+        const size = 2 * (abs.length + source.length + JSON.stringify(analysis).length)
+        if (size <= maxBytes) {
+          while (entries.size >= maxEntries || bytes + size > maxBytes) {
+            bytes -= remove(entries.keys().next().value!)
+            evictions++
+          }
+          entries.set(abs, { source, analysis, bytes: size })
+          bytes += size
+        }
+      }
+      // Consumers may mutate returned declarations. Keep retained analysis isolated.
+      return analysis ? { file: relative(cwd, abs), ...structuredClone(analysis) } : null
+    },
+    stats: () => ({ hits, misses, evictions, entries: entries.size, bytes }),
+    clear() {
+      entries.clear()
+      bytes = 0
+    },
+  }
 }
 
 export interface UnusedDeclarationFile {
@@ -160,20 +240,37 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
   }
 }
 
-export function buildDeclarationTree(opts: ScanOptions & { exports?: ExportFilter } = {}): DeclarationTree {
+export function buildDeclarationTree(opts: DeclarationTreeOptions = {}): DeclarationTree {
   const cwd = opts.cwd ?? process.cwd()
   const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
   const exportFilter = opts.exports ?? 'all'
-  return buildDeclarationTreeForPaths(cwd, files, exportFilter)
+  return buildDeclarationTreeForPaths(cwd, files, exportFilter, opts.cache)
 }
 
-function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter: ExportFilter): DeclarationTree {
+function inspectDeclarationFile(abs: string, source: string, cwd: string): DeclarationFileAnalysis | null {
+  const file = parseSourceFile(abs, source, cwd)
+  if (!file.program)
+    return null
+  return {
+    imports: moduleSpecifiers(file.program as any, 'import'),
+    reexports: moduleSpecifiers(file.program as any, 'reexport'),
+    declarations: collectTopLevelDeclarations(file.program as any, file.fullSource, file.scriptStart),
+  }
+}
+
+function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter: ExportFilter, cache?: DeclarationCache): DeclarationTree {
   const out: DeclarationTreeFile[] = []
   for (const abs of files) {
-    const file = parseFile(abs, cwd)
-    if (!file.program)
+    const source = readFileSync(abs, 'utf8')
+    const file = cache
+      ? cache.inspect(abs, source, cwd)
+      : (() => {
+          const analysis = inspectDeclarationFile(abs, source, cwd)
+          return analysis ? { file: relative(cwd, abs), ...analysis } : null
+        })()
+    if (!file)
       continue
-    const declarations = collectTopLevelDeclarations(file.program as any, file.fullSource, file.scriptStart)
+    const declarations = file.declarations
       .filter((d) => {
         if (exportFilter === 'exported')
           return d.exported
@@ -181,12 +278,11 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
           return !d.exported
         return true
       })
-    const imports = moduleSpecifiers(file.program as any, 'import')
-    const reexports = moduleSpecifiers(file.program as any, 'reexport')
+    const { imports, reexports } = file
     if (!declarations.length && !imports.length && !reexports.length)
       continue
     out.push({
-      file: file.rel,
+      file: file.file,
       imports,
       reexports,
       declarations,
@@ -196,12 +292,12 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
   return { files: out }
 }
 
-export async function buildUnusedDeclarations(opts: ScanOptions & { exports?: ExportFilter } = {}): Promise<UnusedDeclarations> {
+export async function buildUnusedDeclarations(opts: DeclarationTreeOptions = {}): Promise<UnusedDeclarations> {
   const cwd = opts.cwd ?? process.cwd()
   const exportFilter = opts.exports ?? 'local'
   const candidates = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
     .filter(path => !path.endsWith('.vue'))
-  const tree = buildDeclarationTreeForPaths(cwd, candidates, exportFilter)
+  const tree = buildDeclarationTreeForPaths(cwd, candidates, exportFilter, opts.cache)
   const treeByFile = new Map(tree.files.map(file => [resolve(cwd, file.file), file]))
   const potentialReferenceNames = buildPotentialReferenceNames(candidates, cwd)
   const importedNames = buildImportedNames(candidates)

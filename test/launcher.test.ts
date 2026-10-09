@@ -74,7 +74,7 @@ it('built CLI renames a symbol without ripgrep when Vue work is disabled', () =>
     'source.ts': 'export const target = 1',
   })
   try {
-    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripide.mjs'), 'rename', 'target', 'next', '--no-vue', '--no-verify', '--json'], {
+    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripide.mjs'), 'rename', 'target', 'next', '--no-vue', '--no-verify', '--profile', 'full', '--json'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',

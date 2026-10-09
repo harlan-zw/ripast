@@ -30,10 +30,10 @@ console.log(JSON.stringify({ changes: result.changes.length, vueMatch: vueAdapte
   run([join(cwd, 'node_modules/@typescript/typescript6/bin/tsc6'), '--project', 'tsconfig.json'])
   const cli = join(cwd, 'node_modules/ripide/bin/ripide.mjs')
   const isolated = { ...process.env, PATH: cwd }
-  const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-vue', '--no-verify', '--json'], isolated))
+  const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-vue', '--no-verify', '--profile', 'full', '--json'], isolated))
   assert.ok(renamed.changes.some((change: { after: string }) => change.after.includes('export const next')))
   assert.equal(readFileSync(join(cwd, 'source.ts'), 'utf8'), 'export const target = 1\n')
-  const named = JSON.parse(run([process.env.npm_execpath!, 'exec', '--offline', '--', 'ripide', 'rename', 'target', 'next', '--no-vue', '--no-verify', '--json']))
+  const named = JSON.parse(run([process.env.npm_execpath!, 'exec', '--offline', '--', 'ripide', 'rename', 'target', 'next', '--no-vue', '--no-verify', '--profile', 'full', '--json']))
   assert.ok(named.changes.some((change: { after: string }) => change.after.includes('export const next')))
   const sdk = JSON.parse(run(['--experimental-strip-types', 'consumer.ts']))
   assert.ok(sdk.changes > 0)

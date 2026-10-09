@@ -4,6 +4,7 @@ import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { runMain } from 'citty'
 import {
+  buildChangeManifest,
   buildComponentDetail,
   buildComponentInventory,
   buildDeclarationTree,
@@ -361,7 +362,8 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
       blockedByRegression,
       scanned: r.scanned,
       summary: s,
-      changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
+      changes: agentProfile ? buildChangeManifest(r.changes) : r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
+      verification: verify && r.changes.length ? { _tag: 'Checked', newDiagnostics: r.regressions.length } : { _tag: 'Skipped' },
       regressions: r.regressions,
       warnings,
     }
@@ -457,6 +459,16 @@ const renameFileCmd = defineCommand({
     const blockedByRegression = verify && apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
 
+    const moveSource = json && agentProfile ? r.selfChange?.before ?? readFileSync(r.fileMove.from, 'utf8') : undefined
+    const manifest = moveSource !== undefined
+      ? buildChangeManifest(r.changes, {
+          from: relative(process.cwd(), r.fileMove.from),
+          to: relative(process.cwd(), r.fileMove.to),
+          before: moveSource,
+          after: r.selfChange?.after ?? moveSource,
+        })
+      : undefined
+
     if (wrote) {
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
       renameSync(r.fileMove.from, r.fileMove.to)
@@ -481,9 +493,9 @@ const renameFileCmd = defineCommand({
         blockedByRegression,
         scanned: r.scanned,
         summary: s,
-        fileMove: r.fileMove,
-        selfChange: r.selfChange,
-        changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
+        ...(agentProfile ? {} : { fileMove: r.fileMove, selfChange: r.selfChange }),
+        changes: manifest ?? r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
+        verification: verify ? { _tag: 'Checked', newDiagnostics: r.regressions.length } : { _tag: 'Skipped' },
         regressions: r.regressions,
         warnings: r.warnings,
       })}\n`)

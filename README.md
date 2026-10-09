@@ -271,6 +271,9 @@ ripide unused --exports all --json
 <summary><b>🤖 Drive from an AI agent</b></summary>
 
 `--json` emits machine-readable output. `--profile agent` returns compact summaries and is selected automatically in detected agent environments.
+For mutating commands, agent JSON includes relative paths and SHA-256 content versions instead of full source files.
+File moves include both paths. Agents can use this manifest to refresh cached file views.
+Use `--profile full --json` for complete before/after content.
 If verification finds new type errors, the command refuses `--apply` and exits with a non-zero status.
 
 ```bash
@@ -330,6 +333,23 @@ const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cw
 ```
 
 The [core exports](./packages/core/src/index.ts) include refactors, scans, declaration trees, formatters, and the `writeChanges` helper.
+
+Reuse declaration analysis during repeated SDK inspection:
+
+```ts
+import { buildDeclarationTree, createDeclarationCache } from 'ripide-api'
+
+const cache = createDeclarationCache({ maxEntries: 1024, maxBytes: 16 * 1024 * 1024 })
+const tree = buildDeclarationTree({ cwd: process.cwd(), cache })
+const exported = buildDeclarationTree({ cwd: process.cwd(), cache, exports: 'exported' })
+console.log(cache.stats())
+cache.clear()
+```
+
+Each inspection discovers files again and checks their current content.
+The cache retains declaration metadata, imports, and re-exports. It does not retain type or reference results.
+It also works with `buildUnusedDeclarations`; only declaration analysis is cached.
+Instances belong to the caller. Independent CLI processes do not share this cache.
 
 ## Limitations
 
