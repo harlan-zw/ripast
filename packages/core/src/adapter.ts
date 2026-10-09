@@ -209,16 +209,26 @@ export interface ComponentUsageInfo {
 
 const cache = new Map<FrameworkName, FrameworkAdapter | null>()
 
-export async function loadAdapter(name: FrameworkName): Promise<FrameworkAdapter | null> {
-  if (cache.has(name))
+export interface AdapterImports {
+  importModule: (specifier: string) => Promise<{ default?: FrameworkAdapter } | FrameworkAdapter>
+}
+
+export async function loadAdapter(name: FrameworkName, imports?: AdapterImports): Promise<FrameworkAdapter | null> {
+  if (!imports && cache.has(name))
     return cache.get(name) ?? null
 
   const tryImport = async (spec: string): Promise<FrameworkAdapter | null> => {
     try {
-      const mod = await import(spec)
+      const mod = await (imports?.importModule(spec) ?? import(spec))
       return (mod.default ?? mod) as FrameworkAdapter
     }
-    catch { return null }
+    catch (cause) {
+      const missing = cause instanceof Error && 'code' in cause && cause.code === 'ERR_MODULE_NOT_FOUND'
+        && (('url' in cause && cause.url === spec) || cause.message.includes(`Cannot find package '${spec}'`))
+      if (missing)
+        return null
+      throw new Error(`Could not load adapter ${spec}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause })
+    }
   }
 
   const adapterName = name === 'nuxt' ? 'vue' : name
@@ -229,7 +239,8 @@ export async function loadAdapter(name: FrameworkName): Promise<FrameworkAdapter
     ? { ...resolved, capabilities: { ...resolved.capabilities, nuxt: true } }
     : resolved
 
-  cache.set(name, adapter)
+  if (!imports && adapter)
+    cache.set(name, adapter)
   return adapter
 }
 
