@@ -4,6 +4,7 @@ import { runMove } from '../packages/core/src/move.ts'
 import { runRename } from '../packages/core/src/rename.ts'
 import { scan } from '../packages/core/src/scan.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeJsFixture } from './helpers.ts'
 
 it('scan works against .js files with allowJs', async () => {
@@ -12,7 +13,7 @@ it('scan works against .js files with allowJs', async () => {
     'b.js': 'import { tool } from \'./a.js\'\nexport const r = tool()\n',
   })
   try {
-    const hits = scan('tool', { cwd: fx.dir })
+    const hits = scan('tool', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.ok(hits.length >= 2, `expected hits in both files, got ${hits.length}`)
   }
   finally { fx.cleanup() }
@@ -24,7 +25,7 @@ it('rename updates .js declaration and cross-file .js imports', async () => {
     'b.js': 'import { tool } from \'./a.js\'\nexport const r = tool()\n',
   })
   try {
-    const result = await runRename('tool', 'gadget', { cwd: fx.dir, verifyMode: 'none' as const })
+    const result = await runRename('tool', 'gadget', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(result.changes)
     assert.match(fx.read('a.js'), /export function gadget/)
     assert.doesNotMatch(fx.read('a.js'), /export function tool/)
@@ -41,7 +42,7 @@ it('move relocates a .js function and rewrites import sites', async () => {
     'c.js': '',
   })
   try {
-    const result = await runMove('tool', 'a.js', 'c.js', { cwd: fx.dir, verifyMode: 'none' as const })
+    const result = await runMove('tool', 'a.js', 'c.js', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(result.changes)
     assert.match(fx.read('c.js'), /export function tool/)
     assert.doesNotMatch(fx.read('a.js'), /export function tool/)

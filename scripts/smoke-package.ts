@@ -17,25 +17,29 @@ try {
   run([process.env.npm_execpath!, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...tarballs, '@typescript/typescript6@6.0.2', '@types/node@^22'])
   writeFileSync(join(cwd, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","module":"NodeNext","types":["node"],"strict":true,"skipLibCheck":true,"noEmit":true},"include":["*.ts"]}')
   writeFileSync(join(cwd, 'source.ts'), 'export const target = 1\n')
-  writeFileSync(join(cwd, 'component.vue'), '<template>{{ target }}</template>\n')
-  writeFileSync(join(cwd, 'consumer.ts'), `import { runRename, scan } from 'ripide-api'
+  writeFileSync(join(cwd, 'component.vue'), '<script setup lang="ts">import { target } from "./source.ts"; const doubled = target * 2</script><template>{{ doubled }}</template>\n')
+  writeFileSync(join(cwd, 'consumer.ts'), `import { createEngine } from 'ripide-api'
 import { parseSourceFile } from 'ripide-api/adapter'
+import { createVueExtension } from 'ripide-vue'
 import { formatHits } from 'ripide/presentation'
-import vueAdapter from 'ripide-vue'
-const result = await runRename('target', 'next', { cwd: process.cwd(), vue: false, verifyMode: 'none' })
+const extension = createVueExtension()
+const engine = createEngine({ extensions: [extension] })
+const result = await engine.rename('target', 'next', { cwd: process.cwd(), scope: 'source.ts', verifyMode: 'none' })
 if (!result.changes.some(change => change.after.includes('export const next')))
   throw new Error('SDK rename did not produce the expected edit')
 parseSourceFile('source.ts', 'export const target = 1')
-const rendered = formatHits(scan('target', { cwd: process.cwd(), glob: ['source.ts'] }), false)
-console.log(JSON.stringify({ changes: result.changes.length, rendered, vueMatch: vueAdapter.hasFilesContaining(process.cwd(), 'target') }))
+const rendered = formatHits(engine.scan('target', { cwd: process.cwd(), glob: ['source.ts'] }), false)
+console.log(JSON.stringify({ changes: result.changes.length, rendered, vueMatch: extension.semantic!.hasFilesContaining(process.cwd(), 'target') }))
 `)
   run([join(cwd, 'node_modules/@typescript/typescript6/bin/tsc6'), '--project', 'tsconfig.json'])
-  const cli = join(cwd, 'node_modules/ripide/bin/ripide.mjs')
+  const cliPackage = join(cwd, 'node_modules/ripide')
+  const cliManifest = JSON.parse(readFileSync(join(cliPackage, 'package.json'), 'utf8'))
+  const cli = join(cliPackage, cliManifest.bin.ripide)
   const isolated = { ...process.env, PATH: cwd }
-  const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-vue', '--verify-mode', 'none', '--profile', 'full', '--json'], isolated))
+  const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--verify-mode', 'none', '--json', '--profile', 'full'], isolated))
   assert.ok(renamed.data.changes.some((change: { after: string }) => change.after.includes('export const next')))
   assert.equal(readFileSync(join(cwd, 'source.ts'), 'utf8'), 'export const target = 1\n')
-  const named = JSON.parse(run([process.env.npm_execpath!, 'exec', '--offline', '--', 'ripide', 'rename', 'target', 'next', '--no-vue', '--verify-mode', 'none', '--profile', 'full', '--json']))
+  const named = JSON.parse(run([cli, 'rename', 'target', 'next', '--verify-mode', 'none', '--json', '--profile', 'full']))
   assert.ok(named.data.changes.some((change: { after: string }) => change.after.includes('export const next')))
   const sdk = JSON.parse(run(['--experimental-strip-types', 'consumer.ts']))
   assert.ok(sdk.changes > 0)

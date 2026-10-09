@@ -1,5 +1,6 @@
 import { getDoctorCheckNames, runDoctor } from 'ripide-api'
 import { expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it('runs only requested core checks in a Nuxt project', async () => {
@@ -9,13 +10,14 @@ it('runs only requested core checks in a Nuxt project', async () => {
     'source.ts': 'export const value = 1',
   })
   try {
-    const all = await runDoctor({ cwd: fx.dir, frameworks: ['nuxt'] })
+    const engine = vueServices()
+    const all = await runDoctor({ cwd: fx.dir, engine, frameworks: ['nuxt'] })
     expect(all.findings.some(finding => finding.check === 'phantom-component')).toBe(true)
-    const selected = await runDoctor({ cwd: fx.dir, frameworks: ['nuxt'], checks: ['duplicate-export'] })
+    const selected = await runDoctor({ cwd: fx.dir, engine, frameworks: ['nuxt'], checks: ['duplicate-export'] })
     expect(selected.findings).toEqual([])
-    const frameworkOnly = await runDoctor({ cwd: fx.dir, frameworks: ['nuxt'], checks: ['phantom-component'] })
+    const frameworkOnly = await runDoctor({ cwd: fx.dir, engine, frameworks: ['nuxt'], checks: ['phantom-component'] })
     expect(frameworkOnly.findings.map(finding => finding.check)).toEqual(['phantom-component'])
-    expect(await getDoctorCheckNames({ cwd: fx.dir, frameworks: ['nuxt'] })).toContain('phantom-component')
+    expect(await getDoctorCheckNames({ cwd: fx.dir, engine, frameworks: ['nuxt'] })).toContain('phantom-component')
     expect(await getDoctorCheckNames({ cwd: fx.dir, noAdapters: true })).not.toContain('phantom-component')
   }
   finally {

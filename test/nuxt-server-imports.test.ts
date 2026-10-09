@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm'
 import { runDelete, runMove, runRename, runRenameFile } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 function fixture() {
@@ -38,9 +39,9 @@ function layerFixture(include = '../layers/*/shared/**/*', exclude: string[] = [
 it.each(['../layers/*/shared/**/*', '../layers/admin/shared', '../layers/*/shared/*.ts'])('keeps shared layer consumers bound to their runtime: %s', async (include) => {
   const fx = layerFixture(include)
   try {
-    const app = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const })
+    const app = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(app.changes.find(change => change.rel === 'layers/admin/shared/consumer.ts'), undefined)
-    const shared = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'shared/utils/format.ts', verifyMode: 'none' as const })
+    const shared = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'shared/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(shared.changes.find(change => change.rel === 'shared/utils/format.ts')!.after)
     assert.equal(evaluate(shared.changes.find(change => change.rel === 'layers/admin/shared/consumer.ts')!.after, provider).result, 700)
   }
@@ -50,7 +51,7 @@ it.each(['../layers/*/shared/**/*', '../layers/admin/shared', '../layers/*/share
 it('refuses deletion of a shared provider used by a wildcard layer', async () => {
   const fx = layerFixture()
   try {
-    await assert.rejects(runDelete('format', 'shared/utils/format.ts', { cwd: fx.dir, verifyMode: 'none' as const }), /auto-imports.*layers\/admin\/shared\/consumer.ts/)
+    await assert.rejects(runDelete('format', 'shared/utils/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /auto-imports.*layers\/admin\/shared\/consumer.ts/)
   }
   finally { fx.cleanup() }
 })
@@ -58,7 +59,7 @@ it('refuses deletion of a shared provider used by a wildcard layer', async () =>
 it('imports a moved shared provider in its wildcard layer consumer', async () => {
   const fx = layerFixture()
   try {
-    const result = await runMove('format', 'shared/utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'shared/utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'lib/format.ts')!.after)
     assert.equal(evaluate(result.changes.find(change => change.rel === 'layers/admin/shared/consumer.ts')!.after, {}, provider).result, 700)
     assert.equal(result.changes.find(change => change.rel === 'app/consumer.ts'), undefined)
@@ -69,7 +70,7 @@ it('imports a moved shared provider in its wildcard layer consumer', async () =>
 it.each(['../layers/admin/shared', '../layers/*/shared/**/*', '../layers/admin/shared/consumer.ts'])('honors generated runtime exclusions: %s', async (exclude) => {
   const fx = layerFixture('../layers/admin/shared/**/*', [exclude])
   try {
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'app/utils/format.ts')!.after)
     assert.equal(evaluate(result.changes.find(change => change.rel === 'layers/admin/shared/consumer.ts')!.after, provider).result, 8)
   }
@@ -81,7 +82,7 @@ it('uses plain server directories from generated runtime includes', async () => 
   try {
     fx.write('modules/admin/server/consumer.ts', 'export const result = format(7)')
     fx.write('.nuxt/tsconfig.server.json', JSON.stringify({ include: ['../server/**/*', '../modules/admin/server'] }))
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'server/utils/format.ts', verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'server/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'server/utils/format.ts')!.after)
     assert.equal(evaluate(result.changes.find(change => change.rel === 'modules/admin/server/consumer.ts')!.after, provider).result, 70)
   }
@@ -92,7 +93,7 @@ it.each(['app', 'server'])('renames only the active %s auto-import provider', as
   const fx = fixture()
   try {
     const other = realm === 'app' ? 'server' : 'app'
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: `${realm}/utils/format.ts`, verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: `${realm}/utils/format.ts`, verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === `${realm}/utils/format.ts`)!.after)
     const consumer = realm === 'server' ? 'server/api/consumer.ts' : 'app/consumer.ts'
     assert.equal(evaluate(result.changes.find(change => change.rel === consumer)!.after, provider).result, realm === 'server' ? 70 : 8)
@@ -107,7 +108,7 @@ it.each(['app', 'server'])('renames only the active %s auto-import provider', as
 it('refuses deletion of an active Nitro auto-import', async () => {
   const fx = fixture()
   try {
-    await assert.rejects(runDelete('format', 'server/utils/format.ts', { cwd: fx.dir, verifyMode: 'none' as const }), /auto-imports.*server\/api\/consumer.ts/)
+    await assert.rejects(runDelete('format', 'server/utils/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /auto-imports.*server\/api\/consumer.ts/)
   }
   finally { fx.cleanup() }
 })
@@ -115,7 +116,7 @@ it('refuses deletion of an active Nitro auto-import', async () => {
 it('imports a moved Nitro provider only in server consumers', async () => {
   const fx = fixture()
   try {
-    const result = await runMove('format', 'server/utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'server/utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'lib/format.ts')!.after)
     assert.equal(evaluate(result.changes.find(change => change.rel === 'server/api/consumer.ts')!.after, {}, provider).result, 70)
     assert.equal(result.changes.find(change => change.rel === 'app/consumer.ts'), undefined)
@@ -130,7 +131,7 @@ it('uses root metadata for a registered layer with no generated directory', asyn
     fx.write('optional-layers/admin/nuxt.config.ts', 'export default {}')
     fx.write('optional-layers/admin/server/api/consumer.ts', 'export const result = format(3)')
     fx.write('.nuxt/tsconfig.server.json', JSON.stringify({ include: ['../server/**/*', '../optional-layers/admin/server/**/*'] }))
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'server/utils/format.ts', verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'server/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'server/utils/format.ts')!.after)
     assert.equal(evaluate(result.changes.find(change => change.rel === 'optional-layers/admin/server/api/consumer.ts')!.after, provider).result, 30)
   }
@@ -142,7 +143,7 @@ it.each(['format', 'format as local'])('renames explicit #imports bindings while
   try {
     const local = binding.includes(' as ') ? 'local' : 'format'
     fx.write('app/explicit.ts', `import { ${binding} } from '#imports'; export const result = ${local}(7)`)
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'app/utils/format.ts')!.after)
     assert.equal(evaluate(result.changes.find(change => change.rel === 'app/explicit.ts')!.after, {}, provider).result, 8)
   }
@@ -154,8 +155,8 @@ it.each(['move', 'rename-file'])('verifies a %s to a new directory through a Nux
   try {
     fx.write('.nuxt/tsconfig.json', JSON.stringify({ compilerOptions: { paths: { '~~/*': ['../*'], '#server/*': ['../server/*'] } } }))
     const result = operation === 'move'
-      ? await runMove('format', 'server/utils/format.ts', 'lib/format.ts', { cwd: fx.dir })
-      : await runRenameFile('server/utils/format.ts', 'lib/format.ts', { cwd: fx.dir })
+      ? await runMove('format', 'server/utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir }, engine: vueServices() })
+      : await runRenameFile('server/utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     const provider = evaluate(operation === 'move' ? result.changes.find(change => change.rel === 'lib/format.ts')!.after : fx.read('server/utils/format.ts'))
     assert.equal(evaluate(result.changes.find(change => change.rel === 'server/api/consumer.ts')!.after, {}, provider).result, 70)
@@ -167,7 +168,7 @@ it('keeps unrelated app #imports consumers out of server rename warnings', async
   const fx = fixture()
   try {
     fx.write('app/explicit.ts', `import { format as appFormat } from '#imports'; export const result = appFormat(7)`)
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'server/utils/format.ts', verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'server/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     assert.deepEqual(result.warnings, [])
     assert.equal(evaluate(fx.read('app/explicit.ts'), {}, evaluate(fx.read('app/utils/format.ts'))).result, 8)
   }
@@ -179,7 +180,7 @@ it('keeps missing dependencies visible while verifying a moved Nitro provider', 
   try {
     fx.write('server/utils/format.ts', `import { missing } from 'missing-package'; export const format = (n: number) => missing(n)`)
     fx.write('.nuxt/tsconfig.json', JSON.stringify({ compilerOptions: { paths: { '~~/*': ['../*'], '#server/*': ['../server/*'] } } }))
-    const result = await runMove('format', 'server/utils/format.ts', 'lib/format.ts', { cwd: fx.dir })
+    const result = await runMove('format', 'server/utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.ok(result.regressions.some(regression => regression.code === 2307 && regression.file.endsWith('/lib/format.ts') && regression.message.includes('missing-package')))
   }
   finally { fx.cleanup() }
@@ -189,7 +190,7 @@ it.each(['format', 'format as local', '\'format\''])('preserves #imports re-expo
   const fx = fixture()
   try {
     fx.write('app/barrel.ts', `export { ${binding} } from '#imports'`)
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'app/utils/format.ts')!.after)
     const barrel = evaluate(result.changes.find(change => change.rel === 'app/barrel.ts')!.after, {}, provider)
     const exported = binding.includes(' as ') ? 'local' : 'format'
@@ -205,7 +206,7 @@ it('preserves unaliased #imports locals when TypeScript resolves the generated b
     config.compilerOptions.paths = { '#imports': ['./.nuxt/imports.d.ts'] }
     fx.write('tsconfig.json', JSON.stringify(config))
     fx.write('app/explicit.ts', `import { format } from '#imports'; export const result = format(7)`)
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'app/utils/format.ts')!.after)
     assert.equal(evaluate(result.changes.find(change => change.rel === 'app/explicit.ts')!.after, {}, provider).result, 8)
   }
@@ -220,7 +221,7 @@ it('uses app preparation over a registered layer own generated metadata', async 
     fx.write('optional-layers/admin/.nuxt/imports.d.ts', 'export {}')
     fx.write('optional-layers/admin/server/api/consumer.ts', 'export const result = format(3)')
     fx.write('.nuxt/tsconfig.server.json', JSON.stringify({ include: ['../server/**/*', '../optional-layers/admin/server/**/*'] }))
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: 'server/utils/format.ts', verifyMode: 'none' as const })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: 'server/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() })
     const provider = evaluate(result.changes.find(change => change.rel === 'server/utils/format.ts')!.after)
     assert.equal(evaluate(result.changes.find(change => change.rel === 'optional-layers/admin/server/api/consumer.ts')!.after, provider).result, 30)
   }

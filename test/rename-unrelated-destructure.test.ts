@@ -37,7 +37,7 @@ export function load() {
 `,
   })
   try {
-    const result = await runRename('Store', 'AppStore', { cwd: fx.dir, scope: 'store.js', vue: false })
+    const result = await runRename('Store', 'AppStore', { cwd: fx.dir, scope: 'store.js' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.js`).href)
@@ -65,7 +65,7 @@ it.each([
     'load.js': 'import * as barrel from \'./barrel.js\'; const { Store } = barrel; export const load = () => new Store().value\n',
   })
   try {
-    const result = await runRename('Store', 'AppStore', { cwd: fx.dir, scope: 'store.js', vue: false })
+    const result = await runRename('Store', 'AppStore', { cwd: fx.dir, scope: 'store.js' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.js`).href)

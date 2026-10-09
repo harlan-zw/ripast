@@ -70,8 +70,8 @@ it('agent JSON preserves regression blocking and leaves source files unchanged',
 })
 
 it.each([
-  ['rename', 'answer', 'value', '--no-vue', '--verify-mode', 'none'],
-  ['move', 'answer', '--from', 'source.ts', '--to', 'lib/value.ts', '--no-vue', '--verify-mode', 'none'],
+  ['rename', 'answer', 'value', '--verify-mode', 'none'],
+  ['move', 'answer', '--from', 'source.ts', '--to', 'lib/value.ts', '--verify-mode', 'none'],
   ['delete', 'replacement', '--from', 'replacement.ts', '--verify-mode', 'none'],
   ['replace', 'answer', 'replacement', '--verify-mode', 'none'],
   ['css-class-rename', 'font-semibold', 'font-medium'],

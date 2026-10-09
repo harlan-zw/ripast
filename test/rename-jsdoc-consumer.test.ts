@@ -18,7 +18,7 @@ it.each([
     'load.js': `import * as store from './store.js'\n${prefix}const { Store } = store\n/** @type {typeof Store} */\nconst Alias = Store\n/** @type {typeof Store.prototype.value} */\nconst value = 7\n/** @type {typeof import('./store.js').Store} */\nconst External = Store\n/** @type {import('./store.js').Store} */\nconst instance = new Store()\nconst shadow = () => {\n  class Store { value = 9 }\n  /** @type {typeof Store} */\n  const Shadow = Store\n  return new Shadow().value\n}\n${prefix ? 'return' : 'export const load = () =>'} ({ Store, Alias, External, instance, value, shadow: shadow() })\n${suffix}`,
   })
   try {
-    const result = await runRename('Store', 'AppStore', { cwd: fx.dir, scope: 'store.js', vue: false })
+    const result = await runRename('Store', 'AppStore', { cwd: fx.dir, scope: 'store.js' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.js`).href)
@@ -42,7 +42,7 @@ it('rename preserves JSDoc references to a redeclared consumer binding', async (
     'load.js': `import * as store from './store.js'\nexport function load() {\n  var { useStore } = store\n  var useStore = () => 2\n  /** @type {typeof useStore} */\n  const Alias = useStore\n  return { useStore, Alias, invoke: () => useStore() }\n}\n`,
   })
   try {
-    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.js', vue: false })
+    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.js' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.js`).href)

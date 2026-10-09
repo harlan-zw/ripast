@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { runVueTemplateUnwrap, runVueTemplateWrap } from '../packages/core/src/vue-template-wrap.ts'
-import { parseTemplateSelector, unwrapTemplateElements, wrapTemplateElements } from '../packages/core/src/vue-template.ts'
+import { runVueTemplateUnwrap, runVueTemplateWrap } from '../packages/vue/src/vue-template-wrap.ts'
+import { parseTemplateSelector, unwrapTemplateElements, wrapTemplateElements } from '../packages/vue/src/vue-template.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('parseTemplateSelector', () => {

@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { it } from 'vitest'
-import { isInsideAutoImportScope } from '../packages/core/src/nuxt.ts'
 import { applyTextEdits, mergeFileChanges, parseSourceFile, writeChanges } from '../packages/core/src/util.ts'
+import { isInsideAutoImportScope } from '../packages/vue/src/nuxt.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it('writeChanges creates missing parent dirs for new target files', () => {
@@ -63,7 +64,7 @@ it('parseSourceFile parses in-memory Vue script blocks with source positions', (
     '</script>',
     '',
   ].join('\n')
-  const file = parseSourceFile('/tmp/Comp.vue', source, '/tmp')
+  const file = parseSourceFile('/tmp/Comp.vue', source, '/tmp', vueServices())
   assert.equal(file.rel, 'Comp.vue')
   assert.equal(file.scriptSource, '\nconst msg = "hello"\n')
   assert.equal(source.slice(file.scriptStart, file.scriptEnd), file.scriptSource)

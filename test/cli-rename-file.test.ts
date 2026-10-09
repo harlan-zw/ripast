@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { runRenameFile } from 'ripide-api'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([undefined, 'project'])('rename-file preserves default scope and accepts explicit project scope %s', (mode) => {
@@ -33,11 +34,10 @@ it.skipIf(process.platform === 'win32')('rename-file SDK refuses a dangling targ
   const fixture = makeFixture({ 'source.ts': 'export const value = 42\n' })
   try {
     symlinkSync('missing.ts', resolve(fixture.dir, 'target.ts'))
-    await assert.rejects(runRenameFile('source.ts', 'target.ts', {
+    await assert.rejects(runRenameFile('source.ts', 'target.ts', { ...{
       cwd: fixture.dir,
-      vue: false,
       verifyMode: 'none' as const,
-    }), /target "target\.ts" already exists/)
+    }, engine: vueServices() }), /target "target\.ts" already exists/)
     assert.equal(readlinkSync(resolve(fixture.dir, 'target.ts')), 'missing.ts')
     assert.equal(fixture.read('source.ts'), 'export const value = 42\n')
   }

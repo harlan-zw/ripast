@@ -1,27 +1,24 @@
 import type { FileChange, TextEdit } from './util.ts'
 import type { DiagnosticRecorder } from './verification.ts'
 import type { Regression } from './verify.ts'
-import type { TemplateExpression } from './vue-template.ts'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { rgFiles } from './util.ts'
 
-export { diagnosticRegressions } from './diagnostic-matching.ts'
-// Adapter SDK entry. ripide-<framework> packages import from here.
-export { isInsideAutoImportScope } from './nuxt.ts'
-export { scan } from './scan.ts'
+export { cssSyntax, encodeAttributeValue, mapIncludesAny, rewriteCss, rewriteStringsInProgram, visitCss, visitProgramClassStrings } from './css-class-source.ts'
+export type { CssClassSourceFile } from './css-class-source.ts'
+
+export { completeClassBounds, rewriteClassString, visitClassTokens } from './css-class-token.ts'
+export type { RenameMap } from './css-class-token.ts'
 
 export type ScanFn = typeof import('./scan.ts').scan
+export { diagnosticRegressions } from './diagnostic-matching.ts'
+// Adapter SDK entry. ripide-<framework> packages import from here.
+export { scan } from './scan.ts'
 export type { ScanHit, ScanOptions } from './scan.ts'
 export { offsetOfPosition } from './ts-server.ts'
 export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
-export type { TextEdit } from './util.ts'
-export type { FileChange } from './util.ts'
-export type { DiagnosticRecorder } from './verification.ts'
-export type { Regression } from './verify.ts'
-export { extractTemplateExpressions, hyphenateVueName, parseVueTemplateAst, rewriteTemplateReferences } from './vue-template.ts'
 
-export type FrameworkName = 'vue' | 'nuxt' | 'svelte'
+export type FrameworkName = string
+
+export interface SourceExpression { code: string, offsetInSource: number }
 
 export interface RenameSite {
   filePath: string
@@ -48,9 +45,6 @@ export interface AddExplicitImportsContext {
 
 export interface FrameworkAdapter {
   name: string
-  capabilities?: {
-    nuxt?: boolean
-  }
 
   hasFilesContaining: (cwd: string, pattern: string) => boolean
 
@@ -84,8 +78,6 @@ export interface FrameworkAdapter {
     onChecked?: DiagnosticRecorder,
   ) => Promise<Regression[]>
 
-  extractTemplateExpressions?: (source: string) => TemplateExpression[]
-
   autoImportScopes?: (cwd: string) => Set<string>
 
   planAutoImportRename?: (ctx: { cwd: string, from: string, to: string, sites: RenameSite[] }) => AutoImportRenamePlan
@@ -109,7 +101,7 @@ export interface FrameworkAdapter {
     scopes: Set<string>
   }) => void
 
-  /** Whether `filePath` is a framework-generated file (e.g. Nuxt's `.nuxt/`). */
+  /** Whether filePath is generated source. */
   isGeneratedPath?: (cwd: string, filePath: string) => boolean
 
   /** Drop changes targeting framework-generated paths. Mutates `changes` in place. */
@@ -192,7 +184,7 @@ export interface ComponentInfo {
   aliases: string[]
   file: string
   rel: string
-  kind: 'sfc' | 'define-component'
+  kind: string
   layer?: string
   scope: 'auto-import' | 'global' | 'explicit'
   shadowed: boolean
@@ -206,93 +198,12 @@ export interface ComponentUsageInfo {
   rel: string
   line: number
   col: number
-  form: 'tag-pascal' | 'tag-kebab' | 'resolveComponent' | 'dynamic-is-literal' | 'dynamic-is-binding'
+  form: string
   binding?: string
 }
 
-const cache = new Map<FrameworkName, FrameworkAdapter | null>()
+export type { TextEdit } from './util.ts'
+export type { FileChange } from './util.ts'
 
-export interface AdapterImports {
-  importModule: (specifier: string) => Promise<{ default?: FrameworkAdapter } | FrameworkAdapter>
-}
-
-export async function loadAdapter(name: FrameworkName, imports?: AdapterImports): Promise<FrameworkAdapter | null> {
-  if (!imports && cache.has(name))
-    return cache.get(name) ?? null
-
-  const tryImport = async (spec: string): Promise<FrameworkAdapter | null> => {
-    try {
-      const mod = await (imports?.importModule(spec) ?? import(spec))
-      return (mod.default ?? mod) as FrameworkAdapter
-    }
-    catch (cause) {
-      const missing = cause instanceof Error && 'code' in cause && cause.code === 'ERR_MODULE_NOT_FOUND'
-        && (('url' in cause && cause.url === spec) || cause.message.includes(`Cannot find package '${spec}'`))
-      if (missing)
-        return null
-      throw new Error(`Could not load adapter ${spec}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause })
-    }
-  }
-
-  const adapterName = name === 'nuxt' ? 'vue' : name
-  const external = await tryImport(`ripide-${adapterName}`)
-  const bundledVue = new URL('../../vue/src/index.ts', import.meta.url).href
-  const resolved = external ?? (adapterName === 'vue' ? await tryImport(bundledVue) : null)
-  const adapter = name === 'nuxt' && resolved
-    ? { ...resolved, capabilities: { ...resolved.capabilities, nuxt: true } }
-    : resolved
-
-  if (!imports && adapter)
-    cache.set(name, adapter)
-  return adapter
-}
-
-export function detectFrameworks(cwd: string): FrameworkName[] {
-  const out: FrameworkName[] = []
-  const seen = new Set<string>()
-  let dir = cwd
-  for (let i = 0; i < 6; i++) {
-    const pkgPath = join(dir, 'package.json')
-    if (existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-        const allDeps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies }
-        for (const [name, marker] of [
-          ['nuxt', ['nuxt', '@nuxt/kit']] as const,
-          ['vue', ['vue']] as const,
-          ['svelte', ['svelte', '@sveltejs/kit']] as const,
-        ]) {
-          if (seen.has(name))
-            continue
-          if (marker.some(m => allDeps[m])) {
-            out.push(name as FrameworkName)
-            seen.add(name)
-          }
-        }
-      }
-      catch {}
-    }
-    const parent = join(dir, '..')
-    if (parent === dir)
-      break
-    dir = parent
-  }
-  return out
-}
-
-/** Preserve Vue consumers, project verification, and Nuxt auto-import semantics. */
-export function needsVueAdapter(cwd: string, candidates: readonly string[], projectVerification: boolean): boolean {
-  if (candidates.some(path => path.endsWith('.vue')))
-    return true
-  if (projectVerification && rgFiles('', { cwd, glob: '*.vue', listAll: true }).length)
-    return true
-  if (existsSync(join(cwd, '.nuxt')) || detectFrameworks(cwd).includes('nuxt'))
-    return true
-  return rgFiles('', { cwd, glob: 'nuxt.config.{ts,js,mts,mjs,cts,cjs}', listAll: true }).length > 0
-}
-
-export function resetAdapterCache(): void {
-  cache.clear()
-}
-
-export type { TemplateExpression } from './vue-template.ts'
+export type { DiagnosticRecorder } from './verification.ts'
+export type { Regression } from './verify.ts'

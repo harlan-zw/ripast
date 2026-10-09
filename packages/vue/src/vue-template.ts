@@ -1,8 +1,8 @@
-import type { TextEdit } from './util.ts'
+import type { TextEdit } from 'ripide-api/adapter'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
-import { applyTextEdits } from './util.ts'
+import { applyTextEdits } from 'ripide-api/adapter'
 
 export interface TemplateExpression {
   code: string

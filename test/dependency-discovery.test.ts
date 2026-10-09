@@ -5,6 +5,7 @@ import process from 'node:process'
 import { runCssClassRename, writeChanges } from 'ripide-api'
 import { rgFiles, rgFilesMany } from 'ripide-api/adapter'
 import { it, vi } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const files = {
@@ -16,7 +17,7 @@ const files = {
 it('cSS rename plans and applies only project files by default without Git ignore rules', async () => {
   const fx = makeFixture(files, false)
   try {
-    const result = await runCssClassRename(new Map([['card', 'panel']]), { cwd: fx.dir })
+    const result = await runCssClassRename(new Map([['card', 'panel']]), { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.deepEqual(result.changes.map(change => change.rel), ['src/App.vue'])
     assert.equal(fx.read('src/App.vue'), files['src/App.vue'])
     writeChanges(result.changes)
@@ -67,7 +68,7 @@ it.each([
   [['!node_modules/**', '**/node_modules/**/*.vue'], ['packages/app/node_modules/other/Widget.vue']],
 ] as const)('discovery preserves dependency opt-in and fallback parity for %j', (glob, expected) => {
   const fx = makeFixture(files, false)
-  const opts = { cwd: fx.dir, glob: glob ? [...glob] : undefined }
+  const opts = { engine: vueServices(), cwd: fx.dir, glob: glob ? [...glob] : undefined }
   const paths = (values: string[]) => values.map(path => relative(fx.dir, path)).sort()
   const check = () => {
     assert.deepEqual(paths(rgFiles('card', opts)), expected)

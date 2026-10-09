@@ -25,7 +25,7 @@ export function load(${parameter}) {
 `,
   })
   try {
-    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.ts`).href)
@@ -47,7 +47,7 @@ it('rename still renames an intentionally selected repeated local binding', asyn
 `,
   })
   try {
-    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'load.ts', allowMultiple: true, vue: false })
+    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'load.ts', allowMultiple: true })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.ts`).href)

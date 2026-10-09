@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { findRegressions, runRename, startTsServer } from 'ripide-api'
 import { diagnosticRegressions } from 'ripide-api/adapter'
-import vueAdapter from 'ripide-vue'
+import { createVueExtension } from 'ripide-vue'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
@@ -60,7 +60,7 @@ it('does not trade a Vue script error for the same error at another declaration'
   })
   try {
     const path = join(fx.dir, 'Comp.vue')
-    const regressions = await vueAdapter.regressions(join(fx.dir, 'tsconfig.json'), fx.dir, [{ path, rel: 'Comp.vue', before, after }])
+    const regressions = await createVueExtension().semantic!.regressions(join(fx.dir, 'tsconfig.json'), fx.dir, [{ path, rel: 'Comp.vue', before, after }])
     assert.deepEqual(regressions.map(({ line, col, code }) => ({ line, col, code })), [{ line: 3, col: 7, code: 2322 }])
   }
   finally { fx.cleanup() }
@@ -98,7 +98,7 @@ it('reports an error whose expression span changed', () => {
 it('preserves an existing type error when renaming its declaration', async () => {
   const fx = makeFixture({ 'value.ts': 'export const old: string = 1\n' })
   try {
-    const result = await runRename('old', 'newName', { cwd: fx.dir, vue: false })
+    const result = await runRename('old', 'newName', { cwd: fx.dir })
     assert.deepEqual(result.regressions, [])
     assert.equal(result.changes[0]?.after, 'export const newName: string = 1\n')
   }

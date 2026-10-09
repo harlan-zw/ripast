@@ -6,6 +6,7 @@ import { describe, it } from 'vitest'
 import { runMove } from '../packages/core/src/move.ts'
 import { runRename } from '../packages/core/src/rename.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 
 const VUE_TSCONFIG = JSON.stringify({
   compilerOptions: {
@@ -49,7 +50,7 @@ describe('vue sfc rename', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { greet } from './utils.ts'\nconst msg = greet()\n</script>\n<template><div>{{ msg }}</div></template>\n`,
     })
     try {
-      const r = await runRename('greet', 'salute', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runRename('greet', 'salute', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       const vue = fx.read('src/Comp.vue')
       assert.match(vue, /import \{ salute \} from/, 'import rewritten')
@@ -65,7 +66,7 @@ describe('vue sfc rename', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { format } from './utils.ts'\nconst a = format(1)\nconst b = format(2)\n</script>\n<template><div>{{ a }} {{ b }}</div></template>\n`,
     })
     try {
-      const r = await runRename('format', 'render', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runRename('format', 'render', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       const vue = fx.read('src/Comp.vue')
       assert.match(vue, /import \{ render \} from/, 'import rewritten')
@@ -75,16 +76,14 @@ describe('vue sfc rename', () => {
     finally { fx.cleanup() }
   })
 
-  it('--no-vue (vue: false) skips Volar pass and leaves .vue untouched', async () => {
+  it('refuses missing required framework support before changing consumers', async () => {
     const fx = makeVueFixture({
-      'src/utils.ts': 'export function greet() { return \'hi\' }\n',
-      'src/Comp.vue': `<script setup lang="ts">\nimport { greet } from './utils.ts'\nconst v = greet()\n</script>\n<template>{{ v }}</template>\n`,
+      'src/utils.ts': 'export function greet() { return 1 }',
+      'src/Comp.vue': '<script setup>import { greet } from "./utils.ts"</script><template>{{ greet() }}</template>',
     })
     try {
-      const r = await runRename('greet', 'salute', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })
-      writeChanges(r.changes)
-      assert.match(fx.read('src/utils.ts'), /export function salute/)
-      assert.match(fx.read('src/Comp.vue'), /import \{ greet \} from/, 'vue untouched when --no-vue')
+      await assert.rejects(runRename('greet', 'salute', { cwd: fx.dir, verifyMode: 'none' as const }), /Required extension missing/)
+      assert.match(fx.read('src/utils.ts'), /export function greet/)
     }
     finally { fx.cleanup() }
   })
@@ -95,7 +94,7 @@ describe('vue sfc rename', () => {
       'src/main.ts': 'import { foo } from \'./utils.ts\'\nexport const r = foo()\n',
     })
     try {
-      const r = await runRename('foo', 'bar', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runRename('foo', 'bar', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       assert.match(fx.read('src/utils.ts'), /export function bar/)
       assert.match(fx.read('src/main.ts'), /import \{ bar \}/)
@@ -111,7 +110,7 @@ describe('vue verify', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { greet } from './utils.ts'\nconst v = greet('alice')\n</script>\n<template>{{ v }}</template>\n`,
     })
     try {
-      const r = await runRename('greet', 'salute', { cwd: fx.dir, verifyMode: 'touched' as const })
+      const r = await runRename('greet', 'salute', { ...{ cwd: fx.dir, verifyMode: 'touched' as const }, engine: vueServices() })
       assert.equal(r.regressions.length, 0, `unexpected regressions: ${JSON.stringify(r.regressions)}`)
     }
     finally { fx.cleanup() }
@@ -123,7 +122,7 @@ describe('vue verify', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { greet } from './utils.ts'\nconst v = greet('extra-arg-pre-existing-error')\n</script>\n<template>{{ v }}</template>\n`,
     })
     try {
-      const r = await runRename('greet', 'salute', { cwd: fx.dir, verifyMode: 'touched' as const })
+      const r = await runRename('greet', 'salute', { ...{ cwd: fx.dir, verifyMode: 'touched' as const }, engine: vueServices() })
       const newErrs = r.regressions.filter(reg => reg.file.endsWith('Comp.vue'))
       assert.equal(newErrs.length, 0, `pre-existing error flagged as new: ${JSON.stringify(newErrs)}`)
     }
@@ -138,7 +137,7 @@ describe('vue sfc template post-pass', () => {
       'src/Page.vue': `<script setup lang="ts">\nimport { MyButton } from './components.ts'\n</script>\n<template><div><MyButton label="x" /><MyButton /></div></template>\n`,
     })
     try {
-      const r = await runRename('MyButton', 'PrimaryButton', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runRename('MyButton', 'PrimaryButton', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       const page = fx.read('src/Page.vue')
       assert.match(page, /import \{ PrimaryButton \} from/, 'import rewritten')
@@ -155,7 +154,7 @@ describe('vue sfc template post-pass', () => {
       'src/Page.vue': `<script setup lang="ts">\nimport { MyButton } from './components.ts'\n</script>\n<template><div><my-button label="x"></my-button></div></template>\n`,
     })
     try {
-      const r = await runRename('MyButton', 'PrimaryButton', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runRename('MyButton', 'PrimaryButton', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       const page = fx.read('src/Page.vue')
       assert.match(page, /<primary-button label="x"><\/primary-button>/, 'kebab tag rewritten')
@@ -170,7 +169,7 @@ describe('vue sfc template post-pass', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { format } from './utils.ts'\n</script>\n<template><div>{{ format(42) }}</div></template>\n`,
     })
     try {
-      const r = await runRename('format', 'render', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runRename('format', 'render', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       const vue = fx.read('src/Comp.vue')
       assert.match(vue, /import \{ render \} from/, 'import rewritten')
@@ -186,7 +185,7 @@ describe('vue sfc template post-pass', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { item } from './utils.ts'\nconst items = [1, 2, 3]\nvoid item\n</script>\n<template><ul><li v-for="item in items" :key="item">{{ item }}</li></ul></template>\n`,
     })
     try {
-      const r = await runRename('item', 'token', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runRename('item', 'token', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       const vue = fx.read('src/Comp.vue')
       assert.match(vue, /import \{ token \} from/, 'import rewritten')
@@ -203,7 +202,7 @@ describe('vue sfc template post-pass', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { format } from './utils.ts'\nconst label = 'format'\n</script>\n<template><div :title="'format me'">{{ format(1) }} {{ label }}</div></template>\n`,
     })
     try {
-      const r = await runRename('format', 'render', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runRename('format', 'render', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       const vue = fx.read('src/Comp.vue')
       assert.match(vue, /:title="'format me'"/, 'string literal in template NOT rewritten')
@@ -221,7 +220,7 @@ describe('vue sfc move', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { helper } from './a.ts'\nconst x = helper()\n</script>\n<template><div>{{ x }}</div></template>\n`,
     })
     try {
-      const r = await runMove('helper', 'src/a.ts', 'src/b.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const r = await runMove('helper', 'src/a.ts', 'src/b.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       const vue = fx.read('src/Comp.vue')
       assert.match(vue, /import \{ helper \} from ['"]\.\/b/, 'vue import rewritten to new path')

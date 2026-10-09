@@ -1,8 +1,10 @@
 import type { DoctorAdapter, DoctorContext, DoctorFinding } from 'ripide-api/adapter'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { hyphenateVueName, parseVueTemplateAst, posToLineCol, rgFiles } from 'ripide-api/adapter'
+import { posToLineCol } from 'ripide-api/adapter'
 import { listComponents } from './components.ts'
+import { rgVueFiles } from './source.ts'
+import { hyphenateVueName, parseVueTemplateAst } from './vue-template.ts'
 
 const NUXT_ENTRY_PATTERNS = [
   'nuxt.config.ts',
@@ -337,7 +339,7 @@ function buildUnionKnownSet(roots: string[], cwd: string): Set<string> {
 }
 
 function findPhantomComponents(cwd: string): DoctorFinding[] {
-  const files = rgFiles('', { cwd, glob: ['*.vue'], listAll: true })
+  const files = rgVueFiles('', { cwd, glob: ['*.vue'], listAll: true })
   const appRoots = listAppRoots(cwd)
   const knownByRoot = new Map<string, Set<string>>()
   if (appRoots.length)
