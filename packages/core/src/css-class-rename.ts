@@ -1,5 +1,6 @@
 import type { RenameMap } from './css-class-token.ts'
 import type { FileChange } from './util.ts'
+import type { Verification } from './verification.ts'
 import process from 'node:process'
 import { readCssClassSourceFilesForMap, rewriteCssClassTokensInFile } from './css-class-source.ts'
 
@@ -11,6 +12,7 @@ export interface CssClassRenameOptions {
 export interface CssClassRenameResult {
   changes: FileChange[]
   scanned: number
+  verification: Verification
   regressions: never[]
 }
 
@@ -26,5 +28,5 @@ export async function runCssClassRename(map: RenameMap, opts: CssClassRenameOpti
     if (after !== file.source)
       changes.push({ path: file.abs, rel: file.rel, before: file.source, after })
   }
-  return { changes, scanned: files.length, regressions: [] }
+  return { changes, scanned: files.length, regressions: [], verification: { _tag: 'Skipped', reason: changes.length ? 'not-applicable' : 'no-changes' } }
 }

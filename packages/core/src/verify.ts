@@ -1,6 +1,7 @@
 import type { FrameworkAdapter } from './adapter.ts'
 import type { TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
+import type { DiagnosticRecorder } from './verification.ts'
 import { relative } from 'node:path'
 import { diagnosticRegressions } from './diagnostic-matching.ts'
 import { rgFiles } from './util.ts'
@@ -14,7 +15,7 @@ export interface Regression {
 }
 
 /** Project verification includes Vue consumers even when only scripts change. */
-export async function findVueRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, loadVueAdapter: () => Promise<FrameworkAdapter | null>): Promise<Regression[]> {
+export async function findVueRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, loadVueAdapter: () => Promise<FrameworkAdapter | null>, onChecked?: DiagnosticRecorder): Promise<Regression[]> {
   if (!changes.length || !rgFiles('', { cwd, glob: '*.vue', listAll: true }).length)
     return []
   if (!tsconfigPath)
@@ -22,7 +23,7 @@ export async function findVueRegressions(cwd: string, changes: FileChange[], tsc
   const adapter = await loadVueAdapter()
   if (!adapter)
     throw new Error('ripide: Vue verification requires ripide-vue. Install the adapter before applying changes.')
-  return adapter.regressions(tsconfigPath, cwd, changes)
+  return adapter.regressions(tsconfigPath, cwd, changes, onChecked)
 }
 
 /**
@@ -32,7 +33,7 @@ export async function findVueRegressions(cwd: string, changes: FileChange[], tsc
  * `after` text as an in-memory overlay, pulls again, and reports diagnostics
  * that do not match an unchanged baseline source range. Nothing touches disk.
  */
-export async function findRegressions(server: TsServer, changes: FileChange[], files: string[]): Promise<Regression[]> {
+export async function findRegressions(server: TsServer, changes: FileChange[], files: string[], onChecked?: DiagnosticRecorder): Promise<Regression[]> {
   const scope = [...new Set([...files, ...changes.map(c => c.path)])]
   for (const change of changes)
     server.open(change.path, change.before)
@@ -42,7 +43,9 @@ export async function findRegressions(server: TsServer, changes: FileChange[], f
     server.open(change.path, change.after)
 
   const after = await server.diagnostics(scope)
-  return diagnosticRegressions(before, after, changes)
+  const out = diagnosticRegressions(before, after, changes)
+  onChecked?.({ files: scope.length, newErrors: out.length })
+  return out
 }
 
 export function formatRegressions(regressions: Regression[], cwd: string): string {

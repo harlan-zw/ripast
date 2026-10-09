@@ -1,4 +1,5 @@
 import type { FileChange, TextEdit } from './util.ts'
+import type { DiagnosticRecorder } from './verification.ts'
 import type { Regression } from './verify.ts'
 import type { TemplateExpression } from './vue-template.ts'
 import { existsSync, readFileSync } from 'node:fs'
@@ -15,6 +16,7 @@ export { offsetOfPosition } from './ts-server.ts'
 export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 export type { TextEdit } from './util.ts'
 export type { FileChange } from './util.ts'
+export type { DiagnosticRecorder } from './verification.ts'
 export type { Regression } from './verify.ts'
 export { extractTemplateExpressions, hyphenateVueName, parseVueTemplateAst, rewriteTemplateReferences } from './vue-template.ts'
 
@@ -78,6 +80,7 @@ export interface FrameworkAdapter {
     tsconfigPath: string,
     cwd: string,
     changes: FileChange[],
+    onChecked?: DiagnosticRecorder,
   ) => Promise<Regression[]>
 
   extractTemplateExpressions?: (source: string) => TemplateExpression[]

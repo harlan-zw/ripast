@@ -1,4 +1,4 @@
-import type { ExportFilter, VerifyMode } from 'ripide-api'
+import type { ExportFilter, Verification, VerifyMode } from 'ripide-api'
 import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -11,6 +11,7 @@ import {
   buildDoctorFixes,
   buildScanGraph,
   buildUnusedDeclarations,
+  compactVerification,
   formatAgentDeclarationTree,
   formatAgentDoctorReport,
   formatAgentFileScanHits,
@@ -27,6 +28,7 @@ import {
   formatScanGraph,
   formatScanHits,
   formatUnusedDeclarations,
+  formatVerification,
   getChangedFiles,
   printDiffs,
   resolveVerifyMode,
@@ -223,7 +225,7 @@ const renameCmd = defineCommand({
       allowMultiple: args.all as boolean,
       vue: args.vue as boolean,
     })
-    emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
 
@@ -249,7 +251,7 @@ const replaceCmd = defineCommand({
       targetScope: args['target-scope'] as string | undefined,
       targetImport: args['target-import'] as string | undefined,
     })
-    emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
 
@@ -317,7 +319,7 @@ const moveCmd = defineCommand({
       verify: verifyMode,
       vue: args.vue as boolean,
     })
-    emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
 
@@ -337,39 +339,39 @@ const deleteCmd = defineCommand({
     const r = await runDelete(args.symbol as string, args.from as string, {
       verify: verifyMode,
     })
-    emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
 
 interface MutatingResult {
   changes: { path: string, rel: string, before: string, after: string }[]
   scanned: number
+  verification: Verification
   regressions: { file: string, line: number, col: number, code: number, message: string }[]
   warnings?: string[]
 }
 
-function compactMutationResult(r: MutatingResult, apply: boolean, verify: boolean, manifest = buildChangeManifest(r.changes)) {
-  const blocked = verify && apply && r.regressions.length > 0
-  const checked = verify && !!(r.changes.length || manifest.moves?.length || r.regressions.length)
+function compactMutationResult(r: MutatingResult, apply: boolean, manifest = buildChangeManifest(r.changes)) {
+  const blocked = apply && r.regressions.length > 0
   return {
     mode: blocked ? 'blocked' : apply ? 'applied' : 'dry-run',
     ...manifest,
-    verification: checked ? (r.regressions.length ? 'failed' : 'passed') : 'skipped',
+    verification: compactVerification(r.verification),
     ...(r.regressions.length ? { regressions: r.regressions } : {}),
     ...(r.warnings?.length ? { warnings: r.warnings } : {}),
   }
 }
 
-function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, json: boolean = false, agentProfile: boolean = false): void {
+function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, agentProfile: boolean = false): void {
   const s = summarize(r.changes)
   const warnings = r.warnings ?? []
   if (json) {
-    const blockedByRegression = verify && apply && r.regressions.length > 0
+    const blockedByRegression = apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
     if (wrote)
       writeChanges(r.changes)
     const payload = agentProfile
-      ? compactMutationResult(r, apply, verify)
+      ? compactMutationResult(r, apply)
       : {
           applied: wrote,
           dryRun: !apply,
@@ -377,7 +379,7 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
           scanned: r.scanned,
           summary: s,
           changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
-          verification: verify && r.changes.length ? { _tag: 'Checked', newDiagnostics: r.regressions.length } : { _tag: 'Skipped' },
+          verification: r.verification,
           regressions: r.regressions,
           warnings,
         }
@@ -389,17 +391,17 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
   for (const w of warnings)
     process.stderr.write(`warning: ${w}\n`)
   if (agentProfile) {
-    const blockedByRegression = verify && apply && r.regressions.length > 0
+    const blockedByRegression = apply && r.regressions.length > 0
     process.stdout.write(`${profileHeader()}\n`)
     process.stdout.write(`changes: ${r.changes.length}/${r.scanned} files, +${s.linesAdded} -${s.linesRemoved} lines\n`)
     process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
-    process.stdout.write(`verification: ${verify ? (r.regressions.length ? 'type diagnostics increased' : 'no new type diagnostics') : 'not run'}\n`)
+    process.stdout.write(`${formatVerification(r.verification)}\n`)
     if (r.changes.length) {
       process.stdout.write(`files:\n`)
       for (const c of r.changes)
         process.stdout.write(`  ${c.rel}\n`)
     }
-    if (verify && r.regressions.length) {
+    if (r.regressions.length) {
       process.stdout.write(`regressions: ${r.regressions.length}\n`)
       for (const regression of r.regressions.slice(0, 20))
         process.stdout.write(`  ${regression.file}:${regression.line}:${regression.col} TS${regression.code} ${regression.message}\n`)
@@ -423,7 +425,8 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
     process.stdout.write(`${s.files} file${s.files === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
     printDiffs(r.changes)
   }
-  if (verify && r.regressions.length) {
+  process.stdout.write(`${formatVerification(r.verification)}\n`)
+  if (r.regressions.length) {
     process.stderr.write(`\n${formatRegressions(r.regressions, process.cwd())}\n`)
     if (apply) {
       process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
@@ -462,7 +465,6 @@ const renameFileCmd = defineCommand({
       vue: args.vue as boolean,
     })
     const apply = !!args.apply
-    const verify = verifyMode !== 'none'
     const json = !!args.json
     const { agentProfile } = resolveProfile(args.profile)
     const selfChangeDisplay = r.selfChange
@@ -470,7 +472,7 @@ const renameFileCmd = defineCommand({
       : null
     const displayChanges = selfChangeDisplay ? [selfChangeDisplay, ...r.changes] : r.changes
     const s = summarize(displayChanges)
-    const blockedByRegression = verify && apply && r.regressions.length > 0
+    const blockedByRegression = apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
 
     const manifest = agentProfile
@@ -501,7 +503,7 @@ const renameFileCmd = defineCommand({
 
     if (json) {
       process.stdout.write(`${JSON.stringify(agentProfile
-        ? compactMutationResult(r, apply, verify, manifest)
+        ? compactMutationResult(r, apply, manifest)
         : {
             applied: wrote,
             dryRun: !apply,
@@ -511,7 +513,7 @@ const renameFileCmd = defineCommand({
             fileMove: r.fileMove,
             selfChange: r.selfChange,
             changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
-            verification: verify ? { _tag: 'Checked', newDiagnostics: r.regressions.length } : { _tag: 'Skipped' },
+            verification: r.verification,
             regressions: r.regressions,
             warnings: r.warnings,
           })}\n`)
@@ -528,13 +530,13 @@ const renameFileCmd = defineCommand({
       if (selfChangeDisplay)
         process.stdout.write(`self: rewrote moved file's own relative imports\n`)
       process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
-      process.stdout.write(`verification: ${verify ? (r.regressions.length ? 'type diagnostics increased' : 'no new type diagnostics') : 'not run'}\n`)
+      process.stdout.write(`${formatVerification(r.verification)}\n`)
       if (displayChanges.length) {
         process.stdout.write(`files:\n`)
         for (const c of displayChanges)
           process.stdout.write(`  ${c.rel}${selfChangeDisplay && c === selfChangeDisplay ? ' (moved file, intra-file imports)' : ''}\n`)
       }
-      if (verify && r.regressions.length) {
+      if (r.regressions.length) {
         process.stdout.write(`regressions: ${r.regressions.length}\n`)
         if (apply) {
           process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
@@ -552,7 +554,8 @@ const renameFileCmd = defineCommand({
       process.stdout.write(`${consumerCount} consumer file${consumerCount === 1 ? '' : 's'}${selfSuffix}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
       printDiffs(displayChanges)
     }
-    if (verify && r.regressions.length) {
+    process.stdout.write(`${formatVerification(r.verification)}\n`)
+    if (r.regressions.length) {
       process.stderr.write(`\n${formatRegressions(r.regressions, process.cwd())}\n`)
       if (apply) {
         process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
@@ -586,7 +589,7 @@ const cssClassRenameCmd = defineCommand({
     const r = await runCssClassRename(map, {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
     })
-    emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
 
@@ -721,7 +724,7 @@ const vueTemplateWrapCmd = defineCommand({
       scope: args.scope as string | undefined,
       rootOnly: args.rootOnly as boolean,
     })
-    emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
 
@@ -742,7 +745,7 @@ const vueTemplateUnwrapCmd = defineCommand({
       scope: args.scope as string | undefined,
       rootOnly: args.rootOnly as boolean,
     })
-    emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
 
@@ -850,10 +853,11 @@ const doctorCmd = defineCommand({
           writeChanges(fix.changes)
         process.stdout.write(`${JSON.stringify(resolveProfile(args.profile).agentProfile
           ? {
-              ...compactMutationResult({ changes: fix.changes, regressions: [], scanned: report.filesScanned }, !!args.apply, false),
+              ...compactMutationResult({ changes: fix.changes, verification: fix.verification, regressions: [], scanned: report.filesScanned }, !!args.apply),
               ...(fix.skipped.length ? { findings: fix.skipped } : {}),
             }
           : {
+              verification: fix.verification,
               findings: report.findings,
               filesScanned: report.filesScanned,
               fix: {
@@ -869,6 +873,7 @@ const doctorCmd = defineCommand({
         return
       }
       const s = summarize(fix.changes)
+      process.stdout.write(`${formatVerification(fix.verification)}\n`)
       process.stdout.write(`doctor --fix: ${fix.fixed.length} fixable / ${fix.skipped.length} non-fixable findings\n`)
       process.stdout.write(`${fix.changes.length} file${fix.changes.length === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
       if (!args.apply) {

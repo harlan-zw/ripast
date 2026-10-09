@@ -54,7 +54,10 @@ export { applyLspEdits, offsetOfPosition, resolveNativeTsc, startTsServer } from
 export type { LspDiagnostic, LspLocation, LspTextEdit, SourceSite, TsServer, TsServerOptions } from './ts-server.ts'
 export { printDiffs, summarize, writeChanges } from './util.ts'
 export type { FileChange } from './util.ts'
+export { compactVerification, formatVerification } from './verification.ts'
+export type { CompactDiagnosticCheck, DiagnosticCheck, Verification } from './verification.ts'
 export { findRegressions, formatRegressions } from './verify.ts'
 export type { Regression } from './verify.ts'
+
 export { runVueTemplateUnwrap, runVueTemplateWrap } from './vue-template-wrap.ts'
 export type { VueTemplateWrapOptions, VueTemplateWrapResult } from './vue-template-wrap.ts'

@@ -1,4 +1,4 @@
-import type { AutoImportRenamePlan, FileChange, Regression, RenameSite } from 'ripide-api/adapter'
+import type { AutoImportRenamePlan, DiagnosticRecorder, FileChange, Regression, RenameSite } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { diagnosticRegressions, posToLineCol, rewriteTemplateReferences } from 'ripide-api/adapter'
@@ -127,6 +127,7 @@ export async function vueRegressions(
   tsconfigPath: string,
   cwd: string,
   pendingChanges: FileChange[],
+  onChecked?: DiagnosticRecorder,
 ): Promise<Regression[]> {
   const vueFiles = listVueFiles(cwd)
   const pendingVue = pendingChanges.filter(change => change.path.endsWith('.vue'))
@@ -141,6 +142,7 @@ export async function vueRegressions(
     projects[0].files.push(change.path)
   }
   const out: Regression[] = []
+  const checkedFiles = new Set<string>()
   for (const project of projects) {
     const selected = new Set(project.files)
     const files = [...new Set([...vueFiles, ...pendingVue.map(change => change.path)])].filter(file => selected.has(file))
@@ -155,6 +157,8 @@ export async function vueRegressions(
           continue
         vue.setSnapshot(change.path, change.before)
       }
+      for (const file of files)
+        checkedFiles.add(file)
       const baseline = new Map(await withFilteredConsoleWarn(() => Promise.all(
         files.map(async file => [file, (await getDiags(vue, file)).filter(diagnostic => diagnostic.severity === 1)] as const),
       )))
@@ -171,6 +175,7 @@ export async function vueRegressions(
     }
     finally { vue.dispose() }
   }
+  onChecked?.({ files: checkedFiles.size, newErrors: out.length })
   return out
 }
 

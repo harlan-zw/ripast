@@ -26,7 +26,7 @@ it('agent JSON previews changed line ranges without sending entire files', () =>
     assert.equal(full.status, 0, full.stderr)
     const payload = JSON.parse(compact.stdout)
     assert.deepEqual(payload.changes, [['source.ts', '1']])
-    assert.equal(payload.verification, 'skipped')
+    assert.equal(payload.verification, 'not-applicable')
     assert.equal(payload.mode, 'dry-run')
     assert.equal(fixture.read('source.ts'), source)
     assert.ok(compact.stdout.length < full.stdout.length / 10)
@@ -48,7 +48,7 @@ it('applied file moves report moves and changed consumer lines', () => {
     assert.deepEqual(payload.moves, [['source.ts', 'lib/value.ts']])
     assert.deepEqual(payload.changes, [['consumer.ts', '1']])
     assert.equal(payload.mode, 'applied')
-    assert.equal(payload.verification, 'passed')
+    assert.deepEqual(payload.verification, [['typescript', 'touched', 3, 0, 1]])
     assert.equal(existsSync(resolve(fixture.dir, 'source.ts')), false)
   }
   finally { fixture.cleanup() }
@@ -63,7 +63,7 @@ it('agent JSON preserves regression blocking and leaves source files unchanged',
     const payload = JSON.parse(result.stdout)
     assert.equal(payload.mode, 'blocked')
     assert.ok(payload.regressions.length > 0)
-    assert.equal(payload.verification, 'failed')
+    assert.deepEqual(payload.verification, [['typescript', 'touched', 1, payload.regressions.length]])
     assert.equal(fixture.read('source.ts'), source)
   }
   finally { fixture.cleanup() }
@@ -92,7 +92,7 @@ it.each([
     assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`)
     const payload = JSON.parse(result.stdout)
     assert.equal(payload.mode, 'dry-run')
-    assert.equal(payload.verification, 'skipped')
+    assert.equal(payload.verification, args.includes('--no-verify') ? 'disabled' : 'not-applicable')
     assert.ok(payload.changes.length > 0)
     for (const [path, before, after] of payload.changes) {
       assert.equal(typeof path, 'string')
@@ -118,6 +118,28 @@ it('agent doctor fixes report changed lines after applying edits', () => {
     assert.equal(JSON.parse(result.stdout).mode, 'applied')
     assert.deepEqual(JSON.parse(result.stdout).changes, [['three.ts', '1']])
     assert.equal(fixture.read('three.ts'), 'import { answer } from "./source"\n')
+  }
+  finally { fixture.cleanup() }
+})
+
+it.each(['agent', 'full'])('non-code file moves report skipped verification in %s JSON', (profile) => {
+  const fixture = makeFixture({ 'asset.txt': 'hello\n' })
+  try {
+    const result = run(fixture.dir, ['rename-file', 'asset.txt', 'renamed.txt', '--no-vue'], profile)
+    assert.equal(result.status, 0, result.stderr)
+    const verification = JSON.parse(result.stdout).verification
+    assert.deepEqual(verification, profile === 'agent' ? 'not-applicable' : { _tag: 'Skipped', reason: 'not-applicable' })
+  }
+  finally { fixture.cleanup() }
+})
+
+it('full text shows completed diagnostics before refusing an invalid edit', () => {
+  const fixture = makeFixture({ 'source.ts': 'export const answer = 42\nexport const taken = 7\n' })
+  try {
+    const result = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, 'rename', 'answer', 'taken', '--no-vue', '--apply', '--profile', 'full'], { cwd: fixture.dir, encoding: 'utf8' })
+    assert.equal(result.status, 1, result.stderr)
+    assert.match(result.stdout, /typescript diagnostics: touched, 1 files, [1-9]\d* new errors/)
+    assert.equal(fixture.read('source.ts'), 'export const answer = 42\nexport const taken = 7\n')
   }
   finally { fixture.cleanup() }
 })
