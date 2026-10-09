@@ -1,3 +1,4 @@
+import type { ParsedFile } from './util.ts'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { parseFile, posToLineCol, rgFiles } from './util.ts'
@@ -40,9 +41,13 @@ export interface DoctorIndex {
 export function buildDoctorIndex(opts: { cwd?: string, glob?: string | string[] } = {}): DoctorIndex {
   const cwd = opts.cwd ?? process.cwd()
   const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+  return buildDoctorIndexFromParsedFiles(files.map(abs => parseFile(abs, cwd)))
+}
+
+/** Build the index from the operation's already parsed source snapshot. */
+export function buildDoctorIndexFromParsedFiles(files: readonly ParsedFile[]): DoctorIndex {
   const out: DoctorIndexFile[] = []
-  for (const abs of files) {
-    const file = parseFile(abs, cwd)
+  for (const file of files) {
     if (!file.program)
       continue
     out.push(extractFileIndex(file.rel, file.program, file.fullSource, file.scriptStart))

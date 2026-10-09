@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { isOnlyBindingIdentifier, isReferenceIdentifier, ScopeTracker, walk } from 'oxc-walker'
-import { loadAdapter } from './adapter.ts'
+import { loadAdapter, needsVueAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
@@ -90,7 +90,8 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     }
   }
 
-  const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
+  const vueNeeded = vueEnabled && tsconfigPath && timed(profile, 'vue requirements', () => needsVueAdapter(cwd, candidatePaths, verifyMode === 'project'))
+  const vueAdapter = vueNeeded ? await timedAsync(profile, 'vue adapter', () => loadAdapter('vue')) : null
   const scopes = vueAdapter?.autoImportScopes?.(cwd) ?? new Set<string>()
   const autoImportSites = declarations.filter(decl => decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))
   const autoImportPlan = autoImportSites.length
@@ -168,10 +169,10 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     }
 
     if (vueEnabled && verifyMode === 'project') {
-      regressions.push(...await findVueRegressions(cwd, verificationChanges, tsconfigPath, async () => vueAdapter, verification.vue))
+      regressions.push(...await timedAsync(profile, 'vue verify', () => findVueRegressions(cwd, verificationChanges, tsconfigPath, async () => vueAdapter, verification.vue)))
     }
     else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
-      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, verificationChanges, verification.vue)
+      const vueRegs = await timedAsync(profile, 'vue verify', () => vueAdapter.regressions(tsconfigPath, cwd, verificationChanges, verification.vue))
       regressions.push(...vueRegs)
     }
 

@@ -4,6 +4,7 @@ import type { Regression } from './verify.ts'
 import type { TemplateExpression } from './vue-template.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { rgFiles } from './util.ts'
 
 export { diagnosticRegressions } from './diagnostic-matching.ts'
 // Adapter SDK entry. ripide-<framework> packages import from here.
@@ -174,12 +175,14 @@ export interface DoctorContextFile {
 }
 
 export interface DoctorAdapter {
+  /** Names of the framework checks registered by this adapter. */
+  checks: readonly string[]
   /** Files the framework treats as entries (won't be flagged as orphans). Paths relative to cwd. */
   entryFiles?: (cwd: string) => string[]
   /** Return true to drop a finding (false-positive filter). */
   filterFinding?: (cwd: string, finding: DoctorFinding) => boolean
   /** Framework-specific checks. Receives a shared parse context to avoid re-reading files. */
-  extraFindings?: (cwd: string, ctx?: DoctorContext) => DoctorFinding[]
+  extraFindings?: (cwd: string, ctx: DoctorContext | undefined, checks: ReadonlySet<string>) => DoctorFinding[]
 }
 
 export interface ComponentInfo {
@@ -275,6 +278,17 @@ export function detectFrameworks(cwd: string): FrameworkName[] {
     dir = parent
   }
   return out
+}
+
+/** Preserve Vue consumers, project verification, and Nuxt auto-import semantics. */
+export function needsVueAdapter(cwd: string, candidates: readonly string[], projectVerification: boolean): boolean {
+  if (candidates.some(path => path.endsWith('.vue')))
+    return true
+  if (projectVerification && rgFiles('', { cwd, glob: '*.vue', listAll: true }).length)
+    return true
+  if (existsSync(join(cwd, '.nuxt')) || detectFrameworks(cwd).includes('nuxt'))
+    return true
+  return rgFiles('', { cwd, glob: 'nuxt.config.{ts,js,mts,mjs,cts,cjs}', listAll: true }).length > 0
 }
 
 export function resetAdapterCache(): void {
