@@ -14,7 +14,7 @@ import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { recoverPropertyReferences } from './rename-property-references.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { applyTextEdits, parseSourceFile, rgFiles, rgFilesMany } from './util.ts'
+import { applyTextEdits, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface RenameOptions {
@@ -116,12 +116,11 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
     const changes: FileChange[] = await timedAsync(profile, 'collect changes', async () => {
       const out: FileChange[] = []
-      for (const [path, edits] of editsByPath) {
+      for (const path of new Set([...editsByPath.keys(), ...scriptCandidates])) {
         if (isVue(path))
           continue
         const before = readFileSync(path, 'utf8')
-        const selectedPositions = new Set(declarations.filter(declaration => declaration.filePath === path).map(declaration => declaration.pos))
-        const fileEdits = await preserveConsumerBindings(server, path, before, [...edits.values()], from, to, selectedPositions)
+        const fileEdits = await preserveConsumerBindings(server, path, before, [...(editsByPath.get(path)?.values() ?? [])], from, to, declarations)
         const after = autoImportPlan
           ? applyTextEdits(before, autoImportPlan.transformEdits(path, before, fileEdits.map(edit => ({
               start: offsetOfPosition(before, edit.range.start),
@@ -185,7 +184,11 @@ const isVue = isVuePath
 
 // A shorthand binding has two names: the source property and its local value.
 // Preserve the local name when the renamed declaration belongs to the source.
-async function preserveConsumerBindings(server: TsServer, path: string, source: string, edits: LspTextEdit[], from: string, to: string, selectedPositions: Set<number>): Promise<LspTextEdit[]> {
+async function preserveConsumerBindings(server: TsServer, path: string, source: string, edits: LspTextEdit[], from: string, to: string, declarations: Declaration[]): Promise<LspTextEdit[]> {
+  if (from === to)
+    return edits
+  const selectedPositions = new Set(declarations.filter(declaration => declaration.filePath === path).map(declaration => declaration.pos))
+  const selectedSites = new Set(declarations.map(declaration => `${declaration.filePath}:${declaration.pos}`))
   const shorthandOffsets = new Set<number>()
   const externalReferenceOffsets = new Set<number>()
   const { program, comments } = parseSource(path, source)
@@ -215,6 +218,53 @@ async function preserveConsumerBindings(server: TsServer, path: string, source: 
   })
   if (!shorthandOffsets.size)
     return edits
+  const definitionMatches = new Map<string, boolean>()
+  const aliasOffsetsByPath = new Map<string, Set<number>>()
+  function aliasOffsets(sitePath: string): Set<number> {
+    const cached = aliasOffsetsByPath.get(sitePath)
+    if (cached)
+      return cached
+    const offsets = new Set<number>()
+    walk(parseSource(sitePath, server.textOf(sitePath)).program, {
+      enter(node: any, parent: any) {
+        if (node.type === 'Identifier' && ['ImportSpecifier', 'ImportDefaultSpecifier', 'ImportNamespaceSpecifier', 'ExportSpecifier'].includes(parent?.type))
+          offsets.add(node.start)
+      },
+    })
+    aliasOffsetsByPath.set(sitePath, offsets)
+    return offsets
+  }
+  async function matchesSelectedDeclaration(sitePath: string, start: number, ancestors = new Set<string>()): Promise<boolean> {
+    const key = `${sitePath}:${start}`
+    if (selectedSites.has(key))
+      return true
+    if (ancestors.has(key))
+      return false
+    const cached = definitionMatches.get(key)
+    if (cached !== undefined)
+      return cached
+    const definitions = await server.definition(sitePath, start)
+    const nextAncestors = new Set([...ancestors, key])
+    let matches = definitions.length > 0
+    for (const definition of definitions) {
+      const target = `${definition.path}:${definition.start}`
+      if (selectedSites.has(target))
+        continue
+      if (!aliasOffsets(definition.path).has(definition.start) || !await matchesSelectedDeclaration(definition.path, definition.start, nextAncestors)) {
+        matches = false
+        break
+      }
+    }
+    definitionMatches.set(key, matches)
+    return matches
+  }
+  const renamedPropertyOffsets = new Set<number>()
+  for (const start of shorthandOffsets) {
+    if (await matchesSelectedDeclaration(path, start))
+      renamedPropertyOffsets.add(start)
+  }
+  if (!renamedPropertyOffsets.size)
+    return edits
   const tracker = new ScopeTracker({ preserveExitedScopes: true })
   walk(program, { scopeTracker: tracker })
   tracker.freeze()
@@ -224,7 +274,7 @@ async function preserveConsumerBindings(server: TsServer, path: string, source: 
   walk(program, {
     scopeTracker: tracker,
     enter(node: any) {
-      if (node.type !== 'Identifier' || !shorthandOffsets.has(node.start))
+      if (node.type !== 'Identifier' || !renamedPropertyOffsets.has(node.start))
         return
       const declaration = tracker.getDeclaration(from)
       if (declaration)
@@ -267,18 +317,33 @@ async function preserveConsumerBindings(server: TsServer, path: string, source: 
     if (edit.newText !== to || source.slice(start, end) !== from || !comments.some(comment => comment.start <= start && end <= comment.end))
       continue
     const definitions = await server.definition(path, start)
-    if (definitions.length && definitions.every(site => site.path === path && (shorthandOffsets.has(site.start) || localOffsets.has(site.start))))
+    if (definitions.length && definitions.every(site => site.path === path && (renamedPropertyOffsets.has(site.start) || localOffsets.has(site.start))))
       localOffsets.add(start)
   }
-  return edits.flatMap((edit) => {
+  const preservedEdits = edits.flatMap((edit) => {
     const start = offsetOfPosition(source, edit.range.start)
     const end = offsetOfPosition(source, edit.range.end)
     if (source.slice(start, end) !== from || edit.newText !== to)
       return [edit]
-    if (shorthandOffsets.has(start))
+    if (renamedPropertyOffsets.has(start))
       return [{ ...edit, newText: `${to}: ${source.slice(start, end)}` }]
     return localOffsets.has(start) ? [] : [edit]
   })
+  const editedPositions = new Set(edits.map(edit => offsetOfPosition(source, edit.range.start)))
+  for (const start of renamedPropertyOffsets) {
+    if (editedPositions.has(start) || source.slice(start, start + from.length) !== from)
+      continue
+    const first = posToLineCol(source, start)
+    const last = posToLineCol(source, start + from.length)
+    preservedEdits.push({
+      range: {
+        start: { line: first.line - 1, character: first.col - 1 },
+        end: { line: last.line - 1, character: last.col - 1 },
+      },
+      newText: `${to}: ${from}`,
+    })
+  }
+  return preservedEdits
 }
 
 // After a rename, the server's file set is bounded by the project it discovers.
