@@ -174,12 +174,14 @@ export interface DoctorContextFile {
 }
 
 export interface DoctorAdapter {
+  /** Names of the framework checks registered by this adapter. */
+  checks: readonly string[]
   /** Files the framework treats as entries (won't be flagged as orphans). Paths relative to cwd. */
   entryFiles?: (cwd: string) => string[]
   /** Return true to drop a finding (false-positive filter). */
   filterFinding?: (cwd: string, finding: DoctorFinding) => boolean
   /** Framework-specific checks. Receives a shared parse context to avoid re-reading files. */
-  extraFindings?: (cwd: string, ctx?: DoctorContext) => DoctorFinding[]
+  extraFindings?: (cwd: string, ctx: DoctorContext | undefined, checks: ReadonlySet<string>) => DoctorFinding[]
 }
 
 export interface ComponentInfo {
