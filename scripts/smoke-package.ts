@@ -34,7 +34,7 @@ console.log(JSON.stringify({ changes: result.changes.length, vueMatch: extension
   const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-verify', '--json'], isolated))
   assert.ok(renamed.changes.some((change: { after: string }) => change.after.includes('export const next')))
   assert.equal(readFileSync(join(cwd, 'source.ts'), 'utf8'), 'export const target = 1\n')
-  const named = JSON.parse(execFileSync('pnpm', ['exec', 'ripide', 'rename', 'target', 'next', '--no-verify', '--json'], { cwd, encoding: 'utf8' }))
+  const named = JSON.parse(run([join(cwd, 'node_modules/.bin/ripide'), 'rename', 'target', 'next', '--no-verify', '--json']))
   assert.ok(named.changes.some((change: { after: string }) => change.after.includes('export const next')))
   const sdk = JSON.parse(run(['--experimental-strip-types', 'consumer.ts']))
   assert.ok(sdk.changes > 0)
