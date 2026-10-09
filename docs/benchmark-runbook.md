@@ -69,6 +69,37 @@ If publication needs a schema, validate the final document once before rendering
 Repeat validation only after changes or a failure.
 Keep publication work separate from implementation measurements.
 
+## Runner preflight
+
+Inspect the effective native prompt without a model call.
+Configuration flags alone may retain global instructions or Skills.
+Apply the same personal-context isolation boundary to every arm. Preserve authentication.
+Record the effective configuration, prompt, mount rules, and treatment Skill hashes.
+Supply the complete linked Skill resource tree and its source base path to the runner.
+Pin each resource's hash. Resolve every relative link from that base during no-model preflight.
+If only entry text is supplied, describe the treatment as an inline entry Skill.
+Do not describe that treatment as a complete installed Skill.
+Before registration, verify which native transcripts, response identifiers, and usage records the runner persists.
+Export available records. Preserve exact session identifiers and artifact hashes.
+Mark unavailable native or provider internals explicitly. Ephemeral sessions may not persist native records.
+If full native auditing is required, select the persistence and isolation mode before registration.
+Smoke-test record persistence without model scoring.
+Raw CLI event streams do not expose hidden reasoning or complete provider records.
+Keep shared task constraints explicit after isolating personal instructions.
+Require TypeScript for new scripts. Ordinary shell tools remain allowed.
+State whether temporary edit helpers are permitted.
+Record whether the fixture is a Git checkout. Supply that fact equally to every arm before dispatch.
+
+Before each model dispatch, run a shell and PTY smoke check inside the exact child environment.
+Preserve its arguments, start, completion, streams, and exit.
+If preflight fails, stop dispatch. Classify the failure as setup failure, rather than treatment quality.
+Keep consumed usage and failed setup costs in study totals.
+If runner isolation changes, freeze a new registration. Preserve the previous registration and every attempt.
+
+Keep heavy builds, tests, and package installs outside scored attempts.
+Worktree setup hooks can install packages automatically. Finish those hooks before scoring.
+Record overlapping host operations and timestamps. Mark missing timing detail as unavailable.
+
 ## Before scoring
 
 Freeze these inputs before dispatch:
@@ -92,23 +123,52 @@ If a capability is unavailable, disclose it. Do not treat an unavailable gate as
 
 Separate mechanical, mixed, and architecture cohorts.
 Pilot direct edits, forced tool use, and hybrid choice separately.
-Select repeat counts before scoring. Counterbalance method order and cache conditions.
+Fix repeat counts before held-out registration. Record the sample-size rationale and limits of inference.
+Counterbalance method order. Record whether cache conditions are controlled or observed.
 Run serially or on demonstrably isolated resources.
 Use installed projects for full-project claims.
 Keep first-use setup separate from prepared-use measurements.
 
+Freeze task acceptance independently of treatment output.
+List allowed generated directories in both the common prompt and grader.
+Keep authored files, pinned dependencies, configuration, and lockfiles outside that exemption.
+Permitted scratch files must not become production imports or hide changed dependency bytes.
+Run every registered runtime check before the final semantic and preservation graders.
+This order catches check-generated changes to preserved source, assets, or dependencies.
+
+Observe cache and host-load conditions. Local cache settings do not prove provider cache state.
+Keep mixed utility tasks separate from broad architecture claims.
+Do not revise tasks, acceptance gates, or endpoints after inspecting relative arm results.
+
+The [engine fingerprint gate change](https://github.com/harlan-zw/ripide/pull/96) checks unchanged commits and changed-plan refusal.
+Use the gate matching the frozen SDK. Require actual refusal and unchanged source bytes.
+That proof does not establish freshness of appended consumers, configuration, or dependencies.
+Register separate independent gates before making those stronger claims.
+
 ## Accounting and claims
+
+Count command mentions, attempted stages, executed stages, and successful stages separately.
+Use execution records and child exits. A command string does not prove execution.
+If an earlier `&&` stage fails, later stages do not run.
+Mark stages without execution evidence as `Unavailable`.
 
 Count usage once per response identifier. Do not sum cumulative usage events.
 Report input, cached input, uncached input, output, reasoning subsets, and total tokens together.
 Count cached input and reasoning as subsets when the provider includes them within input or output.
 Separate arm, controller, implementation, publication, and integration resources.
+Separate child-agent usage from coordinator usage. Preserve unobserved categories as unavailable.
+Arm usage imports replace that attempt's stdout accounting. Do not add both sources together.
+Keep response identifiers unique across imported phase files and attempt owners.
 Preserve precise UTC timestamps and overlapping phase spans.
 Record the commit-request response and completed tool return. Do not silently change endpoints after scoring.
 
 Report all attempts, completion rates, repair costs, task medians, and summed resources.
+Retain setup failures, timeouts, refusals, failed delivery, repairs, and interrupted dispatches.
+If usage is missing, mark it unavailable. Do not infer zero provider work.
+Report setup and prepared-use costs separately. Show successful medians alongside all-workflow medians.
 Report uncertainty from repetitions. A single pair does not establish a causal effect.
 Report dollars only from recorded provider charges.
+Without actual charge receipts, report charges as unavailable. A zero placeholder cannot establish free usage.
 State quality differences before cost comparisons.
 Scope claims to the operations, project state, setup, and metrics actually measured.
 
