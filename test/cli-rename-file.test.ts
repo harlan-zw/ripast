@@ -38,7 +38,8 @@ it.skipIf(process.platform === 'win32').each([false, true])('rename-file refuses
       'source.ts',
       'target.ts',
       '--no-vue',
-      '--no-verify',
+      '--verify-mode',
+      'none',
       '--profile',
       'full',
       '--json',
@@ -70,7 +71,8 @@ it('rename-file preserves consumers when the destination directory cannot be cre
       'source.ts',
       'blocked/target.ts',
       '--no-vue',
-      '--no-verify',
+      '--verify-mode',
+      'none',
       '--apply',
       '--profile',
       'full',
@@ -110,7 +112,8 @@ syncBuiltinESMExports()
       'source.ts',
       'moved/target.ts',
       '--no-vue',
-      '--no-verify',
+      '--verify-mode',
+      'none',
       '--apply',
       '--profile',
       'full',
@@ -146,7 +149,7 @@ it('rename-file applies consumer and moved-file imports as one operation', () =>
       '--json',
     ], { cwd: fixture.dir, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
-    assert.equal(JSON.parse(result.stdout).applied, true)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Applied')
     assert.equal(existsSync(resolve(fixture.dir, 'source.ts')), false)
     const consumer = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'consumer.ts'], {
       cwd: fixture.dir,

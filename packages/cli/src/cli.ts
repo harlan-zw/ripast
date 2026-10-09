@@ -1,5 +1,6 @@
 import type { CommandDef } from 'citty'
 import type { ExportFilter, ProfileSink, Verification, VerifyMode } from 'ripide-api'
+import type { JsonTag } from './json.ts'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -55,6 +56,7 @@ import {
 } from 'ripide-api'
 import { agent, isAgent } from 'std-env'
 import { defineStrictCommand as defineCommand } from './command.ts'
+import { jsonResult, mutationTag } from './json.ts'
 
 const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
 
@@ -97,11 +99,10 @@ function splitGlobs(value: string): string[] {
   return globs
 }
 const applyArg = { type: 'boolean' as const, default: false, description: 'Write changes. Default prints a unified diff.' }
-const verifyArg = { type: 'boolean' as const, default: true, description: 'Typecheck post-transform; refuse --apply on regression. Disable with --no-verify.' }
-const verifyModeArg = { type: 'string' as const, description: 'Verification mode: touched, project, or none. Defaults to touched; --no-verify maps to none.' }
+const verifyModeArg = { type: 'string' as const, description: 'Verification mode: touched, project, or none. Defaults to touched.' }
 const vueArg = { type: 'boolean' as const, default: true, description: 'Enable Volar pass for .vue files. Disable with --no-vue to skip the Volar pass.' }
 const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit machine-readable JSON (suppresses diff/summary text).' }
-const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto uses std-env isAgent.' }
+const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto detects agents for text. JSON auto uses the compact agent profile.' }
 
 const outputArgs = {
   timings: { type: 'boolean' as const, default: false, description: 'Emit phase durations as stderr JSON lines.' },
@@ -165,19 +166,20 @@ function saveArtifact(args: OutputArgs, full: unknown, protectedPaths: string[] 
     writeFileSync(resolve(String(args.artifact)), `${JSON.stringify(full, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
   }
 }
-function emitJson(payload: unknown, args: OutputArgs, full = payload, artifact: 'save' | 'saved' = 'save'): void {
+function emitJson(payload: unknown, args: OutputArgs, full = payload, artifact: 'save' | 'saved' = 'save', tag: JsonTag = 'Result'): void {
   if (artifact === 'save')
     saveArtifact(args, full)
-  process.stdout.write(`${JSON.stringify(payload, null, args.minify || resolveProfile(args.profile).agentProfile ? undefined : 2)}\n`)
+  const result = jsonResult(tag, String(args.command ?? 'ripide'), process.cwd(), payload)
+  process.stdout.write(`${JSON.stringify(result, null, args.minify || resolveProfile(args.profile, !!args.json).agentProfile ? undefined : 2)}\n`)
 }
 function discoveryJson<T>(results: T[], args: OutputArgs, file?: (item: T) => string, full: unknown = results) {
-  const agentProfile = resolveProfile(args.profile).agentProfile
+  const agentProfile = resolveProfile(args.profile, !!args.json).agentProfile
   if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null) {
     emitJson(full, args, full)
     return
   }
   const page = selectOutput(results, selection(args, agentProfile), file)
-  emitJson({ status: page.total ? 'ok' : 'empty', base: process.cwd(), ...page, results: selectedFields(page.results, args) }, args, full)
+  emitJson({ ...page, results: selectedFields(page.results, args) }, args, full)
 }
 function diagnostics(r: MutatingResult, args: OutputArgs, agentProfile: boolean) {
   const all = [...r.regressions].map(d => ({ ...d, file: agentProfile ? outputPath(d.file, process.cwd()) : d.file })).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col || a.code - b.code || a.message.localeCompare(b.message))
@@ -192,12 +194,12 @@ function diagnosticText(r: MutatingResult, args: OutputArgs, agentProfile: boole
 type OutputProfile = 'auto' | 'agent' | 'full'
 type GraphFormat = 'mermaid' | 'dot'
 
-function resolveProfile(raw: unknown): { profile: OutputProfile, agentProfile: boolean } {
+function resolveProfile(raw: unknown, json = false): { profile: OutputProfile, agentProfile: boolean } {
   const profile = (raw as OutputProfile | undefined) ?? 'auto'
   if (profile !== 'auto' && profile !== 'agent' && profile !== 'full') {
     throw new Error(`ripide: --profile must be "auto", "agent", or "full".`)
   }
-  return { profile, agentProfile: profile === 'agent' || (profile === 'auto' && isAgent) }
+  return { profile, agentProfile: profile === 'agent' || (profile === 'auto' && (json || isAgent)) }
 }
 
 function resolveGraphFormat(raw: unknown): GraphFormat {
@@ -211,14 +213,14 @@ function profileHeader(): string {
   return `# profile: agent${agent ? ` (${agent})` : ''}`
 }
 
-function resolveCliVerifyMode(verify: unknown, verifyMode: unknown, defaultMode: VerifyMode = 'touched'): VerifyMode {
+function resolveCliVerifyMode(verifyMode: unknown, defaultMode: VerifyMode = 'touched'): VerifyMode {
   if (verifyMode != null) {
     if (verifyMode !== 'none' && verifyMode !== 'touched' && verifyMode !== 'project') {
       throw new Error(`ripide: --verify-mode must be "none", "touched", or "project".`)
     }
     return verifyMode
   }
-  return resolveVerifyMode(verify === false ? false : defaultMode)
+  return resolveVerifyMode(defaultMode)
 }
 
 // Recover from agent quoting bugs where two positional paths get smushed into
@@ -269,7 +271,7 @@ const scanCmd = defineCommand({
     json: { type: 'boolean', default: false },
   },
   run({ args }) {
-    const { agentProfile } = resolveProfile(args.profile)
+    const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const opts = {
       profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
@@ -309,7 +311,6 @@ const renameCmd = defineCommand({
     tsconfig: { type: 'string' },
     glob: globArg,
     apply: applyArg,
-    verify: verifyArg,
     verifyMode: verifyModeArg,
     scope: { type: 'string', description: 'Restrict to a single file when multiple files declare the same name.' },
     all: { type: 'boolean', default: false, description: 'Rename declarations in every file that defines the name (bypasses ambiguity check).' },
@@ -319,17 +320,17 @@ const renameCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
-    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
+    const verifyMode = resolveCliVerifyMode(args.verifyMode)
     const r = await runRename(args.from as string, args.to as string, {
       profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
-      verify: verifyMode,
+      verifyMode,
       scope: args.scope as string | undefined,
       allowMultiple: args.all as boolean,
       vue: args.vue as boolean,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
 })
 
@@ -342,22 +343,21 @@ const replaceCmd = defineCommand({
     'target-scope': { type: 'string', description: 'Restrict target symbol resolution to a single file when multiple files export the same name.' },
     'target-import': { type: 'string', description: 'Import specifier for the validated replacement, including framework aliases.' },
     'apply': applyArg,
-    'verify': verifyArg,
-    'verifyMode': { ...verifyModeArg, description: 'Verification mode: touched, project, or none. Defaults to project; --no-verify maps to none.' },
+    'verifyMode': { ...verifyModeArg, description: 'Verification mode: touched, project, or none. Defaults to project.' },
     'profile': profileArg,
     ...outputArgs,
     'json': jsonArg,
   },
   async run({ args }) {
-    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode, 'project')
+    const verifyMode = resolveCliVerifyMode(args.verifyMode, 'project')
     const r = await runReplace(args.from as string, args.to as string, {
       profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
-      verify: verifyMode,
+      verifyMode,
       targetScope: args['target-scope'] as string | undefined,
       targetImport: args['target-import'] as string | undefined,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
 })
 
@@ -371,7 +371,7 @@ const treeCmd = defineCommand({
     json: jsonArg,
   },
   run({ args }) {
-    const { agentProfile } = resolveProfile(args.profile)
+    const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const exportFilter = args.exports == null
       ? agentProfile ? 'exported' : 'all'
       : resolveExportFilter(args.exports)
@@ -412,7 +412,7 @@ const unusedCmd = defineCommand({
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       exports: exportFilter,
     })
-    const { agentProfile } = resolveProfile(args.profile)
+    const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const declarations = unused.files.flatMap(file => file.declarations.map(declaration => ({ file: file.file, ...declaration })))
     if (args.json) {
       discoveryJson(declarations, args, declaration => declaration.file, unused)
@@ -432,7 +432,6 @@ const moveCmd = defineCommand({
     to: { type: 'string', required: true, description: 'Target file path (created if missing).' },
     tsconfig: { type: 'string' },
     apply: applyArg,
-    verify: verifyArg,
     verifyMode: verifyModeArg,
     vue: vueArg,
     profile: profileArg,
@@ -440,14 +439,14 @@ const moveCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
-    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
+    const verifyMode = resolveCliVerifyMode(args.verifyMode)
     const r = await runMove(args.symbol as string, args.from as string, args.to as string, {
       profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
-      verify: verifyMode,
+      verifyMode,
       vue: args.vue as boolean,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
 })
 
@@ -457,19 +456,18 @@ const deleteCmd = defineCommand({
     symbol: { type: 'positional', required: true },
     from: { type: 'string', required: true, description: 'Source file path.' },
     apply: applyArg,
-    verify: verifyArg,
     verifyMode: verifyModeArg,
     profile: profileArg,
     ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
-    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
+    const verifyMode = resolveCliVerifyMode(args.verifyMode)
     const r = await runDelete(args.symbol as string, args.from as string, {
       profile: phaseSink(args),
-      verify: verifyMode,
+      verifyMode,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
 })
 
@@ -481,14 +479,10 @@ interface MutatingResult {
   warnings?: string[]
 }
 
-function compactMutationResult(r: MutatingResult, apply: boolean, manifest = buildChangeManifest(r.changes), args: OutputArgs = {}) {
-  const blocked = apply && r.regressions.length > 0
+function compactMutationResult(r: MutatingResult, manifest = buildChangeManifest(r.changes), args: OutputArgs = {}) {
   const { results: changes, ...changePage } = selectOutput(manifest.changes, selection(args, true), c => c[0])
   const { results: regressions, ...diagnosticPage } = diagnostics(r, args, true)
   return {
-    status: blocked ? 'refused' : r.changes.length || manifest.moves?.length ? 'ok' : 'empty',
-    base: process.cwd(),
-    mode: blocked ? 'blocked' : apply ? 'applied' : 'dry-run',
     verification: compactVerification(r.verification),
     ...(r.regressions.length ? { regressions, diagnosticPage } : {}),
     ...(r.warnings?.length ? { warnings: r.warnings } : {}),
@@ -508,12 +502,8 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
     if (wrote)
       writeChanges(r.changes)
     const payload = agentProfile
-      ? compactMutationResult(r, apply, undefined, args)
+      ? compactMutationResult(r, undefined, args)
       : {
-          status: blockedByRegression ? 'refused' : r.changes.length ? 'ok' : 'empty',
-          applied: wrote,
-          dryRun: !apply,
-          blockedByRegression,
           scanned: r.scanned,
           summary: s,
           verification: r.verification,
@@ -526,7 +516,7 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
           })(),
 
         }
-    emitJson(payload, args, r, 'saved')
+    emitJson(payload, args, r, 'saved', mutationTag(apply, blockedByRegression, r.changes.length))
     if (blockedByRegression)
       process.exitCode = 1
     return
@@ -589,27 +579,26 @@ const renameFileCmd = defineCommand({
     new: { type: 'positional', required: true },
     tsconfig: { type: 'string' },
     apply: applyArg,
-    verify: verifyArg,
-    verifyMode: verifyModeArg,
+    verifyMode: { ...verifyModeArg, description: 'Verification mode: touched, project, or none. Defaults to project.' },
     vue: vueArg,
     profile: profileArg,
     ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
-    const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
+    const verifyMode = resolveCliVerifyMode(args.verifyMode, 'project')
     const recovered = recoverSmushedPair(args.old as string, args.new as string)
     if (recovered.warning)
       process.stderr.write(`warning: ${recovered.warning}\n`)
     const r = await runRenameFile(recovered.old, recovered.new, {
       profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
-      verify: verifyMode,
+      verifyMode,
       vue: args.vue as boolean,
     })
     const apply = !!args.apply
     const json = !!args.json
-    const { agentProfile } = resolveProfile(args.profile)
+    const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const selfChangeDisplay = r.selfChange
       ? { path: r.fileMove.to, rel: relative(process.cwd(), r.fileMove.to), before: r.selfChange.before, after: r.selfChange.after }
       : null
@@ -647,12 +636,8 @@ const renameFileCmd = defineCommand({
 
     if (json) {
       const payload = agentProfile
-        ? compactMutationResult(r, apply, manifest, args)
+        ? compactMutationResult(r, manifest, args)
         : {
-            status: blockedByRegression ? 'refused' : 'ok',
-            applied: wrote,
-            dryRun: !apply,
-            blockedByRegression,
             scanned: r.scanned,
             summary: s,
             verification: r.verification,
@@ -667,7 +652,7 @@ const renameFileCmd = defineCommand({
             })(),
 
           }
-      emitJson(payload, args, r, 'saved')
+      emitJson(payload, args, r, 'saved', mutationTag(apply, blockedByRegression, r.changes.length + 1))
       if (blockedByRegression)
         process.exitCode = 1
       return
@@ -740,7 +725,7 @@ const cssClassRenameCmd = defineCommand({
     const r = await runCssClassRename(map, {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
 })
 
@@ -794,7 +779,7 @@ const cssClassScanCmd = defineCommand({
     json: jsonArg,
   },
   run({ args }) {
-    const { agentProfile } = resolveProfile(args.profile)
+    const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const by = resolveCssClassScanGroup(args.by)
     const base = {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
@@ -823,7 +808,7 @@ const cssClassScanCmd = defineCommand({
       }
       const page = selectOutput(hits, selection(args, agentProfile), hit => args.file && hit.files.includes(String(args.file)) ? String(args.file) : '')
       const results = agentProfile ? page.results.map(hit => ({ token: hit.token, count: hit.count, files: hit.files.length })) : page.results
-      emitJson({ status: page.total ? 'ok' : 'empty', base: process.cwd(), ...page, results: selectedFields(results, args) }, args, hits)
+      emitJson({ ...page, results: selectedFields(results, args) }, args, hits)
       return
     }
     if (agentProfile) {
@@ -884,7 +869,7 @@ const vueTemplateWrapCmd = defineCommand({
       scope: args.scope as string | undefined,
       rootOnly: args.rootOnly as boolean,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
 })
 
@@ -906,7 +891,7 @@ const vueTemplateUnwrapCmd = defineCommand({
       scope: args.scope as string | undefined,
       rootOnly: args.rootOnly as boolean,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
 })
 
@@ -922,7 +907,7 @@ const componentsCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
-    const { agentProfile } = resolveProfile(args.profile)
+    const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const opts = {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       source: resolveComponentsSource(args.source),
@@ -937,7 +922,7 @@ const componentsCmd = defineCommand({
         const normalized = { ...detail, component: normalizeComponent(detail.component), candidates: detail.candidates.map(normalizeComponent), usages: detail.usages.map(u => ({ ...u, file: outputPath(u.file, process.cwd()) })) }
         const page = selectOutput(normalized.usages, selection(args, agentProfile, 50), usage => usage.rel)
         const candidates = selectOutput(normalized.candidates, selection(args, agentProfile, 50), candidate => candidate.rel)
-        emitJson({ status: 'ok', base: process.cwd(), ...normalized, candidates: candidates.results, candidatePage: { ...candidates, results: undefined }, usages: selectedFields(page.results, args), usagePage: { ...page, results: undefined } }, args, detail)
+        emitJson({ ...normalized, candidates: candidates.results, candidatePage: { ...candidates, results: undefined }, usages: selectedFields(page.results, args), usagePage: { ...page, results: undefined } }, args, detail)
         return
       }
       process.stdout.write(`${formatDetail(detail, selection(args, agentProfile, 50))}\n`)
@@ -1005,7 +990,7 @@ const doctorCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
-    const { agentProfile } = resolveProfile(args.profile)
+    const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const checks = args.checks ? (args.checks as string).split(',') : undefined
     if (checks) {
       const names = await getDoctorCheckNames({ cwd: process.cwd() })
@@ -1021,7 +1006,7 @@ const doctorCmd = defineCommand({
       changedFiles = getChangedFiles({ cwd: process.cwd(), ref })
       if (!changedFiles.length) {
         if (args.json)
-          discoveryJson([], args, undefined, { status: 'empty', findings: [], filesScanned: 0 })
+          discoveryJson([], args, undefined, { findings: [], filesScanned: 0 })
         else
           process.stdout.write('doctor: no changed files matched.\n')
         return
@@ -1041,21 +1026,20 @@ const doctorCmd = defineCommand({
         if (args.apply && fix.changes.length)
           writeChanges(fix.changes)
         const full = {
-          status: fix.skipped.length ? 'findings' : fix.changes.length ? 'ok' : 'empty',
           verification: fix.verification,
           findings: report.findings,
           filesScanned: report.filesScanned,
-          fix: { applied: !!args.apply, files: fix.changes.length, fixed: fix.fixed, skipped: fix.skipped.length },
+          fix: { files: fix.changes.length, fixed: fix.fixed, skipped: fix.skipped.length },
           changes: fix.changes.map(c => ({ path: c.rel, before: c.before, after: c.after })),
         }
         const skippedPage = selectOutput(fix.skipped, selection(args, true, 50), finding => finding.file)
         emitJson(agentProfile
           ? {
-              ...compactMutationResult({ changes: fix.changes, verification: fix.verification, regressions: [], scanned: report.filesScanned }, !!args.apply, undefined, args),
+              ...compactMutationResult({ changes: fix.changes, verification: fix.verification, regressions: [], scanned: report.filesScanned }, undefined, args),
               findings: skippedPage.results,
               findingPage: { ...skippedPage, results: undefined },
             }
-          : full, args, full, 'saved')
+          : full, args, full, 'saved', mutationTag(!!args.apply, false, fix.changes.length))
         if (fix.skipped.length)
           process.exitCode = 1
         return
@@ -1091,7 +1075,7 @@ const doctorCmd = defineCommand({
     else if (args.json) {
       if (agentProfile) {
         const page = selectDoctorFindings(report, selection(args, true, 50))
-        emitJson({ status: page.total ? 'findings' : 'empty', base: process.cwd(), ...page, results: selectedFields(page.results, args), filesScanned: report.filesScanned }, args, report)
+        emitJson({ ...page, results: selectedFields(page.results, args), filesScanned: report.filesScanned }, args, report)
       }
       else {
         discoveryJson(report.findings, args, finding => finding.file, report)
@@ -1146,20 +1130,24 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
   const selected = commands[name]
   if (rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs.length === 0 || rawArgs.every(arg => arg === '--json')) {
     if (jsonRequested(rawArgs))
-      process.stdout.write(`${JSON.stringify({ status: 'help', usage: await renderUsage(selected ?? command) })}\n`)
+      emitJson({ usage: await renderUsage(selected ?? command) }, { command: selected ? name : 'ripide', json: true })
     else
       await showUsage(selected ?? command)
     return
   }
   if ((name === '--version' || name === '-v') && rawArgs.every(arg => ['--version', '-v', '--json'].includes(arg))) {
     const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
-    process.stdout.write(`${jsonRequested(rawArgs) ? JSON.stringify({ status: 'ok', version }) : version}\n`)
+    if (jsonRequested(rawArgs))
+      emitJson({ version }, { command: 'ripide', json: true })
+    else
+      process.stdout.write(`${version}\n`)
     return
   }
   const main = selected
     ? {
         ...selected,
         async run(context: Parameters<NonNullable<typeof selected.run>>[0]) {
+          context.args.command = name
           const start = performance.now()
           try {
             const destinations = name === 'rename-file'
@@ -1183,7 +1171,7 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
     const next = 'Run the command with --help. Fix the reported cause, then retry.'
     const cause = error instanceof Error && error.cause ? String(error.cause) : undefined
     if (jsonRequested(rawArgs))
-      process.stdout.write(`${JSON.stringify({ status: 'error', error: { message, next, ...(cause ? { cause } : {}) } })}\n`)
+      emitJson({ message, next, ...(cause ? { cause } : {}) }, { command: name ?? 'ripide', json: true }, undefined, 'saved', 'Error')
     if (jsonRequested(rawArgs))
       process.stderr.write(`ripide: ${message}\n`)
     else
