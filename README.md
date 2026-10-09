@@ -276,6 +276,9 @@ If line ranges shift, tuples include both ranges: `[path, beforeLines, afterLine
 Lines are one-based and inclusive. `"3,10-12"` identifies separate ranges; `"3+"` marks a gap after line 3.
 File moves appear separately as `moves: [[from, to]]`.
 Results include `mode` and `verification`. Empty warnings and regressions are omitted.
+Verification entries use `[checker, scope, files, newErrors]`.
+An optional fifth number counts errors excluded from the result.
+Skipped checks return `"disabled"`, `"no-changes"`, or `"not-applicable"`.
 After applying, earlier file reads are outdated. Read changed ranges only when you need current code.
 If an editing tool requires a fresh read, follow that requirement.
 Use `--profile full --json` for complete before/after content.
@@ -286,7 +289,7 @@ ripide rename useStore useAppStore --apply --profile agent --json
 # {
 #   "mode": "applied",
 #   "changes": [["src/store.ts", "12"], ["src/app.ts", "1,8"]],
-#   "verification": "passed"
+#   "verification": [["typescript", "touched", 2, 0]]
 # }
 ```
 
@@ -296,6 +299,12 @@ ripide rename useStore useAppStore --apply --profile agent --json
 
 `rename`, `replace`, `move`, `delete`, and `rename-file` enable verification by default.
 They compare type errors before and after the change, then refuse `--apply` if new errors appear.
+The receipt identifies the checker, scope, checked file count, and new error count.
+Full JSON uses named check fields. Agent JSON uses the compact tuples shown above.
+`typescript` uses TypeScript's native language server diagnostics. `vue` uses the Vue adapter's diagnostics.
+These checks compare error diagnostics against proposed content before writing files.
+They do not run `tsc --noEmit`, a build, or tests.
+If the receipt covers your required scope, do not repeat that diagnostic check without another edit.
 `replace` checks the project by default, including unchanged consumers of modified exports.
 Other refactors check touched files by default. Use `--verify-mode project` for broader checks, including unchanged Vue consumers.
 Project verification respects file discovery ignores. Refactor globs limit edits without narrowing project verification.

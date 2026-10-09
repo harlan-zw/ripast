@@ -1,16 +1,23 @@
 # Verification and scope
 
 Rename, replace, move, delete, and rename-file compare type diagnostics by default.
-New diagnostics block `--apply`. Agent output reports whether verification ran.
-`no new type diagnostics` means no increase within the selected verification scope.
-It does not prove a clean project build or passing tests.
+New diagnostics block `--apply`. Results report checks that ran against proposed content.
+Agent JSON uses `verification: [[checker, scope, files, newErrors, ignoredErrors?]]`.
+`typescript` pulls error diagnostics from the native TypeScript language server.
+`vue` collects error diagnostics through the Vue adapter.
+Both compare before and proposed content. Existing errors match their mapped source locations.
+The optional final count reports excluded errors, such as unresolved imports to a planned destination.
+Skipped checks return `disabled`, `no-changes`, or `not-applicable`.
+Full JSON uses tagged `Checked` or `Skipped` receipts with named fields.
+Zero new errors applies only to the reported scope. It does not prove a clean build or passing tests.
 Use `--verify-mode touched|project|none` to select scope. Keep verification enabled.
 Replacement checks the project by default. Other symbol refactors default to touched files.
 Project verification includes unchanged Vue consumers. It requires the Vue adapter when Vue files exist.
 Refactor globs limit edits without narrowing project verification. File discovery ignores still apply.
 CSS and Vue template transforms have no type verification. Run their relevant project checks.
 
-After applying, review the changed-file diff and run relevant checks.
+If the receipt covers your required scope, do not repeat that diagnostic check without another edit.
+Run builds or tests when the task requires checks outside that receipt.
 Batch known commands. Inspect more files only when results expose uncertainty.
 Repeat a successful check only after another edit or new failure.
 
