@@ -12,7 +12,7 @@ import { computeSpecifier } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { mergeFileChanges, rgFiles, rgFilesMany } from './util.ts'
+import { mergeFileChanges, rgFiles } from './util.ts'
 import { createVerification } from './verification.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
@@ -75,8 +75,9 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   if (!tsconfigPath)
     throw new Error('ripide rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
-  const name = basename(oldAbs, extname(oldAbs))
-  const vueCandidates = opts.vue === false ? [] : timed(profile, 'vue candidates', () => rgFilesMany([name, hyphenateVueName(name)], { cwd, glob: '*.vue' }))
+  // Directory indexes and aliases can hide the renamed basename from import sites.
+  // Let the adapter resolve consumers instead of filtering by source spelling.
+  const vueCandidates = timed(profile, 'vue candidates', () => rgFiles('', { cwd, glob: '*.vue', listAll: true }))
   const vueNeeded = opts.vue !== false && timed(profile, 'vue requirements', () => needsVueAdapter(cwd, [oldAbs, newAbs, ...vueCandidates], verifyMode === 'project'))
   const vueAdapter = vueNeeded ? await timedAsync(profile, 'vue adapter', () => loadAdapter('vue')) : null
   const warnings: string[] = []
@@ -100,9 +101,8 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       if (oldAbs.endsWith('.vue') || newAbs.endsWith('.vue'))
         throw new Error('ripide rename-file: renaming .vue files requires the Vue adapter (install ripide-vue)')
       consumerChanges = await timedAsync(profile, 'file rename transform', () => tsOnlyFileRename(server!, cwd, oldAbs, newAbs))
-      const vueConsumers = rgFiles(basename(oldAbs, extname(oldAbs)), { cwd, glob: '*.vue' })
-      if (vueConsumers.length)
-        warnings.push(`${vueConsumers.length} .vue file(s) reference this name and were not checked; install ripide-vue to rewrite .vue import sites`)
+      if (vueCandidates.length)
+        warnings.push(`${vueCandidates.length} .vue file(s) were not checked; install ripide-vue to rewrite .vue import sites`)
     }
 
     const selfChangeRaw = consumerChanges.find(c => c.path === oldAbs || c.path === newAbs)

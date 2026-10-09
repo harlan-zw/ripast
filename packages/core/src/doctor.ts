@@ -714,6 +714,20 @@ function findInconsistentImportPaths(index: DoctorIndex, cwd: string): DoctorFin
 
 type ImportFlavour = 'alias' | 'relative' | 'relative-ext'
 
+function parseDoctorAdapter(value: unknown, name: FrameworkName): DoctorAdapter {
+  const packageName = `ripide-${name === 'nuxt' ? 'vue' : name}`
+  const definition = value && typeof value === 'object' ? value as Record<string, unknown> : null
+  const checks = definition?.checks
+  if (!Array.isArray(checks) || checks.some(check => typeof check !== 'string' || !check.trim() || check.trim() !== check)) {
+    throw new Error(`Adapter ${packageName}: doctor.checks must be an array of nonempty check names. Update the adapter registration.`)
+  }
+  for (const field of ['entryFiles', 'extraFindings', 'filterFinding'] as const) {
+    if (definition?.[field] !== undefined && typeof definition?.[field] !== 'function')
+      throw new Error(`Adapter ${packageName}: doctor.${field} must be a function. Update the adapter registration.`)
+  }
+  return value as DoctorAdapter
+}
+
 async function loadDoctorAdapters(cwd: string, opts: DoctorOptions): Promise<DoctorAdapter[]> {
   if (opts.noAdapters)
     return []
@@ -722,12 +736,13 @@ async function loadDoctorAdapters(cwd: string, opts: DoctorOptions): Promise<Doc
   const seen = new Set<DoctorAdapter>()
   for (const name of names) {
     const adapter = await loadAdapter(name)
-    if (!adapter?.doctor)
+    if (!adapter || adapter.doctor === undefined)
       continue
-    if (seen.has(adapter.doctor))
+    const doctor = parseDoctorAdapter(adapter.doctor, name)
+    if (seen.has(doctor))
       continue
-    seen.add(adapter.doctor)
-    adapters.push(adapter.doctor)
+    seen.add(doctor)
+    adapters.push(doctor)
   }
   return adapters
 }
