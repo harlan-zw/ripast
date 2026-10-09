@@ -36,6 +36,19 @@ function detectFrameworks(cwd) {
   return out
 }
 
+function jsonRequested(rawArgs) {
+  let requested = false
+  for (const arg of rawArgs) {
+    if (arg === '--')
+      break
+    if (arg === '--json' || arg === '--json=true')
+      requested = true
+    if (arg === '--no-json' || arg === '--json=false')
+      requested = false
+  }
+  return requested
+}
+
 function ensureAdapters(needed) {
   if (process.env.RIPIDE_REEXEC)
     return
@@ -56,7 +69,7 @@ function ensureAdapters(needed) {
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   const packages = ['ripide', ...missing].map(name => `--package=${name}@${version}`)
   const args = ['dlx', ...packages, 'ripide', ...process.argv.slice(2)]
-  const json = process.argv.some(arg => arg === '--json' || arg === '--json=true')
+  const json = jsonRequested(process.argv.slice(2))
   const options = { stdio: json ? ['inherit', 'pipe', 'inherit'] : 'inherit', encoding: 'utf8', maxBuffer: 100 * 1024 * 1024, env: { ...process.env, RIPIDE_REEXEC: '1' } }
   let manager = 'pnpm'
   let res = spawn.sync(manager, args, options)
