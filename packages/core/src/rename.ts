@@ -1,12 +1,12 @@
 import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
-import type { LspTextEdit } from './ts-server.ts'
+import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { isReferenceIdentifier, ScopeTracker, walk } from 'oxc-walker'
+import { isOnlyBindingIdentifier, isReferenceIdentifier, ScopeTracker, walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
@@ -114,14 +114,14 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
       await recoverPropertyReferences(server, scriptCandidates, declarations, from, to, editsByPath)
     })
 
-    const changes: FileChange[] = timed(profile, 'collect changes', () => {
+    const changes: FileChange[] = await timedAsync(profile, 'collect changes', async () => {
       const out: FileChange[] = []
       for (const [path, edits] of editsByPath) {
         if (isVue(path))
           continue
         const before = readFileSync(path, 'utf8')
         const selectedPositions = new Set(declarations.filter(declaration => declaration.filePath === path).map(declaration => declaration.pos))
-        const fileEdits = preserveConsumerBindings(path, before, [...edits.values()], from, to, selectedPositions)
+        const fileEdits = await preserveConsumerBindings(server, path, before, [...edits.values()], from, to, selectedPositions)
         const after = autoImportPlan
           ? applyTextEdits(before, autoImportPlan.transformEdits(path, before, fileEdits.map(edit => ({
               start: offsetOfPosition(before, edit.range.start),
@@ -185,10 +185,10 @@ const isVue = isVuePath
 
 // A shorthand binding has two names: the source property and its local value.
 // Preserve the local name when the renamed declaration belongs to the source.
-function preserveConsumerBindings(path: string, source: string, edits: LspTextEdit[], from: string, to: string, selectedPositions: Set<number>): LspTextEdit[] {
+async function preserveConsumerBindings(server: TsServer, path: string, source: string, edits: LspTextEdit[], from: string, to: string, selectedPositions: Set<number>): Promise<LspTextEdit[]> {
   const shorthandOffsets = new Set<number>()
   const externalReferenceOffsets = new Set<number>()
-  const { program } = parseSource(path, source)
+  const { program, comments } = parseSource(path, source)
   walk(program, {
     enter(node: any) {
       if (node.type === 'ExportNamedDeclaration' && node.source) {
@@ -218,6 +218,19 @@ function preserveConsumerBindings(path: string, source: string, edits: LspTextEd
   const tracker = new ScopeTracker({ preserveExitedScopes: true })
   walk(program, { scopeTracker: tracker })
   tracker.freeze()
+  // Multiple var declarations share one binding. The tracker keeps its last
+  // declaration, so resolve shorthand sites before preserving that binding.
+  const consumerDeclarationOffsets = new Set<number>()
+  walk(program, {
+    scopeTracker: tracker,
+    enter(node: any) {
+      if (node.type !== 'Identifier' || !shorthandOffsets.has(node.start))
+        return
+      const declaration = tracker.getDeclaration(from)
+      if (declaration)
+        consumerDeclarationOffsets.add(declaration.node.start)
+    },
+  })
   const localOffsets = new Set<number>()
   const typeQueryOffsets = new Set<number>()
   walk(program, {
@@ -238,14 +251,25 @@ function preserveConsumerBindings(path: string, source: string, edits: LspTextEd
             && parent.name === node && !/^[a-z]/.test(node.name)
       )
       const identifierReference = node.type === 'Identifier'
-        && (isReferenceIdentifier(node, parent, { mode: 'value' }) || typeQueryOffsets.has(node.start))
+        && (isOnlyBindingIdentifier(node, parent) || isReferenceIdentifier(node, parent, { mode: 'value' }) || typeQueryOffsets.has(node.start))
       if (!jsxReference && !identifierReference)
         return
       const declaration = tracker.getDeclaration(from)
-      if (declaration && shorthandOffsets.has(declaration.node.start))
+      if (declaration && consumerDeclarationOffsets.has(declaration.node.start))
         localOffsets.add(node.start)
     },
   })
+  // The script AST excludes JSDoc. Resolve comment edits with the language
+  // server so local types keep their binding and module qualifiers still change.
+  for (const edit of edits) {
+    const start = offsetOfPosition(source, edit.range.start)
+    const end = offsetOfPosition(source, edit.range.end)
+    if (edit.newText !== to || source.slice(start, end) !== from || !comments.some(comment => comment.start <= start && end <= comment.end))
+      continue
+    const definitions = await server.definition(path, start)
+    if (definitions.length && definitions.every(site => site.path === path && (shorthandOffsets.has(site.start) || localOffsets.has(site.start))))
+      localOffsets.add(start)
+  }
   return edits.flatMap((edit) => {
     const start = offsetOfPosition(source, edit.range.start)
     const end = offsetOfPosition(source, edit.range.end)
