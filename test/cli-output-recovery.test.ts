@@ -187,6 +187,8 @@ it('timings report finite phase measurements without contaminating JSON', () => 
     assert.equal(JSON.parse(result.stdout).total, 1)
     const events = result.stderr.trim().split('\n').map(line => JSON.parse(line))
     assert.ok(events.some(event => event.phase === 'command scan'))
+    assert.ok(events.some(event => event.phase === 'scan discovery'))
+    assert.ok(events.some(event => event.phase === 'scan parse'))
     assert.ok(events.every(event => typeof event.phase === 'string' && Number.isFinite(event.ms) && event.ms >= 0))
     assert.equal(fixture.read('source.ts'), 'export const value = 1\n')
   }

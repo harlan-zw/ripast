@@ -1,5 +1,5 @@
 import type { CommandDef } from 'citty'
-import type { ExportFilter, Verification, VerifyMode } from 'ripide-api'
+import type { ExportFilter, ProfileSink, Verification, VerifyMode } from 'ripide-api'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -115,6 +115,9 @@ const outputArgs = {
 }
 
 type OutputArgs = Record<string, unknown>
+function phaseSink(args: OutputArgs): ProfileSink | undefined {
+  return args.timings ? event => process.stderr.write(`${JSON.stringify(event)}\n`) : undefined
+}
 function selection(args: OutputArgs, agentProfile: boolean, defaultLimit = 40) {
   return { limit: args.limit == null ? agentProfile ? defaultLimit : undefined : Number(args.limit), offset: args.offset == null ? 0 : Number(args.offset), file: args.file as string | undefined }
 }
@@ -233,7 +236,7 @@ const scanCmd = defineCommand({
   args: {
     pattern: { type: 'positional', required: true },
     glob: globArg,
-    kind: { type: 'string', description: 'Filter to kind(s), comma-separated. Kinds: identifier-reference, identifier-binding, import-specifier, member-access, property, jsx, string-literal.' },
+    kind: { type: 'string', description: 'Filter to kind(s), comma-separated. Kinds: identifier-reference, identifier-binding, import-specifier, member-access, property, jsx, string-literal, label.' },
     graph: { type: 'string', description: 'Emit a dependency graph for hit files: mermaid or dot.' },
     profile: profileArg,
     ...outputArgs,
@@ -242,6 +245,7 @@ const scanCmd = defineCommand({
   run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
     const opts = {
+      profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       kinds: args.kind ? (args.kind as string).split(',') : undefined,
     }
@@ -291,6 +295,7 @@ const renameCmd = defineCommand({
   async run({ args }) {
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
     const r = await runRename(args.from as string, args.to as string, {
+      profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       verify: verifyMode,
@@ -320,6 +325,7 @@ const replaceCmd = defineCommand({
   async run({ args }) {
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode, 'project')
     const r = await runReplace(args.from as string, args.to as string, {
+      profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       verify: verifyMode,
       targetScope: args['target-scope'] as string | undefined,
@@ -344,6 +350,7 @@ const treeCmd = defineCommand({
       ? agentProfile ? 'exported' : 'all'
       : resolveExportFilter(args.exports)
     const tree = buildDeclarationTree({
+      profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       exports: agentProfile ? 'all' : exportFilter,
     })
@@ -375,6 +382,7 @@ const unusedCmd = defineCommand({
   async run({ args }) {
     const exportFilter = args.exports == null ? 'exported' : resolveExportFilter(args.exports)
     const unused = await buildUnusedDeclarations({
+      profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       exports: exportFilter,
     })
@@ -408,6 +416,7 @@ const moveCmd = defineCommand({
   async run({ args }) {
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
     const r = await runMove(args.symbol as string, args.from as string, args.to as string, {
+      profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
       verify: verifyMode,
       vue: args.vue as boolean,
@@ -431,6 +440,7 @@ const deleteCmd = defineCommand({
   async run({ args }) {
     const verifyMode = resolveCliVerifyMode(args.verify, args.verifyMode)
     const r = await runDelete(args.symbol as string, args.from as string, {
+      profile: phaseSink(args),
       verify: verifyMode,
     })
     emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
@@ -566,6 +576,7 @@ const renameFileCmd = defineCommand({
     if (recovered.warning)
       process.stderr.write(`warning: ${recovered.warning}\n`)
     const r = await runRenameFile(recovered.old, recovered.new, {
+      profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
       verify: verifyMode,
       vue: args.vue as boolean,
@@ -991,6 +1002,7 @@ const doctorCmd = defineCommand({
       }
     }
     const report = await runDoctor({
+      profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       checks,
       entry,
