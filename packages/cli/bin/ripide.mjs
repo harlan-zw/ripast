@@ -53,7 +53,9 @@ function ensureAdapters(needed) {
   if (!missing.length)
     return
 
-  const args = ['dlx', '--package=ripide', ...missing.map(p => `--package=${p}`), 'ripide', ...process.argv.slice(2)]
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const packages = ['ripide', ...missing].map(name => `--package=${name}@${version}`)
+  const args = ['dlx', ...packages, 'ripide', ...process.argv.slice(2)]
   const options = { stdio: 'inherit', env: { ...process.env, RIPIDE_REEXEC: '1' } }
   let manager = 'pnpm'
   let res = spawn.sync(manager, args, options)
@@ -62,7 +64,7 @@ function ensureAdapters(needed) {
     // Keep npm's project metadata separate. The executed CLI still uses the caller's cwd.
     const prefix = mkdtempSync(join(tmpdir(), 'ripide-adapters-'))
     try {
-      res = spawn.sync(manager, ['exec', '--yes', `--prefix=${prefix}`, '--package=ripide', ...missing.map(p => `--package=${p}`), '--', 'ripide', ...process.argv.slice(2)], options)
+      res = spawn.sync(manager, ['exec', '--yes', `--prefix=${prefix}`, ...packages, '--', 'ripide', ...process.argv.slice(2)], options)
     }
     finally { rmSync(prefix, { recursive: true, force: true }) }
   }
