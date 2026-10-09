@@ -88,6 +88,7 @@ Raw CLI event streams do not expose hidden reasoning or complete provider record
 Keep shared task constraints explicit after isolating personal instructions.
 Require TypeScript for new scripts. Ordinary shell tools remain allowed.
 State whether temporary edit helpers are permitted.
+Record whether the fixture is a Git checkout. Supply that fact equally to every arm before dispatch.
 
 Before each model dispatch, run a shell and PTY smoke check inside the exact child environment.
 Preserve its arguments, start, completion, streams, and exit.
@@ -145,6 +146,11 @@ That proof does not establish freshness of appended consumers, configuration, or
 Register separate independent gates before making those stronger claims.
 
 ## Accounting and claims
+
+Count command mentions, attempted stages, executed stages, and successful stages separately.
+Use execution records and child exits. A command string does not prove execution.
+If an earlier `&&` stage fails, later stages do not run.
+Mark stages without execution evidence as `Unavailable`.
 
 Count usage once per response identifier. Do not sum cumulative usage events.
 Report input, cached input, uncached input, output, reasoning subsets, and total tokens together.
