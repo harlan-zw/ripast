@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { createPatch } from 'diff'
@@ -100,17 +101,30 @@ function discoverySelection(userGlobs: string[]) {
 }
 
 function runRipgrep(args: string[], cwd: string, fallback: () => string[]): string[] {
-  const result = spawnSync('rg', ['--null', ...args], { cwd, encoding: 'utf8' })
-  if (result.error) {
-    if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
-      process.stderr.write('ripide: rg was not found on PATH. Using Node file search; it may be slower.\n')
-      return fallback()
+  // File lists can exceed spawnSync's pipe buffer. File-backed streams preserve all bytes.
+  const directory = mkdtempSync(join(tmpdir(), 'ripide-discovery-'))
+  const stdout = join(directory, 'stdout')
+  const stderr = join(directory, 'stderr')
+  const output = openSync(stdout, 'w')
+  const errors = openSync(stderr, 'w')
+  try {
+    const result = spawnSync('rg', ['--null', ...args], { cwd, stdio: ['ignore', output, errors] })
+    if (result.error) {
+      if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
+        process.stderr.write('ripide: rg was not found on PATH. Using Node file search; it may be slower.\n')
+        return fallback()
+      }
+      throw new Error(`Could not start rg: ${result.error.message}`, { cause: result.error })
     }
-    throw new Error(`Could not start rg: ${result.error.message}`, { cause: result.error })
+    if (result.status !== 0 && result.status !== 1)
+      throw new Error(`rg failed: ${readFileSync(stderr, 'utf8')}${result.signal ? ` (signal ${result.signal})` : ''}`)
+    return readFileSync(stdout, 'utf8').split('\0').filter(Boolean).map(path => resolve(cwd, path))
   }
-  if (result.status !== 0 && result.status !== 1)
-    throw new Error(`rg failed: ${result.stderr}`)
-  return result.stdout.split('\0').filter(Boolean).map(p => resolve(cwd, p))
+  finally {
+    closeSync(output)
+    closeSync(errors)
+    rmSync(directory, { recursive: true, force: true })
+  }
 }
 
 export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {

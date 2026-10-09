@@ -733,13 +733,27 @@ async function loadDoctorAdapters(cwd: string, opts: DoctorOptions): Promise<Doc
   return adapters
 }
 
+const CORE_DOCTOR_CHECKS = ['dangling-reexport', 'stale-reexport', 'stale-import', 'duplicate-export', 'orphan-file', 'orphan-test', 'inconsistent-import-path', 'circular-dep'] as const
+
+/** Returns the registered checks for the selected project and framework adapters. */
+export async function getDoctorCheckNames(opts: Pick<DoctorOptions, 'cwd' | 'frameworks' | 'noAdapters'> = {}): Promise<string[]> {
+  const cwd = opts.cwd ?? process.cwd()
+  const adapters = await loadDoctorAdapters(cwd, opts)
+  return [...new Set([...CORE_DOCTOR_CHECKS, ...adapters.flatMap(adapter => adapter.checks)])].sort()
+}
+
 export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
   const cwd = opts.cwd ?? process.cwd()
-  const checks = new Set<DoctorCheck>(opts.checks ?? ['dangling-reexport', 'stale-reexport', 'stale-import', 'duplicate-export', 'orphan-file', 'orphan-test', 'inconsistent-import-path', 'circular-dep'])
+  const adapters = await loadDoctorAdapters(cwd, opts)
+  const registered = new Set([...CORE_DOCTOR_CHECKS, ...adapters.flatMap(adapter => adapter.checks)])
+  const checks = new Set<DoctorCheck>(opts.checks ?? registered)
+  const unknown = [...checks].filter(check => !registered.has(check))
+  if (unknown.length)
+    throw new Error(`Unknown doctor check: ${unknown.join(', ')}. Available checks: ${[...registered].sort().join(', ')}`)
+  const selectedAdapters = adapters.filter(adapter => adapter.checks.some(check => checks.has(check)))
   const tree = buildDeclarationTree({ cwd, glob: opts.glob, exports: 'all' })
   const needsIndex = checks.has('dangling-reexport') || checks.has('stale-reexport') || checks.has('stale-import') || checks.has('inconsistent-import-path') || checks.has('circular-dep')
   const index = needsIndex ? buildDoctorIndex({ cwd, glob: opts.glob }) : null
-  const adapters = await loadDoctorAdapters(cwd, opts)
   const entries = new Set((opts.entry ?? []).map(file => relative(cwd, resolve(cwd, file))))
   for (const adapter of adapters) {
     for (const entry of adapter.entryFiles?.(cwd) ?? [])
@@ -762,12 +776,14 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
     findings.push(...findInconsistentImportPaths(index, cwd))
   if (checks.has('circular-dep') && index)
     findings.push(...findCircularDeps(index, cwd))
-  const adapterIndex = index ?? (adapters.some(a => a.extraFindings) ? buildDoctorIndex({ cwd, glob: opts.glob }) : null)
-  for (const adapter of adapters)
-    findings.push(...adapter.extraFindings?.(cwd, adapterIndex ? { index: adapterIndex } : undefined) ?? [])
+  const adapterIndex = index ?? (selectedAdapters.some(a => a.extraFindings) ? buildDoctorIndex({ cwd, glob: opts.glob }) : null)
+  for (const adapter of selectedAdapters)
+    findings.push(...adapter.extraFindings?.(cwd, adapterIndex ? { index: adapterIndex } : undefined, checks) ?? [])
   const ignores = buildIgnoreIndex(cwd, findings)
   const changedSet = opts.changedFiles ? new Set(opts.changedFiles.map(file => resolve(cwd, file))) : null
   const filtered = findings.filter((f) => {
+    if (!checks.has(f.check))
+      return false
     if (changedSet && !changedSet.has(resolve(cwd, f.file)))
       return false
     if (isIgnored(ignores, f))

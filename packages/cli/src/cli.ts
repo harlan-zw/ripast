@@ -32,6 +32,7 @@ import {
   formatUnusedDeclarations,
   formatVerification,
   getChangedFiles,
+  getDoctorCheckNames,
   outputPath,
   printDiffs,
   resolveVerifyMode,
@@ -955,7 +956,14 @@ const doctorCmd = defineCommand({
   },
   async run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
-    const checks = args.checks ? (args.checks as string).split(',') as any : undefined
+    const checks = args.checks ? (args.checks as string).split(',') : undefined
+    if (checks) {
+      const names = await getDoctorCheckNames({ cwd: process.cwd() })
+      for (const check of checks) {
+        if (!names.includes(check))
+          throw new Error(`Unknown doctor check: ${check}. Available checks: ${names.join(', ')}`)
+      }
+    }
     const entry = args.entry ? (args.entry as string).split(',') : undefined
     let changedFiles: string[] | undefined
     if (args.changed != null) {
