@@ -1,9 +1,9 @@
-import type { Extension } from '@ripast/core'
-import type { FileChange, FrameworkAdapter, scan } from '@ripast/core/adapter'
+import type { Extension } from 'ripide-api'
+import type { FileChange, FrameworkAdapter, scan } from 'ripide-api/adapter'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { createEngine } from '@ripast/core'
 import ts from '@typescript/typescript6'
+import { createEngine } from 'ripide-api'
 import {
   applyVueFileRenameEdits,
   applyVueImportRewrite,

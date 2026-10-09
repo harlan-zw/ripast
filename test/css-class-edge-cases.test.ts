@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 /* eslint-disable no-new-func -- Evaluate only the fixed fixture expressions to verify preserved runtime behavior. */
-import { rewriteClassString, runCssClassRename, runCssClassScan } from '@ripast/core'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { rewriteClassString, runCssClassRename, runCssClassScan } from 'ripide-api'
 import { describe, it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'

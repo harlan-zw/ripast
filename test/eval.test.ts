@@ -35,10 +35,10 @@ describe('openCode eval measurements', () => {
 
   it('excludes failed runs from speed and token comparisons', () => {
     const rows = [
-      { arm: 'ripast' as const, passed: true, seconds: 10, tokens: 100 },
+      { arm: 'ripide' as const, passed: true, seconds: 10, tokens: 100 },
       { arm: 'agent' as const, passed: true, seconds: 20, tokens: 400 },
-      { arm: 'ripast' as const, passed: false, seconds: 1, tokens: 1 },
+      { arm: 'ripide' as const, passed: false, seconds: 1, tokens: 1 },
     ]
-    expect(summarize(rows)).toEqual({ ripast: { passed: 1, runs: 2, seconds: 10, tokens: 100 }, agent: { passed: 1, runs: 1, seconds: 20, tokens: 400 }, speedup: 2, tokenReduction: 0.75 })
+    expect(summarize(rows)).toEqual({ ripide: { passed: 1, runs: 2, seconds: 10, tokens: 100 }, agent: { passed: 1, runs: 1, seconds: 20, tokens: 400 }, speedup: 2, tokenReduction: 0.75 })
   })
 })

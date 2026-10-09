@@ -1,6 +1,6 @@
-import { runCssClassRename, runCssClassScan } from '@ripast/core'
-/* eslint-disable no-template-curly-in-string -- These fixtures exercise template source, including its interpolation syntax. */
 import { parse } from '@vue/compiler-sfc'
+/* eslint-disable no-template-curly-in-string -- These fixtures exercise template source, including its interpolation syntax. */
+import { runCssClassRename, runCssClassScan } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'

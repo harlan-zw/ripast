@@ -7,7 +7,7 @@ import { createEngine } from '../packages/core/src/index.ts'
 
 const directories: string[] = []
 function fixture() {
-  const cwd = mkdtempSync(join(tmpdir(), 'ripast-engine-'))
+  const cwd = mkdtempSync(join(tmpdir(), 'ripide-engine-'))
   directories.push(cwd)
   writeFileSync(join(cwd, 'view.custom'), 'header\nexport const shared = 1\n')
   return cwd

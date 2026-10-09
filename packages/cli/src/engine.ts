@@ -1,16 +1,16 @@
-import type { Extension } from '@ripast/core'
+import type { Extension } from 'ripide-api'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
-import { createEngine } from '@ripast/core'
-import { rgFiles } from '@ripast/core/adapter'
+import { createEngine } from 'ripide-api'
+import { rgFiles } from 'ripide-api/adapter'
 
 export async function createCliEngine(cwd = process.cwd(), enabled = true) {
   const authored = rgFiles('', { cwd, glob: '*.vue', listAll: true }).length > 0
   const needed = authored || (enabled && hasVueDependency(cwd))
   const extensions: Extension[] = []
   if (enabled && needed) {
-    const { createVueExtension } = await import('@ripast/vue')
+    const { createVueExtension } = await import('ripide-vue')
     extensions.push(createVueExtension())
   }
   return createEngine({ extensions, requiredSuffixes: authored ? ['.vue'] : [] })
@@ -34,5 +34,5 @@ function hasVueDependency(cwd: string): boolean {
 }
 
 export async function loadVueOperations() {
-  return import('@ripast/vue')
+  return import('ripide-vue')
 }

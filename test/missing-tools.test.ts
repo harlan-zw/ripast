@@ -177,5 +177,5 @@ it('fallback refuses regex searches rather than changing regex semantics', () =>
 })
 
 it('missing working directory remains an error', () => {
-  assert.throws(() => rgFiles('target', { cwd: '/ripast-missing-directory-for-test' }), /ENOENT/)
+  assert.throws(() => rgFiles('target', { cwd: '/ripide-missing-directory-for-test' }), /ENOENT/)
 })

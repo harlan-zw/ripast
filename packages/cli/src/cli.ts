@@ -1,7 +1,8 @@
-import type { ExportFilter, VerifyMode } from '@ripast/core'
+import type { ExportFilter, VerifyMode } from 'ripide-api'
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
+import { runMain } from 'citty'
 import {
   buildComponentDetail,
   buildComponentInventory,
@@ -35,8 +36,7 @@ import {
   scan,
   summarize,
   writeChanges,
-} from '@ripast/core'
-import { runMain } from 'citty'
+} from 'ripide-api'
 import { agent, isAgent } from 'std-env'
 import { defineStrictCommand as defineCommand } from './command.ts'
 import { createCliEngine, loadVueOperations } from './engine.ts'
@@ -94,7 +94,7 @@ type GraphFormat = 'mermaid' | 'dot'
 function resolveProfile(raw: unknown): { profile: OutputProfile, agentProfile: boolean } {
   const profile = (raw as OutputProfile | undefined) ?? 'auto'
   if (profile !== 'auto' && profile !== 'agent' && profile !== 'full') {
-    process.stderr.write(`ripast: --profile must be "auto", "agent", or "full".\n`)
+    process.stderr.write(`ripide: --profile must be "auto", "agent", or "full".\n`)
     process.exit(2)
   }
   return { profile, agentProfile: profile === 'agent' || (profile === 'auto' && isAgent) }
@@ -102,7 +102,7 @@ function resolveProfile(raw: unknown): { profile: OutputProfile, agentProfile: b
 
 function resolveGraphFormat(raw: unknown): GraphFormat {
   if (raw !== 'mermaid' && raw !== 'dot') {
-    process.stderr.write(`ripast scan: --graph must be "mermaid" or "dot".\n`)
+    process.stderr.write(`ripide scan: --graph must be "mermaid" or "dot".\n`)
     process.exit(2)
   }
   return raw
@@ -115,7 +115,7 @@ function profileHeader(): string {
 function resolveCliVerifyMode(verify: unknown, verifyMode: unknown, defaultMode: VerifyMode = 'touched'): VerifyMode {
   if (verifyMode != null) {
     if (verifyMode !== 'none' && verifyMode !== 'touched' && verifyMode !== 'project') {
-      process.stderr.write(`ripast: --verify-mode must be "none", "touched", or "project".\n`)
+      process.stderr.write(`ripide: --verify-mode must be "none", "touched", or "project".\n`)
       process.exit(2)
     }
     return verifyMode
@@ -154,7 +154,7 @@ function recoverSmushedPair(oldArg: string, newArg: string): { old: string, new:
 
 function resolveExportFilter(raw: unknown): ExportFilter {
   if (raw !== 'all' && raw !== 'exported' && raw !== 'local') {
-    process.stderr.write(`ripast: --exports must be "all", "exported", or "local".\n`)
+    process.stderr.write(`ripide: --exports must be "all", "exported", or "local".\n`)
     process.exit(2)
   }
   return raw
@@ -403,7 +403,7 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
       if (r.regressions.length > 20)
         process.stdout.write(`  ... ${r.regressions.length - 20} more\n`)
       if (apply) {
-        process.stderr.write(`\nripast: refusing to --apply; --no-verify to override.\n`)
+        process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
         process.exit(1)
       }
     }
@@ -423,7 +423,7 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
   if (verify && r.regressions.length) {
     process.stderr.write(`\n${formatRegressions(r.regressions, process.cwd())}\n`)
     if (apply) {
-      process.stderr.write(`\nripast: refusing to --apply; --no-verify to override.\n`)
+      process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
       process.exit(1)
     }
   }
@@ -510,7 +510,7 @@ const renameFileCmd = defineCommand({
       if (verify && r.regressions.length) {
         process.stdout.write(`regressions: ${r.regressions.length}\n`)
         if (apply) {
-          process.stderr.write(`\nripast: refusing to --apply; --no-verify to override.\n`)
+          process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
           process.exit(1)
         }
       }
@@ -528,7 +528,7 @@ const renameFileCmd = defineCommand({
     if (verify && r.regressions.length) {
       process.stderr.write(`\n${formatRegressions(r.regressions, process.cwd())}\n`)
       if (apply) {
-        process.stderr.write(`\nripast: refusing to --apply; --no-verify to override.\n`)
+        process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
         process.exit(1)
       }
     }
@@ -570,11 +570,11 @@ function buildRenameMap(from: string | undefined, to: string | undefined, mapPat
   const hasPair = from != null && to != null
   const hasMap = !!mapPath
   if (hasPair && hasMap) {
-    process.stderr.write(`ripast css-class-rename: pass either "from to" positionals OR --map, not both.\n`)
+    process.stderr.write(`ripide css-class-rename: pass either "from to" positionals OR --map, not both.\n`)
     process.exit(2)
   }
   if (!hasPair && !hasMap) {
-    process.stderr.write(`ripast css-class-rename: missing input. Pass "from to" positionals or --map <file.json>.\n`)
+    process.stderr.write(`ripide css-class-rename: missing input. Pass "from to" positionals or --map <file.json>.\n`)
     process.exit(2)
   }
   if (hasPair)
@@ -585,27 +585,27 @@ function buildRenameMap(from: string | undefined, to: string | undefined, mapPat
     parsed = JSON.parse(raw)
   }
   catch (err) {
-    process.stderr.write(`ripast css-class-rename: --map file is not valid JSON (${(err as Error).message}).\n`)
+    process.stderr.write(`ripide css-class-rename: --map file is not valid JSON (${(err as Error).message}).\n`)
     process.exit(2)
   }
   if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    process.stderr.write(`ripast css-class-rename: --map must be a flat JSON object, got ${Array.isArray(parsed) ? 'array' : typeof parsed}.\n`)
+    process.stderr.write(`ripide css-class-rename: --map must be a flat JSON object, got ${Array.isArray(parsed) ? 'array' : typeof parsed}.\n`)
     process.exit(2)
   }
   const entries: [string, string][] = []
   for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof v !== 'string') {
-      process.stderr.write(`ripast css-class-rename: --map value for "${k}" is not a string.\n`)
+      process.stderr.write(`ripide css-class-rename: --map value for "${k}" is not a string.\n`)
       process.exit(2)
     }
     if (!k) {
-      process.stderr.write(`ripast css-class-rename: --map has an empty key.\n`)
+      process.stderr.write(`ripide css-class-rename: --map has an empty key.\n`)
       process.exit(2)
     }
     entries.push([k, String(v)])
   }
   if (!entries.length) {
-    process.stderr.write(`ripast css-class-rename: --map is empty.\n`)
+    process.stderr.write(`ripide css-class-rename: --map is empty.\n`)
     process.exit(2)
   }
   return new Map(entries)
@@ -660,7 +660,7 @@ function resolveCssClassScanGroup(raw: unknown): 'token' | 'file' {
   if (raw == null)
     return 'token'
   if (raw !== 'token' && raw !== 'file') {
-    process.stderr.write(`ripast css-class-scan: --by must be "token" or "file".\n`)
+    process.stderr.write(`ripide css-class-scan: --by must be "token" or "file".\n`)
     process.exit(2)
   }
   return raw
@@ -670,7 +670,7 @@ function resolveCssClassScanSort(raw: unknown): 'count-desc' | 'count-asc' | 'to
   if (raw == null)
     return 'count-desc'
   if (raw !== 'count-desc' && raw !== 'count-asc' && raw !== 'token') {
-    process.stderr.write(`ripast css-class-scan: --sort must be "count-desc", "count-asc", or "token".\n`)
+    process.stderr.write(`ripide css-class-scan: --sort must be "count-desc", "count-asc", or "token".\n`)
     process.exit(2)
   }
   return raw
@@ -680,7 +680,7 @@ function resolveCssClassFileScanSort(raw: unknown): 'unique-desc' | 'unique-asc'
   if (raw == null)
     return 'unique-desc'
   if (raw !== 'unique-desc' && raw !== 'unique-asc' && raw !== 'count-desc' && raw !== 'count-asc' && raw !== 'file') {
-    process.stderr.write(`ripast css-class-scan: --sort with --by file must be "unique-desc", "unique-asc", "count-desc", "count-asc", or "file".\n`)
+    process.stderr.write(`ripide css-class-scan: --sort with --by file must be "unique-desc", "unique-asc", "count-desc", "count-asc", or "file".\n`)
     process.exit(2)
   }
   return raw
@@ -754,7 +754,7 @@ const componentsCmd = defineCommand({
     if (args.name) {
       const detail = await buildComponentDetail(args.name as string, opts)
       if (!detail) {
-        process.stderr.write(`ripast components: no component named "${args.name}".\n`)
+        process.stderr.write(`ripide components: no component named "${args.name}".\n`)
         process.exit(1)
       }
       if (args.json) {
@@ -795,14 +795,14 @@ function resolveComponentsSource(raw: unknown): 'auto' | 'manifest' | 'filesyste
   if (raw == null)
     return undefined
   if (raw !== 'auto' && raw !== 'manifest' && raw !== 'filesystem') {
-    process.stderr.write(`ripast components: --source must be "auto", "manifest", or "filesystem".\n`)
+    process.stderr.write(`ripide components: --source must be "auto", "manifest", or "filesystem".\n`)
     process.exit(2)
   }
   return raw
 }
 
 const doctorCmd = defineCommand({
-  meta: { name: 'doctor', description: 'Health checks over the AST graph. Suppress per-file with `// ripast-doctor-ignore-file[: c1,c2]` or per-line with `// ripast-doctor-ignore-next-line[: c1,c2]`.' },
+  meta: { name: 'doctor', description: 'Health checks over the AST graph. Suppress per-file with `// ripide-doctor-ignore-file[: c1,c2]` or per-line with `// ripide-doctor-ignore-next-line[: c1,c2]`.' },
   args: {
     glob: globArg,
     checks: { type: 'string', description: 'Comma-separated subset: dangling-reexport, stale-reexport, stale-import, duplicate-export, orphan-file, orphan-test, inconsistent-import-path, circular-dep, phantom-component, shadowed-component, cross-realm-import, stale-nuxt-config-ref. Default: all (adapter checks run when their framework is detected).' },
@@ -824,7 +824,7 @@ const doctorCmd = defineCommand({
       const ref = typeof args.changed === 'string' && args.changed !== '' && args.changed !== 'true' ? args.changed : undefined
       changedFiles = getChangedFiles({ cwd: process.cwd(), ref })
       if (!changedFiles.length) {
-        process.stderr.write(`ripast doctor: --changed${ref ? ` ${ref}` : ''} matched no files; nothing to report.\n`)
+        process.stderr.write(`ripide doctor: --changed${ref ? ` ${ref}` : ''} matched no files; nothing to report.\n`)
         return
       }
     }
@@ -882,7 +882,7 @@ const doctorCmd = defineCommand({
 }, ['changed'])
 
 runMain(defineCommand({
-  meta: { name: 'ripast', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
+  meta: { name: 'ripide', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
     'scan': scanCmd,
     'tree': treeCmd,

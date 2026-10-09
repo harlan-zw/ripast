@@ -1,7 +1,7 @@
-import type { CssClassSourceFile, RenameMap } from '@ripast/core/adapter'
-import { applyTextEdits, cssSyntax, encodeAttributeValue, mapIncludesAny, parseFile, rewriteClassString, rewriteCss, rewriteStringsInProgram, visitClassTokens, visitCss, visitProgramClassStrings } from '@ripast/core/adapter'
+import type { CssClassSourceFile, RenameMap } from 'ripide-api/adapter'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { parseSync } from 'oxc-parser'
+import { applyTextEdits, cssSyntax, encodeAttributeValue, mapIncludesAny, parseFile, rewriteClassString, rewriteCss, rewriteStringsInProgram, visitClassTokens, visitCss, visitProgramClassStrings } from 'ripide-api/adapter'
 import { parseAuthoredSource } from './source.ts'
 
 const CLASS_EXPRESSION_PREFIX = 'cn('
@@ -20,7 +20,7 @@ function visitVue(file: CssClassSourceFile, visit: (text: string) => void): void
 
 function parseClassExpression(expression: string): { source: string, program: any | null } {
   const source = `${CLASS_EXPRESSION_PREFIX}${expression})`
-  const { program, errors } = parseSync('ripast-class-expression.ts', source)
+  const { program, errors } = parseSync('ripide-class-expression.ts', source)
   return { source, program: errors.length ? null : program }
 }
 

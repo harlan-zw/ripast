@@ -1,7 +1,7 @@
-import type { AutoImportRenamePlan, FileChange, Regression, RenameSite } from '@ripast/core/adapter'
+import type { AutoImportRenamePlan, FileChange, Regression, RenameSite } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { posToLineCol } from '@ripast/core/adapter'
+import { posToLineCol } from 'ripide-api/adapter'
 import { URI } from 'vscode-uri'
 import { createVueService, vueProjectConfigs, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
 import { hasVueFilesContaining, listVueFiles, listVueFilesContaining } from './vue-files.ts'
@@ -31,7 +31,7 @@ export async function applyVueRename(
         for (const c of vueChanges) {
           const existing = byPath.get(c.path)
           if (existing && existing.after !== c.after)
-            throw new Error(`ripast: Vue projects disagree on edits for ${c.rel}. Use an explicit tsconfig.`)
+            throw new Error(`ripide: Vue projects disagree on edits for ${c.rel}. Use an explicit tsconfig.`)
           byPath.set(c.path, c)
         }
       }
@@ -115,7 +115,7 @@ export async function applyVueFileRenameEdits(
       for (const change of workspaceEditToChanges(edits, vue, cwd, filter)) {
         const existing = byPath.get(change.path)
         if (existing && existing.after !== change.after)
-          throw new Error(`ripast: Vue projects disagree on edits for ${change.rel}. Use an explicit tsconfig.`)
+          throw new Error(`ripide: Vue projects disagree on edits for ${change.rel}. Use an explicit tsconfig.`)
         byPath.set(change.path, change)
       }
     }
@@ -138,7 +138,7 @@ export async function vueRegressions(
     if (projects.some(project => project.files.includes(change.path)))
       continue
     if (projects.length !== 1)
-      throw new Error(`ripast: cannot select a Vue project for ${change.rel}. Use an explicit tsconfig.`)
+      throw new Error(`ripide: cannot select a Vue project for ${change.rel}. Use an explicit tsconfig.`)
     projects[0].files.push(change.path)
   }
   const out: Regression[] = []

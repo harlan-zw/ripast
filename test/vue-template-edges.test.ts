@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { writeChanges } from '@ripast/core'
-import { runVueTemplateUnwrap, runVueTemplateWrap } from '@ripast/vue'
 import { parse } from '@vue/compiler-sfc'
+import { writeChanges } from 'ripide-api'
+import { runVueTemplateUnwrap, runVueTemplateWrap } from 'ripide-vue'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 

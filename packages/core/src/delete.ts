@@ -49,7 +49,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   )
   if (!decl) {
     throw new Error(
-      `ripast delete: no top-level declaration named "${symbol}" in ${fromPath} `
+      `ripide delete: no top-level declaration named "${symbol}" in ${fromPath} `
       + `(supported: function, class, interface, type, enum, const/let/var with single declarator)`,
     )
   }
@@ -64,7 +64,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
         throw new Error('Cannot inspect implicit consumers before deletion')
       const consumers = adapter.inspectAutoImportConsumers({ cwd, symbol, fromAbs, files: candidatePaths, scopes })
       if (consumers.length)
-        throw new Error(`ripast delete: cannot prove "${symbol}" is unused through auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
+        throw new Error(`ripide delete: cannot prove "${symbol}" is unused through auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
     }
   }
 
@@ -108,20 +108,20 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
         const { line, col } = posToLineCol(source, module.start)
         const location = `${relative(cwd, path)}:${line}:${col}`
         if (typeof module.value !== 'string')
-          throw new Error(`ripast delete: cannot resolve a dynamic import at ${location}. Use a resolvable named import first.`)
-        const importText = `import * as __RipastDynamic from ${script.slice(module.start, module.end)}`
-        const access = `__RipastDynamic.${symbol}`
-        const probe = `${importText}\n${access};\ntype __RipastDynamicType = ${access};`
+          throw new Error(`ripide delete: cannot resolve a dynamic import at ${location}. Use a resolvable named import first.`)
+        const importText = `import * as __RipIDEDynamic from ${script.slice(module.start, module.end)}`
+        const access = `__RipIDEDynamic.${symbol}`
+        const probe = `${importText}\n${access};\ntype __RipIDEDynamicType = ${access};`
         const probePath = inspectionPath(path, 'ts')
         server.open(probePath, probe)
         for (const offset of [probe.indexOf(access), probe.lastIndexOf(access)]) {
-          const definitions = await server.definition(probePath, offset + '__RipastDynamic.'.length)
+          const definitions = await server.definition(probePath, offset + '__RipIDEDynamic.'.length)
           if (definitions.some(site => site.path === fromAbs && site.start >= decl.start && site.start < decl.end))
-            throw new Error(`ripast delete: cannot prove "${symbol}" is unused through a dynamic import at ${location}. Use named imports first.`)
+            throw new Error(`ripide delete: cannot prove "${symbol}" is unused through a dynamic import at ${location}. Use named imports first.`)
         }
         const moduleOffset = parseSource(probePath, importText).program.body[0].source.start + 1
         if (!(await server.definition(probePath, moduleOffset)).length)
-          throw new Error(`ripast delete: cannot resolve a dynamic import at ${location}. Use a resolvable named import first.`)
+          throw new Error(`ripide delete: cannot resolve a dynamic import at ${location}. Use a resolvable named import first.`)
       }
       for (const imp of imports) {
         const namespace = imp.namespaceImport
@@ -134,7 +134,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
         if (inspectedNamespaces.has(inspectionKey))
           continue
         const access = `${namespace.name}.${symbol}`
-        const probe = `${importText}\n${access};\ntype __RipastNamespace = ${access};`
+        const probe = `${importText}\n${access};\ntype __RipIDENamespace = ${access};`
         const probePath = inspectionPath(path, 'ts')
         server.open(probePath, probe)
         const offsets = [probe.indexOf(access), probe.lastIndexOf(access)].map(offset => offset + namespace.name.length + 1)
@@ -145,14 +145,14 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
           if (!definitions.some(site => site.path === fromAbs && site.start >= decl.start && site.start < decl.end))
             continue
           const { line, col } = posToLineCol(source, namespace.start)
-          throw new Error(`ripast delete: cannot prove "${symbol}" is unused through a namespace import at ${relative(cwd, path)}:${line}:${col}. Use named imports first.`)
+          throw new Error(`ripide delete: cannot prove "${symbol}" is unused through a namespace import at ${relative(cwd, path)}:${line}:${col}. Use named imports first.`)
         }
         if (!resolvedExport) {
           const moduleOffset = parseSource(probePath, importText).program.body[0].source.start + 1
           const modules = await server.definition(probePath, moduleOffset)
           if (!modules.length) {
             const { line, col } = posToLineCol(source, namespace.start)
-            throw new Error(`ripast delete: cannot resolve a namespace import at ${relative(cwd, path)}:${line}:${col}. Use a resolvable import first.`)
+            throw new Error(`ripide delete: cannot resolve a namespace import at ${relative(cwd, path)}:${line}:${col}. Use a resolvable import first.`)
           }
         }
         inspectedNamespaces.add(inspectionKey)
@@ -171,7 +171,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     if (references.length) {
       const preview = references.slice(0, 20).map(ref => `${ref.file}:${ref.line}:${ref.col}`).join('\n')
       const extra = references.length > 20 ? `\n... ${references.length - 20} more` : ''
-      throw new Error(`ripast delete: "${symbol}" still has ${references.length} reference${references.length === 1 ? '' : 's'}\n\n${preview}${extra}\n\nUse ripast scan ${symbol} to inspect usages.`)
+      throw new Error(`ripide delete: "${symbol}" still has ${references.length} reference${references.length === 1 ? '' : 's'}\n\n${preview}${extra}\n\nUse ripide scan ${symbol} to inspect usages.`)
     }
 
     const after = pruneUnusedImports(removeDeclaration(before, parsed.comments, decl), fromAbs)

@@ -3,9 +3,9 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove, runRename, runRenameFile } from '@ripast/core'
-import { createVueExtension } from '@ripast/vue'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
+import { runMove, runRename, runRenameFile } from 'ripide-api'
+import { createVueExtension } from 'ripide-vue'
 import ts from 'typescript'
 import { it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
@@ -13,7 +13,7 @@ import { vueServices } from './engine-fixture.ts'
 const vueAdapter = createVueExtension().semantic!
 
 function fixture(alias: boolean) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-reference-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-reference-'))
   cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
   rmSync(join(dir, 'pages'), { recursive: true, force: true })
   mkdirSync(join(dir, 'app/utils'), { recursive: true })

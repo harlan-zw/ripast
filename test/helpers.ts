@@ -23,8 +23,8 @@ export interface Fixture {
 }
 
 export function prepareLauncher(fx: Fixture): string {
-  const path = fx.write('bin/ripast.mjs', '')
-  copyFileSync(resolve('packages/cli/bin/ripast.mjs'), path)
+  const path = fx.write('bin/ripide.mjs', '')
+  copyFileSync(resolve('packages/cli/bin/ripide.mjs'), path)
   mkdirSync(join(fx.dir, 'node_modules'), { recursive: true })
   // Link this dependency alone. Keep adapter resolution isolated from the workspace.
   symlinkSync(resolve('packages/cli/node_modules/cross-spawn'), join(fx.dir, 'node_modules/cross-spawn'), 'junction')
@@ -33,7 +33,7 @@ export function prepareLauncher(fx: Fixture): string {
 }
 
 export function makeFixture(files: Record<string, string> = {}, includeTsconfig = true): Fixture {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-test-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-test-'))
   const write = (rel: string, content: string): string => {
     const abs = join(dir, rel)
     mkdirSync(dirname(abs), { recursive: true })
@@ -65,7 +65,7 @@ const JS_TSCONFIG = JSON.stringify({
 }, null, 2)
 
 export function makeJsFixture(files: Record<string, string> = {}): Fixture {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-test-js-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-test-js-'))
   const write = (rel: string, content: string): string => {
     const abs = join(dir, rel)
     mkdirSync(dirname(abs), { recursive: true })

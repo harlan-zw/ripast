@@ -8,8 +8,8 @@ Core has no framework compiler dependency. Optional package loading belongs to t
 Replace implicit adapter loading with explicit extension injection:
 
 ```ts
-import { createEngine } from '@ripast/core'
-import { createVueExtension, runVueTemplateWrap } from '@ripast/vue'
+import { createEngine } from 'ripide-api'
+import { createVueExtension, runVueTemplateWrap } from 'ripide-vue'
 
 const engine = createEngine({
   extensions: [createVueExtension()],
@@ -23,7 +23,7 @@ const result = await engine.rename('useCounter', 'useTally', {
 engine.commit(result)
 ```
 
-Vue template wrap and unwrap operations now come from `@ripast/vue`.
+Vue template wrap and unwrap operations now come from `ripide-vue`.
 The default Vue export is an extension factory. Prefer the named `createVueExtension` export.
 The SDK `vue` option and global adapter loader were removed.
 A native engine needs no extension. If authored framework source exists, supply its extension before mutation.

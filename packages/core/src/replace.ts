@@ -48,7 +48,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
     ? [resolve(cwd, opts.targetScope)]
     : rgFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
-    throw new Error('ripast replace: --target-import requires an import path without whitespace, quotes, or backslashes')
+    throw new Error('ripide replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
   const server = await startTsServer(cwd)
   try {
@@ -119,13 +119,13 @@ async function findReplacementTarget(server: TsServer, paths: string[], symbol: 
   }
   if (!matches.length) {
     if (targetScope)
-      throw new Error(`ripast replace: no exported declaration of "${symbol}" in ${targetScope}`)
-    throw new Error(`ripast replace: no exported declaration of "${symbol}" found in project`)
+      throw new Error(`ripide replace: no exported declaration of "${symbol}" in ${targetScope}`)
+    throw new Error(`ripide replace: no exported declaration of "${symbol}" found in project`)
   }
   const uniqueFiles = new Set(matches.map(m => relative(cwd, m.filePath)))
   if (uniqueFiles.size > 1) {
     throw new Error(
-      `ripast replace: "${symbol}" is exported from multiple files (${[...uniqueFiles].join(', ')}). `
+      `ripide replace: "${symbol}" is exported from multiple files (${[...uniqueFiles].join(', ')}). `
       + `Pass --target-scope <file> to pick one.`,
     )
   }
@@ -177,7 +177,7 @@ async function replaceImportedSymbol(server: TsServer, referenceCache: Map<strin
       if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') && node.name === from)
         bindingNames.add(node.start)
       if (node.type === 'Identifier' && node.name === from && source.slice(node.start, node.end).includes('\\u') && !unrelated.has(node.start))
-        throw new Error(`ripast replace: TypeScript cannot resolve escaped references to "${from}" in ${path}`)
+        throw new Error(`ripide replace: TypeScript cannot resolve escaped references to "${from}" in ${path}`)
       if ((node.type === 'MemberExpression' && !node.computed) || node.type === 'JSXMemberExpression')
         qualifiedNames.add(node.property.start)
       if (node.type === 'TSQualifiedName')

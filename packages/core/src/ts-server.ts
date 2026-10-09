@@ -10,7 +10,7 @@ import { posToLineCol } from './util.ts'
 
 // Client for the native TypeScript language server (TypeScript 7+, `tsc --lsp`).
 // Semantics (rename, references, definitions, diagnostics, file renames) come
-// from the server. ripast owns candidate discovery, text edits, diffing, and
+// from the server. ripide owns candidate discovery, text edits, diffing, and
 // verification policy.
 
 export interface LspPosition {
@@ -76,9 +76,9 @@ export interface TsServerOptions {
   tsconfig?: string
 }
 
-const DEBUG = !!process.env.RIPAST_DEBUG
+const DEBUG = !!process.env.RIPIDE_DEBUG
 
-// ripast renames everywhere. By default the server keeps re-export names
+// ripide renames everywhere. By default the server keeps re-export names
 // stable (`export { renamed as original }`) and leaves consumers untouched.
 // Sent as initializationOptions (raw preference names) and as the answer to
 // every workspace/configuration section (VS Code-style paths).
@@ -88,7 +88,7 @@ const PREFERENCES = {
 }
 
 export function resolveNativeTsc(): string {
-  const override = process.env.RIPAST_NATIVE_TSC
+  const override = process.env.RIPIDE_NATIVE_TSC
   if (override)
     return override
   const platformPkg = `@typescript/typescript-${process.platform}-${process.arch}`
@@ -98,11 +98,11 @@ export function resolveNativeTsc(): string {
     platformJson = createRequire(pkgJson).resolve(`${platformPkg}/package.json`)
   }
   catch {
-    throw new Error(`ripast: native TypeScript binary not found for ${process.platform}-${process.arch}. Install ${platformPkg}, or set RIPAST_NATIVE_TSC to a TypeScript 7 tsc binary.`)
+    throw new Error(`ripide: native TypeScript binary not found for ${process.platform}-${process.arch}. Install ${platformPkg}, or set RIPIDE_NATIVE_TSC to a TypeScript 7 tsc binary.`)
   }
   const exe = join(dirname(platformJson), 'lib', process.platform === 'win32' ? 'tsc.exe' : 'tsc')
   if (!existsSync(exe))
-    throw new Error(`ripast: native TypeScript binary missing at ${exe}.`)
+    throw new Error(`ripide: native TypeScript binary missing at ${exe}.`)
   return exe
 }
 
@@ -180,7 +180,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
         return
       pending.delete(message.id)
       if (message.error)
-        entry.reject(new Error(`ripast: TypeScript server error ${message.error.code}: ${message.error.message}`))
+        entry.reject(new Error(`ripide: TypeScript server error ${message.error.code}: ${message.error.message}`))
       else
         entry.resolve(message.result)
     }
@@ -211,20 +211,20 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       stderrTail.shift()
   })
   proc.on('exit', (code) => {
-    stop(new Error(`ripast: TypeScript server exited with code ${code}${stderrHint()}`))
+    stop(new Error(`ripide: TypeScript server exited with code ${code}${stderrHint()}`))
   })
   proc.on('error', (error) => {
-    stop(new Error(`ripast: could not start TypeScript server at ${binary}: ${error.message}`))
+    stop(new Error(`ripide: could not start TypeScript server at ${binary}: ${error.message}`))
   })
   proc.stdin.on('error', (error) => {
     // A queued write can fail after disposal. Its requests already have the terminal error.
-    stop(new Error(`ripast: TypeScript server input failed: ${error.message}${stderrHint()}`))
+    stop(new Error(`ripide: TypeScript server input failed: ${error.message}${stderrHint()}`))
   })
 
   await request('initialize', {
     processId: process.pid,
     rootUri: pathToFileURL(cwd).href,
-    workspaceFolders: [{ uri: pathToFileURL(cwd).href, name: 'ripast' }],
+    workspaceFolders: [{ uri: pathToFileURL(cwd).href, name: 'ripide' }],
     initializationOptions: preferences,
     capabilities: {
       workspace: {
@@ -358,7 +358,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     open,
     textOf,
     dispose() {
-      stop(new Error('ripast: TypeScript server disposed.'))
+      stop(new Error('ripide: TypeScript server disposed.'))
     },
   }
 }

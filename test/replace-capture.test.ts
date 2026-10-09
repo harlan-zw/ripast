@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import { runReplace, writeChanges } from '@ripast/core'
+import { runReplace, writeChanges } from 'ripide-api'
 import { it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'

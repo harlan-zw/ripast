@@ -788,7 +788,7 @@ function buildIgnoreIndex(cwd: string, findings: DoctorFinding[]): Map<string, F
     const lines = source.split('\n')
     const ignore: FileIgnore = { all: false, checks: new Set(), perLine: new Map() }
     const head = lines.slice(0, 10).join('\n')
-    const fileDirective = /\/\/\s*ripast-doctor-ignore-file\s*(?::\s*([^\n]+))?/.exec(head)
+    const fileDirective = /\/\/\s*ripide-doctor-ignore-file\s*(?::\s*([^\n]+))?/.exec(head)
     if (fileDirective) {
       const list = (fileDirective[1] ?? '').trim()
       if (!list) {
@@ -799,7 +799,7 @@ function buildIgnoreIndex(cwd: string, findings: DoctorFinding[]): Map<string, F
           ignore.checks.add(name)
       }
     }
-    const lineRe = /\/\/\s*ripast-doctor-ignore-next-line\s*(?::\s*([^\n]+))?/
+    const lineRe = /\/\/\s*ripide-doctor-ignore-next-line\s*(?::\s*([^\n]+))?/
     for (let i = 0; i < lines.length; i++) {
       const m = lineRe.exec(lines[i]!)
       if (!m)

@@ -1,5 +1,5 @@
-import { rewriteClassString, runCssClassRename, runCssClassScan } from '@ripast/core'
 import { parse } from '@vue/compiler-sfc'
+import { rewriteClassString, runCssClassRename, runCssClassScan } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'

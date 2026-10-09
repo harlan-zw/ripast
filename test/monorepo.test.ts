@@ -9,7 +9,7 @@ import { writeChanges } from '../packages/core/src/util.ts'
 import { vueServices } from './engine-fixture.ts'
 
 function makeMonorepo(): { dir: string, read: (rel: string) => string, cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-monorepo-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-monorepo-'))
   const write = (rel: string, content: string): void => {
     const abs = join(dir, rel)
     mkdirSync(dirname(abs), { recursive: true })

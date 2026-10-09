@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { resolveNativeTsc, runRenameFile, writeChanges } from '@ripast/core'
+import { resolveNativeTsc, runRenameFile, writeChanges } from 'ripide-api'
 import { expect, it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'

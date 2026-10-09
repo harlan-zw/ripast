@@ -7,7 +7,7 @@ export type { CssClassSourceFile } from './css-class-source.ts'
 export type ScanFn = typeof import('./scan.ts').scan
 export { completeClassBounds, rewriteClassString, visitClassTokens } from './css-class-token.ts'
 export type { RenameMap } from './css-class-token.ts'
-// Adapter SDK entry. @ripast/<framework> packages import from here.
+// Adapter SDK entry. ripide-<framework> packages import from here.
 export { scan } from './scan.ts'
 export type { ScanHit, ScanOptions } from './scan.ts'
 export { offsetOfPosition } from './ts-server.ts'

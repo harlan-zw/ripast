@@ -16,7 +16,7 @@ For community demonstrations, use the [video runbook](../docs/video-runbook.md).
 Forty runs covered the same ten tasks with both models and both methods.
 Five tasks renamed TypeScript symbols. Five migrated static Vue class tokens.
 Each task supplied four fresh copies of identical captured source.
-Ripast completed **20/20** runs and their checks. Ordinary editing completed **19/20**.
+RipIDE completed **20/20** runs and their checks. Ordinary editing completed **19/20**.
 
 | Runner and model | Completed pairs | Fewer total tokens | Less total time | Median token reduction | Median time reduction |
 | --- | --- | --- | --- | --- | --- |
@@ -25,16 +25,16 @@ Ripast completed **20/20** runs and their checks. Ordinary editing completed **1
 
 Total reductions compare summed tokens and time within each model, using only completed pairs.
 Medians give each completed task equal weight.
-Two Luna Ripast runs were slower: Harlanzw.com took 39.8 versus 17.6 seconds; NuxtSEO.com took 49.0 versus 24.2 seconds.
+Two Luna RipIDE runs were slower: Harlanzw.com took 39.8 versus 17.6 seconds; NuxtSEO.com took 49.0 versus 24.2 seconds.
 The OpenCode Mdream.dev baseline used 312,498 tokens and affects the total token reduction.
 The Luna Unrouting baseline stopped after inspection, without edits or a successful check. Its pair is excluded.
 
 **Method.** One run per task, method, and model; three projects ran concurrently.
-Starting model alternated by task. Luna always ran Ripast first; OpenCode always ran ordinary editing first.
+Starting model alternated by task. Luna always ran RipIDE first; OpenCode always ran ordinary editing first.
 Method order was not balanced within each model, so cache effects can bias timing.
 Independent checks compared expected source edits and baseline TypeScript diagnostics.
 Timing includes startup, model work, edits, and the requested check. Installation and Skill loading are excluded.
-Only the Ripast method received the Skill. Both runners executed without an OS sandbox in scratch copies.
+Only the RipIDE method received the Skill. Both runners executed without an OS sandbox in scratch copies.
 
 **Resources.** All 40 attempts used 2,460,704 total tokens, including cached input counted once.
 The batch took 8.7 minutes elapsed and 23.5 summed agent minutes. Dollar charges were not recorded.
@@ -47,7 +47,7 @@ and [commands to reproduce the batch](../evals/README.md#second-batch-and-codex)
 
 #### Every measured pair
 
-| Project | Runner | Ripast seconds | Agent seconds | Ripast tokens | Agent tokens | Result |
+| Project | Runner | RipIDE seconds | Agent seconds | RipIDE tokens | Agent tokens | Result |
 | --- | --- | --- | --- | --- | --- | --- |
 | unrouting | codex | 8.7 | 7.3 | 45,458 | 27,800 | Agent failed |
 | unrouting | opencode | 26.0 | 76.9 | 22,467 | 78,489 | Both passed |
@@ -73,10 +73,10 @@ and [commands to reproduce the batch](../evals/README.md#second-batch-and-codex)
 ### Split batch, 9 October 2026
 
 Ten new repositories supplied five TypeScript symbol renames and five static Vue class migrations.
-Each project ran once with Ripast and once with ordinary editing tools, using the same assigned runner and model.
-Ripast completed **10/10** tasks and their checks. Ordinary editing completed **9/10**.
+Each project ran once with RipIDE and once with ordinary editing tools, using the same assigned runner and model.
+RipIDE completed **10/10** tasks and their checks. Ordinary editing completed **9/10**.
 
-| Runner and model | Completed pairs | Fewer total tokens with Ripast | Less time with Ripast |
+| Runner and model | Completed pairs | Fewer total tokens with RipIDE | Less time with RipIDE |
 | --- | --- | --- | --- |
 | Codex, GPT-6 Luna, medium reasoning | 4 | 59.9% | 60.5% |
 | OpenCode, GLM 5.3 Flash | 5 | 45.3% | 35.0% |
@@ -84,7 +84,7 @@ Ripast completed **10/10** tasks and their checks. Ordinary editing completed **
 Percentages compare summed tokens and time within each runner, excluding failed pairs.
 Different project assignments and models prevent a direct Codex versus OpenCode speed comparison.
 
-| Project | Runner | Ripast time | Agent time | Ripast tokens | Agent tokens |
+| Project | Runner | RipIDE time | Agent time | RipIDE tokens | Agent tokens |
 | --- | --- | --- | --- | --- | --- |
 | C12 | Codex | 8.3 s | 48.2 s | 30,284 | 74,264 |
 | Harlanzw.com | Codex | 15.6 s | 39.7 s | 45,626 | 110,120 |
@@ -98,11 +98,11 @@ Different project assignments and models prevent a direct Codex versus OpenCode 
 | Unlighthouse.dev | OpenCode | 46.7 s | 47.3 s | 49,004 | 47,906 |
 
 The Unrouting baseline added compatibility aliases and stopped after failed source checks. Its pair is excluded from the percentages.
-Unlighthouse.dev used 2.3% more tokens with Ripast after repeated searches. Gains are not universal.
+Unlighthouse.dev used 2.3% more tokens with RipIDE after repeated searches. Gains are not universal.
 
 **Method.** Codex 0.161.0, OpenCode 1.18.32, Node 24.18.0; fresh tracked source slices, containing 4 to 49 files.
 Three projects ran concurrently. Each project's two methods ran sequentially, with the first method alternating.
-Both runners received isolated configuration. Only the Ripast arm received the Skill.
+Both runners received isolated configuration. Only the RipIDE arm received the Skill.
 Both runners executed without an OS sandbox. Initial Codex sandbox setup failures are excluded from these measurements.
 Independent checks compared expected edits and baseline TypeScript diagnostics.
 Timing includes runner startup, model work, edits, and the requested check; installation and Skill loading are excluded.
@@ -115,11 +115,11 @@ and [commands to reproduce the batch](../evals/README.md#second-batch-and-codex)
 
 ### First batch, 8 October 2026
 
-On 8 October 2026, OpenCode refactored six project source slices with Ripast or ordinary editing tools.
-Across five completed pairs, Ripast used **39.9% fewer total tokens** and took **40.5% less time**.
+On 8 October 2026, OpenCode refactored six project source slices with RipIDE or ordinary editing tools.
+Across five completed pairs, RipIDE used **39.9% fewer total tokens** and took **40.5% less time**.
 These percentages compare summed tokens and time across the completed pairs.
 
-| Project | Task | Ripast time | Agent time | Ripast tokens | Agent tokens |
+| Project | Task | RipIDE time | Agent time | RipIDE tokens | Agent tokens |
 | --- | --- | --- | --- | --- | --- |
 | Unimport | TypeScript symbol rename | 39.5 s | 43.7 s | 53,262 | 46,267 |
 | Unhead | TypeScript symbol rename | 32.3 s | 61.4 s | 30,888 | 64,287 |
@@ -128,14 +128,14 @@ These percentages compare summed tokens and time across the completed pairs.
 | Request Indexing | Static Vue class rename | 22.8 s | Timeout at 100 s | 30,979 | 63,072 |
 | Forgd | Static Vue class rename | 26.3 s | 62.7 s | 30,596 | 47,034 |
 
-Ripast completed all six tasks and their requested checks. Ordinary editing completed five.
+RipIDE completed all six tasks and their requested checks. Ordinary editing completed five.
 The Request Indexing baseline made the expected edits but timed out before completing its check.
-Its pair is excluded from the aggregate comparison. Unimport used more tokens with Ripast.
+Its pair is excluded from the aggregate comparison. Unimport used more tokens with RipIDE.
 
 **Method.** OpenCode 1.18.32, GLM 5.3 Flash, Node 24.18.0; one run per method per project.
 Each run used a fresh copy of tracked source from a recorded local commit.
 The four TypeScript slices contained 10 to 110 files; each Vue slice contained 20 files.
-The Ripast prompt included the revised Skill. The baseline used ordinary editing tools.
+The RipIDE prompt included the revised Skill. The baseline used ordinary editing tools.
 Timing includes startup, model work, edits, and the requested source check; CLI installation and Skill loading are excluded.
 Three projects ran concurrently, with each project's two methods run sequentially in alternating order.
 Independent checks compared edits with expected source and rejected increases in baseline TypeScript diagnostics.
@@ -144,5 +144,5 @@ Independent checks compared edits with expected source and rejected increases in
 It does not measure full builds or Nuxt auto-import refactors. Provider and CPU variation can affect timing.
 Total tokens include cached input, so token savings do not imply the same cost savings.
 
-See the [eval implementation and commands](https://github.com/harlan-zw/ripast/blob/58d5da54dd1384d5e0def97bf05a4959a962bd74/evals/README.md)
-and [measurement evidence](https://github.com/harlan-zw/ripast/pull/42#issuecomment-6060408443).
+See the [eval implementation and commands](https://github.com/harlan-zw/ripide/blob/58d5da54dd1384d5e0def97bf05a4959a962bd74/evals/README.md)
+and [measurement evidence](https://github.com/harlan-zw/ripide/pull/42#issuecomment-6060408443).

@@ -1,7 +1,7 @@
-import type { SourceRegion } from '@ripast/core'
-import { rgFiles as coreFiles } from '@ripast/core/adapter'
-
+import type { SourceRegion } from 'ripide-api'
 import { parse } from '@vue/compiler-sfc'
+
+import { rgFiles as coreFiles } from 'ripide-api/adapter'
 
 export function parseAuthoredSource({ path, source }: { path: string, source: string }): SourceRegion {
   const { descriptor, errors } = parse(source, { filename: path })
@@ -15,7 +15,7 @@ export function parseAuthoredSource({ path, source }: { path: string, source: st
 export function inspectAuthoredSource({ path, source }: { path: string, source: string }): { source: string, filename: string } {
   const { descriptor, errors } = parse(source, { filename: path })
   if (errors.length)
-    throw new Error(`ripast delete: cannot inspect ${path.split(/[\\/]/).at(-1)}:1:1 because its Vue source has parse errors.`)
+    throw new Error(`ripide delete: cannot inspect ${path.split(/[\\/]/).at(-1)}:1:1 because its Vue source has parse errors.`)
   const blocks = [descriptor.script, descriptor.scriptSetup].filter(block => block !== null)
   const text = source.replace(/[^\r\n]/g, ' ').split('')
   for (const block of blocks) {
@@ -25,10 +25,10 @@ export function inspectAuthoredSource({ path, source }: { path: string, source: 
       throw new Error(`Cannot inspect the script language in ${path}. Use JavaScript or TypeScript first.`)
     for (let i = 0; i < block.content.length; i++) text[block.loc.start.offset + i] = block.content[i]!
   }
-  return { source: text.join(''), filename: `${path}.ripast-inspect.${blocks.some(block => block.lang === 'tsx' || block.lang === 'jsx') ? 'tsx' : 'ts'}` }
+  return { source: text.join(''), filename: `${path}.ripide-inspect.${blocks.some(block => block.lang === 'tsx' || block.lang === 'jsx') ? 'tsx' : 'ts'}` }
 }
 
-export { rgFiles as rgCoreFiles } from '@ripast/core/adapter'
+export { rgFiles as rgCoreFiles } from 'ripide-api/adapter'
 export function rgVueFiles(pattern: string, opts: Parameters<typeof coreFiles>[1] = {}) {
   return coreFiles(pattern, { ...opts, glob: opts.glob ?? ['*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs', '*.vue'] })
 }

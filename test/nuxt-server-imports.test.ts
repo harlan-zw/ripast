@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
-import { runDelete, runMove, runRename, runRenameFile } from '@ripast/core'
+import { runDelete, runMove, runRename, runRenameFile } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
