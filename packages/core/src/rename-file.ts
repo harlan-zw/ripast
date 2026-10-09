@@ -1,6 +1,7 @@
 import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
+import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve } from 'node:path'
@@ -10,6 +11,7 @@ import { computeSpecifier } from './imports.ts'
 import { findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { mergeFileChanges, rgFiles } from './util.ts'
+import { createVerification } from './verification.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
@@ -33,6 +35,7 @@ export interface RenameFileResult {
   selfChange: { before: string, after: string } | null
   scanned: number
   regressions: Regression[]
+  verification: Verification
   warnings: string[]
 }
 
@@ -102,6 +105,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs
       && !c.path.split(/[\\/]/).includes('.nuxt') && !vueAdapter?.isGeneratedPath?.(cwd, c.path))
 
+    const verification = createVerification(verifyMode, true)
     const regressions: Regression[] = []
     if (verifyMode !== 'none') {
       const vueChanges = [...consumerNoSelf, {
@@ -111,12 +115,12 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
         after: selfChange?.after ?? readFileSync(oldAbs, 'utf8'),
       }]
       if (opts.vue !== false && verifyMode === 'project') {
-        regressions.push(...await findVueRegressions(cwd, vueChanges, tsconfigPath, async () => vueAdapter))
+        regressions.push(...await findVueRegressions(cwd, vueChanges, tsconfigPath, async () => vueAdapter, verification.vue))
       }
       else if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue'))) {
-        regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, vueChanges))
+        regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, vueChanges, verification.vue))
       }
-      regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode, (consumer, specifier) => vueAdapter?.isPlannedImportTarget?.(cwd, consumer, specifier, newAbs) ?? false))
+      regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode, (consumer, specifier) => vueAdapter?.isPlannedImportTarget?.(cwd, consumer, specifier, newAbs) ?? false, verification))
     }
 
     return {
@@ -125,6 +129,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       selfChange,
       scanned: consumerNoSelf.length + 1,
       regressions,
+      verification: verification.result(),
       warnings,
     }
   }
@@ -181,6 +186,7 @@ async function verifyFileRename(
   selfChange: { before: string, after: string } | null,
   verifyMode: VerifyMode,
   isPlannedImportTarget: (consumer: string, specifier: string) => boolean,
+  verification: ReturnType<typeof createVerification>,
 ): Promise<Regression[]> {
   const consumerTsChanges = consumerChanges.filter(c => TS_LIKE_RE.test(c.path))
   const moveIsTs = TS_LIKE_RE.test(oldAbs) && TS_LIKE_RE.test(newAbs)
@@ -206,12 +212,14 @@ async function verifyFileRename(
   const files = verifyMode === 'project'
     ? projectScriptFiles(cwd)
     : [...(moveIsTs ? [newAbs] : []), ...consumerTsChanges.map(c => c.path)]
-  const regressions = await findRegressions(server, changes, files)
-  return regressions.filter(r => r.file !== oldAbs
+  const regressions = await findRegressions(server, changes, files, verification.typescript)
+  const kept = regressions.filter(r => r.file !== oldAbs
     && !isUnresolvedNewPath(r, newAbs)
     && !isUnresolvedRenamedSpecifier(r, newAbs, renamedSpecifiers)
     && !(r.code === CANNOT_FIND_MODULE_CODE && consumerTsChanges.some(change => change.path === r.file)
       && isPlannedImportTarget(r.file, MODULE_IN_MESSAGE_RE.exec(r.message)?.[1] ?? '')))
+  verification.ignore('typescript', regressions.length - kept.length)
+  return kept
 }
 
 const CANNOT_FIND_MODULE_CODE = 2307

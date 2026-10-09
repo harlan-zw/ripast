@@ -1,5 +1,6 @@
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
+import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
@@ -14,6 +15,7 @@ import { isInsideAutoImportScope } from './nuxt.ts'
 import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
+import { createVerification } from './verification.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface DeleteOptions {
@@ -31,6 +33,7 @@ export interface DeleteResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
+  verification: Verification
 }
 
 export async function runDelete(symbol: string, fromPath: string, opts: DeleteOptions = {}): Promise<DeleteResult> {
@@ -198,13 +201,14 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
       ? []
       : [{ path: fromAbs, rel: relative(cwd, fromAbs), before, after }]
 
-    const regressions = verifyMode === 'none'
+    const verification = createVerification(verifyMode, !!changes.length)
+    const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd) : [fromAbs])
+      : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd) : [fromAbs], verification.typescript)
     if (verifyMode === 'project')
-      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), async () => nuxtAdapter ?? await loadAdapter('vue')))
+      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), async () => nuxtAdapter ?? await loadAdapter('vue'), verification.vue))
 
-    return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions }
+    return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions, verification: verification.result() }
   }
   finally {
     server.dispose()

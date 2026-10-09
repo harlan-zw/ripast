@@ -77,6 +77,8 @@ console.log(JSON.stringify(call(() => "local")))
       'old',
       'next',
       '--apply',
+      '--profile',
+      'full',
       '--json',
     ], { cwd: fx.dir, encoding: 'utf8' })
     const result = JSON.parse(output)

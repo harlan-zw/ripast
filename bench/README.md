@@ -7,6 +7,11 @@ The [benchmark implementation](./bench.ts) measures operations on generated fixt
 The [fixture generator](./fixture.ts) defines their source.
 These local CLI timings exclude model calls and agent work.
 
+Run `pnpm exec tsx bench/agent-infrastructure.ts` after building to measure declaration cache reuse and agent JSON size.
+The benchmark alternates uncached and warm inspection on the same 503-file fixture.
+It also changes a file to check cache invalidation.
+Output measurements compare UTF-8 bytes, rather than model tokens or billed cost.
+
 For community demonstrations, use the [video runbook](../docs/video-runbook.md).
 
 ## Agent benchmarks

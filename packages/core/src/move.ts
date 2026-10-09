@@ -4,6 +4,7 @@ import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
+import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -19,6 +20,7 @@ import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, mergeFileChanges, rgFiles } from './util.ts'
+import { createVerification } from './verification.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface MoveOptions {
@@ -34,6 +36,7 @@ export interface MoveResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
+  verification: Verification
 }
 
 export async function runMove(symbol: string, fromPath: string, toPath: string, opts: MoveOptions = {}): Promise<MoveResult> {
@@ -176,28 +179,31 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
         vueAdapter.filterGeneratedChanges?.(cwd, changes)
     }
 
+    const verification = createVerification(verifyMode, !!changes.length)
     const regressions: Regression[] = []
-    if (verifyMode !== 'none') {
+    if (verifyMode !== 'none' && changes.length) {
       const scriptChanges = changes.filter(c => !isVuePath(c.path))
       const files = verifyScope(verifyMode, cwd, [fromAbs, toAbs, ...candidatePaths], scriptChanges.map(c => c.path))
-      const verified = await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, files))
+      const verified = await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, files, verification.typescript))
       // Native module resolution reads disk, so a new directory cannot resolve yet.
       // Ignore only changed consumers pointing at this planned destination.
       const consumers = new Set(scriptChanges.filter(change => change.path !== toAbs).map(change => change.path))
-      regressions.push(...verified.filter(regression => !consumers.has(regression.file)
+      const kept = verified.filter(regression => !consumers.has(regression.file)
         || (!isUnresolvedMoveTarget(regression, toAbs) && !(regression.code === 2307
-          && vueAdapter?.isPlannedImportTarget?.(cwd, regression.file, /Cannot find module '([^']+)'/.exec(regression.message)?.[1] ?? '', toAbs)))))
+          && vueAdapter?.isPlannedImportTarget?.(cwd, regression.file, /Cannot find module '([^']+)'/.exec(regression.message)?.[1] ?? '', toAbs))))
+      verification.ignore('typescript', verified.length - kept.length)
+      regressions.push(...kept)
     }
 
     if (vueEnabled && verifyMode === 'project') {
-      regressions.push(...await findVueRegressions(cwd, changes, tsconfigPath, async () => vueAdapter))
+      regressions.push(...await findVueRegressions(cwd, changes, tsconfigPath, async () => vueAdapter, verification.vue))
     }
     else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {
-      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes)
+      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes, verification.vue)
       regressions.push(...vueRegs)
     }
 
-    return { changes, scanned: new Set([...candidatePaths, fromAbs, toAbs]).size, regressions }
+    return { changes, scanned: new Set([...candidatePaths, fromAbs, toAbs]).size, regressions, verification: verification.result() }
   }
   finally {
     server.dispose()

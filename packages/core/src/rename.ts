@@ -2,6 +2,7 @@ import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
+import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
@@ -15,6 +16,7 @@ import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './proje
 import { recoverPropertyReferences } from './rename-property-references.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { applyTextEdits, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+import { createVerification } from './verification.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface RenameOptions {
@@ -33,6 +35,7 @@ export interface RenameResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
+  verification: Verification
   warnings: string[]
 }
 
@@ -155,25 +158,26 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
         vueAdapter.filterGeneratedChanges?.(cwd, changes)
     }
 
+    const verification = createVerification(verifyMode, !!changes.length)
     const regressions: Regression[] = []
     const verificationChanges = [...changes, ...autoImportPlan?.verificationChanges ?? []]
-    if (verifyMode !== 'none') {
+    if (verifyMode !== 'none' && changes.length) {
       const scriptChanges = verificationChanges.filter(c => !isVue(c.path))
       const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path))
-      regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, verifyFiles)))
+      regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, verifyFiles, verification.typescript)))
     }
 
     if (vueEnabled && verifyMode === 'project') {
-      regressions.push(...await findVueRegressions(cwd, verificationChanges, tsconfigPath, async () => vueAdapter))
+      regressions.push(...await findVueRegressions(cwd, verificationChanges, tsconfigPath, async () => vueAdapter, verification.vue))
     }
     else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
-      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, verificationChanges)
+      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, verificationChanges, verification.vue)
       regressions.push(...vueRegs)
     }
 
     const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob, autoImportPlan?.unrelatedGeneratedImports))
 
-    return { changes, scanned: candidatePaths.length, regressions, warnings }
+    return { changes, scanned: candidatePaths.length, regressions, verification: verification.result(), warnings }
   }
   finally {
     server.dispose()
