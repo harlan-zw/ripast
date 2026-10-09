@@ -70,7 +70,8 @@ Model calls require explicit `--allow-model-calls`. This flag is operational aut
 A quality command exits zero for pass, four for unavailable, and another nonzero code for failure.
 Required unavailable gates prevent that attempt from passing.
 Raw writer APIs do not imply protected verified-plan commit capability.
-Current main has no protected-plan commit API. Its capability gate must report unavailable.
+The engine capability gate checks an unchanged verified commit, then refuses a changed engine-issued plan without writing source bytes.
+This gate measures plan fingerprint protection. It does not prove whole-project freshness.
 The exported `checkChangedVerifiedPlan` adapter distinguishes `Committed`, `ValidationRefused`, and `Unavailable`.
 Unexpected infrastructure exceptions propagate. They cannot count as successful validation refusal.
 
@@ -78,7 +79,8 @@ Use isolated installed SDK consumers for protected-plan gates.
 Register changed verified bytes, appended consumers, cross-engine plans, stale source, and dependency/configuration changes.
 An adapter must classify actual validation refusal. A missing server or dependency cannot prove plan protection.
 The archived architecture pair only reproduced changed verified-plan bytes.
-Additional frozen-engine gates require those archived SDK capabilities and independently verified adapters.
+Appended consumers and dependency/configuration changes remain unavailable until independent adapters prove those contracts.
+Stronger safety claims require those separate gates. A passing fingerprint gate cannot replace them.
 
 ## Usage and actual charges
 
