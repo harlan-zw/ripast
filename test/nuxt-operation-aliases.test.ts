@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove } from '@ripast/core'
+import { runMove } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
 

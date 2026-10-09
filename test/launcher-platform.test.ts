@@ -25,8 +25,8 @@ it.each(['pnpm', 'npm'] as const)('launcher runs %s shims with literal arguments
     const result = JSON.parse(fx.read('record.json'))
     assert.equal(realpathSync(result.cwd), realpathSync(fx.dir))
     const expected = manager === 'pnpm'
-      ? ['dlx', '--package=ripide', '--package=@ripast/vue', 'ripide', ...args]
-      : ['exec', '--yes', result.args[2], '--package=ripide', '--package=@ripast/vue', '--', 'ripide', ...args]
+      ? ['dlx', '--package=ripide', '--package=ripide-vue', 'ripide', ...args]
+      : ['exec', '--yes', result.args[2], '--package=ripide', '--package=ripide-vue', '--', 'ripide', ...args]
     assert.deepEqual(result.args, expected)
   }
   finally { fx.cleanup() }

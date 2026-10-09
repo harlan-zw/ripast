@@ -3,9 +3,9 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove, runRename, runRenameFile } from '@ripast/core'
-import vueAdapter from '@ripast/vue'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
+import { runMove, runRename, runRenameFile } from 'ripide-api'
+import vueAdapter from 'ripide-vue'
 import ts from 'typescript'
 import { it } from 'vitest'
 

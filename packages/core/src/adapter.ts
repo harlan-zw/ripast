@@ -4,7 +4,7 @@ import type { TemplateExpression } from './vue-template.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// Adapter SDK entry. @ripast/<framework> packages import from here.
+// Adapter SDK entry. ripide-<framework> packages import from here.
 export { isInsideAutoImportScope } from './nuxt.ts'
 export { scan } from './scan.ts'
 export type { ScanHit, ScanOptions } from './scan.ts'
@@ -214,7 +214,7 @@ export async function loadAdapter(name: FrameworkName): Promise<FrameworkAdapter
   }
 
   const adapterName = name === 'nuxt' ? 'vue' : name
-  const external = await tryImport(`@ripast/${adapterName}`)
+  const external = await tryImport(`ripide-${adapterName}`)
   const bundledVue = new URL('../../vue/src/index.ts', import.meta.url).href
   const resolved = external ?? (adapterName === 'vue' ? await tryImport(bundledVue) : null)
   const adapter = name === 'nuxt' && resolved

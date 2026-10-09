@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { runRenameFile } from '@ripast/core'
+import { runRenameFile } from 'ripide-api'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 

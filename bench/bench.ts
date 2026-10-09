@@ -1,7 +1,7 @@
-import type { ProfileEvent, ProfileSink } from '@ripast/core'
+import type { ProfileEvent, ProfileSink } from 'ripide-api'
 import type { BenchFixture } from './fixture.ts'
 import { performance } from 'node:perf_hooks'
-import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, runMove, runRename, runRenameFile, scan } from '@ripast/core'
+import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, runMove, runRename, runRenameFile, scan } from 'ripide-api'
 import { makeBenchFixture } from './fixture.ts'
 
 interface BenchCase {

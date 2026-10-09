@@ -22,7 +22,7 @@ it('launcher installs missing adapters through pnpm without running npm', () => 
     })
     assert.equal(child.status, 0, child.stderr)
     assert.equal(fx.read('manager').trim(), 'pnpm')
-    assert.deepEqual(fx.read('args').trim().split('\n'), ['dlx', '--package=ripide', '--package=@ripast/vue', 'ripide', 'rename', 'old', 'next'])
+    assert.deepEqual(fx.read('args').trim().split('\n'), ['dlx', '--package=ripide', '--package=ripide-vue', 'ripide', 'rename', 'old', 'next'])
   }
   finally { fx.cleanup() }
 })
@@ -30,8 +30,8 @@ it('launcher installs missing adapters through pnpm without running npm', () => 
 it('installed import-only adapters need no pnpm to show help', () => {
   const fx = makeFixture({
     'package.json': '{"dependencies":{"vue":"*"}}',
-    'node_modules/@ripast/vue/package.json': '{"type":"module","exports":{".":{"types":"./index.d.ts","import":"./index.mjs"}}}',
-    'node_modules/@ripast/vue/index.mjs': '',
+    'node_modules/ripide-vue/package.json': '{"type":"module","exports":{".":{"types":"./index.d.ts","import":"./index.mjs"}}}',
+    'node_modules/ripide-vue/index.mjs': '',
     'bin/.keep': '',
   }, false)
   try {
@@ -50,7 +50,7 @@ it('installed import-only adapters need no pnpm to show help', () => {
 it('installs an adapter when its import entry is missing', () => {
   const fx = makeFixture({
     'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
-    'node_modules/@ripast/vue/package.json': '{"exports":{".":{"import":"./missing.mjs"}}}',
+    'node_modules/ripide-vue/package.json': '{"exports":{".":{"import":"./missing.mjs"}}}',
     'pnpm': '#!/bin/sh\necho pnpm > manager\nexit 0\n',
     'bin/.keep': '',
   }, false)
@@ -100,9 +100,9 @@ it('launcher explains missing package managers when an adapter needs installatio
     })
     assert.equal(child.status, 1)
     assert.match(child.stderr, /pnpm.*npm.*PATH/)
-    assert.match(child.stderr, /@ripast\/vue/)
+    assert.match(child.stderr, /ripide-vue/)
     assert.match(child.stderr, /https:\/\/pnpm.io\/installation/)
-    assert.match(child.stderr, /npm install -g ripide @ripast\/vue/)
+    assert.match(child.stderr, /npm install -g ripide ripide-vue/)
     assert.match(child.stderr, /--no-vue/)
   }
   finally { fx.cleanup() }
@@ -128,7 +128,7 @@ it('launcher falls back to npm with a separate prefix and preserves project cwd'
     const prefix = args[2].slice('--prefix='.length)
     assert.notEqual(prefix, fx.dir)
     assert.equal(existsSync(prefix), false, 'temporary npm prefix gets removed')
-    assert.deepEqual(args.slice(3), ['--package=ripide', '--package=@ripast/vue', '--', 'ripide', 'rename', 'old name', 'next'])
+    assert.deepEqual(args.slice(3), ['--package=ripide', '--package=ripide-vue', '--', 'ripide', 'rename', 'old name', 'next'])
     assert.equal(fx.read('cwd').trim(), fx.dir)
     assert.equal(fx.read('reexec'), '1')
   }

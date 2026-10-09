@@ -84,15 +84,15 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       }
     }
     else {
-      // No Vue adapter available (e.g. `npx ripide` without @ripast/vue
+      // No Vue adapter available (e.g. `npx ripide` without ripide-vue
       // installed). A pure-TS file rename does not need it: the TypeScript
       // server rewrites every importing file on its own.
       if (oldAbs.endsWith('.vue') || newAbs.endsWith('.vue'))
-        throw new Error('ripide rename-file: renaming .vue files requires the Vue adapter (install @ripast/vue)')
+        throw new Error('ripide rename-file: renaming .vue files requires the Vue adapter (install ripide-vue)')
       consumerChanges = await tsOnlyFileRename(server!, cwd, oldAbs, newAbs)
       const vueConsumers = rgFiles(basename(oldAbs, extname(oldAbs)), { cwd, glob: '*.vue' })
       if (vueConsumers.length)
-        warnings.push(`${vueConsumers.length} .vue file(s) reference this name and were not checked; install @ripast/vue to rewrite .vue import sites`)
+        warnings.push(`${vueConsumers.length} .vue file(s) reference this name and were not checked; install ripide-vue to rewrite .vue import sites`)
     }
 
     const selfChangeRaw = consumerChanges.find(c => c.path === oldAbs || c.path === newAbs)

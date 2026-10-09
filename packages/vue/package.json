@@ -1,5 +1,5 @@
 {
-  "name": "@ripast/vue",
+  "name": "ripide-vue",
   "type": "module",
   "version": "0.6.1",
   "description": "Vue (and Nuxt) framework adapter for ripide. Provides Volar/Vue Language Service-backed rename, move, and template rewriting for .vue SFCs.",
@@ -45,7 +45,7 @@
     "dev:prepare": "obuild --stub"
   },
   "peerDependencies": {
-    "@ripast/core": "workspace:*"
+    "ripide-api": "workspace:*"
   },
   "dependencies": {
     "@typescript/typescript6": "^6.0.2",
@@ -60,6 +60,6 @@
     "vscode-uri": "^3.2.0"
   },
   "devDependencies": {
-    "@ripast/core": "workspace:*"
+    "ripide-api": "workspace:*"
   }
 }

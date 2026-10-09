@@ -1,8 +1,8 @@
 {
-  "name": "@ripast/core",
+  "name": "ripide-api",
   "type": "module",
   "version": "0.6.1",
-  "description": "AST refactor engine for AI coding agents. Deterministic rename, move, find-usages, and tailwind/CSS class migration across TypeScript. Framework adapters loaded via @ripast/<framework> packages.",
+  "description": "AST refactor engine for AI coding agents. Deterministic rename, move, find-usages, and tailwind/CSS class migration across TypeScript. Framework adapters loaded via ripide-<framework> packages.",
   "author": {
     "name": "Harlan Wilton",
     "email": "harlan@harlanzw.com",

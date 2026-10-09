@@ -45,10 +45,10 @@ function ensureAdapters(needed) {
   const missing = []
   for (const name of needed) {
     try {
-      if (!existsSync(new URL(import.meta.resolve(`@ripast/${name}`))))
-        missing.push(`@ripast/${name}`)
+      if (!existsSync(new URL(import.meta.resolve(`ripide-${name}`))))
+        missing.push(`ripide-${name}`)
     }
-    catch { missing.push(`@ripast/${name}`) }
+    catch { missing.push(`ripide-${name}`) }
   }
   if (!missing.length)
     return

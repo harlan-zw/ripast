@@ -10,13 +10,13 @@ If no CLI is installed, use the matching global command, then run `ripide` direc
 
 | Package manager | One-time global installation |
 | --- | --- |
-| npm | `npm install -g ripide @ripast/vue` |
-| pnpm | `pnpm add -g ripide @ripast/vue` |
-| Bun | `bun add -g ripide @ripast/vue` |
-| Yarn Classic | `yarn global add ripide @ripast/vue` |
+| npm | `npm install -g ripide ripide-vue` |
+| pnpm | `pnpm add -g ripide ripide-vue` |
+| Bun | `bun add -g ripide ripide-vue` |
+| Yarn Classic | `yarn global add ripide ripide-vue` |
 
 Yarn 2+ has no global install command. Use npm for global tooling, or the Yarn launcher below.
-Include `@ripast/vue` to avoid temporary adapter installation in Vue/Nuxt projects.
+Include `ripide-vue` to avoid temporary adapter installation in Vue/Nuxt projects.
 Respect environment rules that prohibit global installs. Use temporary launchers for one-off or restricted environments.
 If the global binary is unavailable, add the manager's global bin directory to PATH or use a temporary launcher.
 Do not reinstall before each command or silently upgrade an existing CLI.
@@ -42,5 +42,5 @@ Global installation: [npm](https://docs.npmjs.com/cli/v11/commands/npm-install/)
 
 The CLI installs missing Vue/Nuxt adapters through pnpm, then npm. pnpm is optional.
 If neither is available, install the CLI and adapter together with the project's package manager.
-Yarn 2+ can include both temporarily: `yarn dlx -p ripide -p @ripast/vue ripide <command> ...`.
+Yarn 2+ can include both temporarily: `yarn dlx -p ripide -p ripide-vue ripide <command> ...`.
 Keep Node available for Bun launchers. Do not force Bun's runtime with `--bun`.

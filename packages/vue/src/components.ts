@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { hyphenateVueName, rgFiles } from '@ripast/core/adapter'
+import { hyphenateVueName, rgFiles } from 'ripide-api/adapter'
 import { loadNuxtPathAliases } from './nuxt-paths.ts'
 
 export type ComponentKind = 'sfc' | 'define-component'

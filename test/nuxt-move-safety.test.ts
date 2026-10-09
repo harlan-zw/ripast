@@ -3,8 +3,8 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove } from '@ripast/core'
 import { compileScript, parse } from '@vue/compiler-sfc'
+import { runMove } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
 

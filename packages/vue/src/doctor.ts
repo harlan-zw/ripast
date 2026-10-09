@@ -1,7 +1,7 @@
-import type { DoctorAdapter, DoctorContext, DoctorFinding } from '@ripast/core/adapter'
+import type { DoctorAdapter, DoctorContext, DoctorFinding } from 'ripide-api/adapter'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { hyphenateVueName, parseVueTemplateAst, posToLineCol, rgFiles } from '@ripast/core/adapter'
+import { hyphenateVueName, parseVueTemplateAst, posToLineCol, rgFiles } from 'ripide-api/adapter'
 import { listComponents } from './components.ts'
 
 const NUXT_ENTRY_PATTERNS = [

@@ -18,9 +18,9 @@ try {
   writeFileSync(join(cwd, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","module":"NodeNext","types":["node"],"strict":true,"skipLibCheck":true,"noEmit":true},"include":["*.ts"]}')
   writeFileSync(join(cwd, 'source.ts'), 'export const target = 1\n')
   writeFileSync(join(cwd, 'component.vue'), '<template>{{ target }}</template>\n')
-  writeFileSync(join(cwd, 'consumer.ts'), `import { runRename } from '@ripast/core'
-import { parseSourceFile } from '@ripast/core/adapter'
-import vueAdapter from '@ripast/vue'
+  writeFileSync(join(cwd, 'consumer.ts'), `import { runRename } from 'ripide-api'
+import { parseSourceFile } from 'ripide-api/adapter'
+import vueAdapter from 'ripide-vue'
 const result = await runRename('target', 'next', { cwd: process.cwd(), vue: false, verify: false })
 if (!result.changes.some(change => change.after.includes('export const next')))
   throw new Error('SDK rename did not produce the expected edit')

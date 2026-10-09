@@ -11,7 +11,7 @@ Svelte markup and arbitrary custom codemods are unsupported.
 ## Launcher
 
 Use a supplied executable first, then an existing project CLI, then a global `ripide`.
-For repeated use, prefer installing `ripide` and `@ripast/vue` globally once with the project manager.
+For repeated use, prefer installing `ripide` and `ripide-vue` globally once with the project manager.
 Do not reinstall or silently upgrade before commands. Skip installation and version probes when a CLI is supplied.
 If setup is needed, read [installation and launchers](references/setup.md), including one-off and restricted environments.
 

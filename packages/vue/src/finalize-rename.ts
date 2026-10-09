@@ -1,4 +1,4 @@
-import type { FileChange } from '@ripast/core/adapter'
+import type { FileChange } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 import { basename, relative } from 'node:path'
 import {
@@ -6,7 +6,7 @@ import {
   isInsideAutoImportScope,
   rgFiles,
   scan,
-} from '@ripast/core/adapter'
+} from 'ripide-api/adapter'
 import { addNuxtExplicitImports, extractTopLevelExportNames } from './nuxt-imports.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
 

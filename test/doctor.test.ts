@@ -1,4 +1,4 @@
-import { buildDoctorFixes, runDoctor } from '@ripast/core'
+import { buildDoctorFixes, runDoctor } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 

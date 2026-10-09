@@ -1,7 +1,8 @@
-import type { ExportFilter, VerifyMode } from '@ripast/core'
+import type { ExportFilter, VerifyMode } from 'ripide-api'
 import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
+import { runMain } from 'citty'
 import {
   buildComponentDetail,
   buildComponentInventory,
@@ -42,8 +43,7 @@ import {
   scan,
   summarize,
   writeChanges,
-} from '@ripast/core'
-import { runMain } from 'citty'
+} from 'ripide-api'
 import { agent, isAgent } from 'std-env'
 import { defineStrictCommand as defineCommand } from './command.ts'
 

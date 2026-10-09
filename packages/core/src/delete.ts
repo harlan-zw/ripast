@@ -58,7 +58,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   let inspectedScopes = false
   if (nuxt) {
     if (!nuxtAdapter?.autoImportScopes || !nuxtAdapter.inspectAutoImportConsumers)
-      throw new Error('ripide delete: cannot inspect Nuxt auto-imports without @ripast/vue. Install @ripast/vue before deleting exported declarations.')
+      throw new Error('ripide delete: cannot inspect Nuxt auto-imports without ripide-vue. Install ripide-vue before deleting exported declarations.')
     const scopes = nuxtAdapter.autoImportScopes(cwd)
     inspectedScopes = isInsideAutoImportScope(fromAbs, scopes)
     if (inspectedScopes) {

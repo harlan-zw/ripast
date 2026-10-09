@@ -22,7 +22,7 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 ## Features
 
 - ✂️ **IDE refactoring for your coding agent.** Rename functions, move files, and automatically update references across your project.
-- 📉 **Lower agent overhead.** Median reductions by model: **59% to 71% fewer tokens**, **48% to 56% less time** ([benchmarks](#agent-benchmarks)).
+- 📉 **Less time, fewer tokens.** In [local tests](./bench/README.md), typical refactors took about half the time and used less than half the tokens.
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
 - 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
@@ -32,11 +32,13 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 ## Why RipIDE?
 
-Renaming a symbol can affect imports, type references, JSX components, and Vue templates across a project.
-Text search finds the spelling, but a rename needs to distinguish references from unrelated names.
+Agents can refactor code well, but finding references and editing files takes time and tokens.
+RipIDE handles that work in one command, so your agent spends less time reading and editing files.
 
-RipIDE gives coding agents one scoped command to rename a symbol and update its imports and references.
-Preview the diff before writing changes. Unrelated strings keep their spelling.
+In local benchmarks, median reductions by model were **59% to 71% fewer tokens** and **48% to 56% less time**.
+See the [benchmark setup and results](#agent-benchmarks).
+
+Rename functions, move files, and update imports and references together. Preview the diff before writing changes.
 Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
 
 ## Installation
@@ -318,7 +320,7 @@ Run `ripide --help` for all commands, or `ripide <command> --help` for its optio
 ## Programmatic API
 
 ```ts
-import { runRename, runReplace, scan } from '@ripast/core'
+import { runRename, runReplace, scan } from 'ripide-api'
 
 const hits = scan('useStore', { cwd: process.cwd() })
 
