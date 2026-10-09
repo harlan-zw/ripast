@@ -46,6 +46,11 @@ interface Declaration {
 }
 
 export async function runRename(from: string, to: string, opts: RenameOptions = {}): Promise<RenameResult> {
+  return (await planNativeRename(from, to, opts)).result
+}
+
+/** Internal verification context stays separate from the public mutation result. */
+export async function planNativeRename(from: string, to: string, opts: RenameOptions = {}): Promise<{ result: RenameResult, verificationChanges: (changes: FileChange[]) => FileChange[] }> {
   const verifyMode = resolveVerificationOptions(opts)
   const cwd = opts.cwd ?? process.cwd()
   const engine = opts.engine
@@ -162,7 +167,8 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
     const verification = createVerification(verifyMode, !!changes.length)
     const regressions: Regression[] = []
-    const verificationChanges = [...changes, ...autoImportPlan?.verificationChanges ?? []]
+    const projectVerificationChanges = (finalChanges: FileChange[]): FileChange[] => autoImportPlan?.verificationChanges(finalChanges) ?? []
+    const verificationChanges = [...changes, ...projectVerificationChanges(changes)]
     if (verifyMode !== 'none' && changes.length) {
       const scriptChanges = verificationChanges.filter(c => !isExtensionFile(c.path, engine))
       const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path), engine)
@@ -179,7 +185,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
     const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob, autoImportPlan?.unrelatedGeneratedImports, engine))
 
-    return { changes, scanned: candidatePaths.length, regressions, verification: verification.result(), warnings }
+    return { result: { changes, scanned: candidatePaths.length, regressions, verification: verification.result(), warnings }, verificationChanges: projectVerificationChanges }
   }
   finally {
     server.dispose()

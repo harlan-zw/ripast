@@ -28,7 +28,8 @@ export interface RenameSite {
 
 export interface AutoImportRenamePlan {
   changes: FileChange[]
-  verificationChanges: FileChange[]
+  /** Project generated metadata from the final authored plan. These files are never written. */
+  verificationChanges: (changes: FileChange[]) => FileChange[]
   /** Consumers whose generated barrel uses a different provider for this name. */
   unrelatedGeneratedImports?: Set<string>
   transformEdits: (path: string, source: string, edits: TextEdit[]) => TextEdit[]

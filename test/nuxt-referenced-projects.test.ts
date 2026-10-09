@@ -87,7 +87,7 @@ it('keeps unrelated new errors visible with generated verification overlays', as
     const regressions = await vueAdapter.regressions(join(fx.dir, 'tsconfig.json'), fx.dir, [
       ...result.changes.filter(change => change.path !== component.path),
       { ...component, after: component.after.replace('</script>', '; const wrong: string = 1</script>') },
-      ...plan.verificationChanges,
+      ...plan.verificationChanges(result.changes),
     ])
     assert.ok(regressions.some(regression => regression.file === component.path && regression.code === 2322))
     assert.equal(regressions.some(regression => regression.code === 2304 || regression.code === 2339), false, JSON.stringify(regressions))

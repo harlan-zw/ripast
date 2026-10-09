@@ -23,7 +23,7 @@ import { runDoctor } from './doctor.ts'
 import { runMove } from './move.ts'
 import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { runRenameFile, verifyFileRename } from './rename-file.ts'
-import { runRename } from './rename.ts'
+import { planNativeRename } from './rename.ts'
 import { runReplace } from './replace.ts'
 import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, scan } from './scan.ts'
 import { startTsServer } from './ts-server.ts'
@@ -149,27 +149,33 @@ export function createEngine(options: EngineOptions = {}) {
     },
   }
   const plans = new WeakMap<object, { fingerprint: string, movedSource: string | null }>()
-  async function execute<T extends { changes: FileChange[], regressions: Regression[] }>(request: OperationRequest, opts: { cwd?: string, tsconfig?: string, verifyMode?: 'none' | 'touched' | 'project' }, action: () => Promise<T>): Promise<T> {
+  async function execute<T extends { changes: FileChange[], regressions: Regression[] }>(request: OperationRequest, opts: { cwd?: string, tsconfig?: string, verifyMode?: 'none' | 'touched' | 'project' }, action: () => Promise<ExecutionPlan<T>>): Promise<T> {
     const cwd = opts.cwd ?? process.cwd()
     const verifyMode = resolveVerificationOptions(opts, request.operation === 'replace' ? 'project' : 'touched')
     const tsconfig = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
     assertSourceSupport(cwd, services)
     services.assertOperation(request, cwd)
     await hooks.callHook('operation:before', { ...request, cwd })
-    const result = await action()
+    const execution = await action()
+    const result = execution.result
     const originalPlan = JSON.stringify(result.changes)
     const context = { ...request, cwd, changes: result.changes }
     await hooks.callHook('plan:ready', context)
     validateChanges(result.changes)
     await hooks.callHook('verify:before', context)
     validateChanges(result.changes)
-    const planChanged = JSON.stringify(result.changes) !== originalPlan || extensions.some(extension => extension.planRename)
+    const changedByHooks = JSON.stringify(result.changes) !== originalPlan
+    const planChanged = changedByHooks || extensions.some(extension => extension.planRename)
     const previousVerification = 'verification' in result ? result.verification as Verification : undefined
     const verification = createVerification(verifyMode, !!result.changes.length || isFileRenameResult(result))
     if (verifyMode !== 'none') {
+      // Diagnostics from a replaced plan do not describe the final authored changes.
+      if (changedByHooks)
+        result.regressions = [...execution.plannerRegressions]
+      const verificationChanges = result.changes.length ? mergePlans([result.changes, execution.verificationChanges(result.changes)]) : []
       // Hook-added plans share the same verification boundary as native plans.
-      const scripts = result.changes.filter(change => !services.owns(change.path))
-      if (scripts.length && planChanged) {
+      const scripts = verificationChanges.filter(change => !services.owns(change.path))
+      if (planChanged && (scripts.length || isFileRenameResult(result))) {
         const server = await startTsServer(cwd, { tsconfig: tsconfig ?? undefined })
         try {
           if (isFileRenameResult(result)) {
@@ -193,7 +199,7 @@ export function createEngine(options: EngineOptions = {}) {
           if (!config && rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
             throw new Error(`Extension ${extension.name} verification requires a tsconfig`)
           if (config)
-            result.regressions.push(...await extension.semantic.regressions(config, cwd, result.changes, verification.extension(extension.semantic.name)))
+            result.regressions.push(...await extension.semantic.regressions(config, cwd, verificationChanges, verification.extension(extension.semantic.name)))
         }
         else if (result.changes.some(change => extension.suffixes.some(suffix => change.path.endsWith(suffix)))) {
           throw new Error(`Extension ${extension.name} cannot verify its plan`)
@@ -201,7 +207,7 @@ export function createEngine(options: EngineOptions = {}) {
       }
     }
     if ('verification' in result)
-      result.verification = combineVerification([result.verification as Verification, verification.result()])
+      result.verification = changedByHooks ? verification.result() : combineVerification([result.verification as Verification, verification.result()])
     result.regressions = [...new Map(result.regressions.map(regression => [JSON.stringify(regression), regression])).values()]
     plans.set(result, { fingerprint: JSON.stringify(result), movedSource: isFileRenameResult(result) ? readFileSync(result.fileMove.from, 'utf8') : null })
     return result
@@ -221,16 +227,24 @@ export function createEngine(options: EngineOptions = {}) {
       const planners = extensions.filter(extension => extension.planRename && rgFiles(from, { cwd: opts.cwd, glob: extension.suffixes.map(suffix => `*${suffix}`) }).length)
       const coreBindings = scan(from, { cwd: opts.cwd, engine: services }).some(hit => !services.owns(hit.file) && hit.kind === 'identifier-binding')
       const results: RenameResult[] = []
-      if (coreBindings || !planners.length)
-        results.push(await runRename(from, to, { ...opts, engine: services }))
-      for (const extension of planners)
-        results.push({ ...await extension.planRename!({ from, to, options: opts, services }), verification: { _tag: 'Skipped', reason: resolveVerificationOptions(opts) === 'none' ? 'disabled' : 'not-applicable' } })
-      return combineRenameResults(results)
+      const projectors: ((changes: FileChange[]) => FileChange[])[] = []
+      const plannerRegressions: Regression[] = []
+      if (coreBindings || !planners.length) {
+        const native = await planNativeRename(from, to, { ...opts, engine: services })
+        results.push(native.result)
+        projectors.push(native.verificationChanges)
+      }
+      for (const extension of planners) {
+        const planned = await extension.planRename!({ from, to, options: opts, services })
+        plannerRegressions.push(...planned.regressions)
+        results.push({ ...planned, verification: { _tag: 'Skipped', reason: resolveVerificationOptions(opts) === 'none' ? 'disabled' : 'not-applicable' } })
+      }
+      return { result: combineRenameResults(results), plannerRegressions, verificationChanges: changes => mergePlans(projectors.map(project => project(changes))) }
     }),
-    move: (symbol: string, from: string, to: string, opts: MoveOptions = {}) => execute({ operation: 'move', symbol, from, to }, opts, () => runMove(symbol, from, to, { ...opts, engine: services })),
-    delete: (symbol: string, from: string, opts: DeleteOptions = {}) => execute({ operation: 'delete', symbol, from }, opts, () => runDelete(symbol, from, { ...opts, engine: services })),
-    renameFile: (from: string, to: string, opts: RenameFileOptions = {}) => execute({ operation: 'renameFile', from, to }, opts, () => runRenameFile(from, to, { ...opts, engine: services })),
-    replace: (from: string, to: string, opts: ReplaceOptions = {}) => execute({ operation: 'replace', from, to }, opts, () => runReplace(from, to, { ...opts, engine: services })),
+    move: (symbol: string, from: string, to: string, opts: MoveOptions = {}) => execute({ operation: 'move', symbol, from, to }, opts, async () => nativeExecution(await runMove(symbol, from, to, { ...opts, engine: services }))),
+    delete: (symbol: string, from: string, opts: DeleteOptions = {}) => execute({ operation: 'delete', symbol, from }, opts, async () => nativeExecution(await runDelete(symbol, from, { ...opts, engine: services }))),
+    renameFile: (from: string, to: string, opts: RenameFileOptions = {}) => execute({ operation: 'renameFile', from, to }, opts, async () => nativeExecution(await runRenameFile(from, to, { ...opts, engine: services }))),
+    replace: (from: string, to: string, opts: ReplaceOptions = {}) => execute({ operation: 'replace', from, to }, opts, async () => nativeExecution(await runReplace(from, to, { ...opts, engine: services }))),
     /** All extension planning and verification completes before this atomic write boundary. */
     commit(result: { changes: FileChange[], regressions: Regression[] } | RenameFileResult) {
       const plan = plans.get(result)
@@ -244,6 +258,17 @@ export function createEngine(options: EngineOptions = {}) {
       else writeChanges(result.changes)
     },
   }
+}
+
+interface ExecutionPlan<T> {
+  result: T
+  /** Explicit planner refusals cannot be recomputed by native diagnostics. */
+  plannerRegressions: Regression[]
+  verificationChanges: (changes: FileChange[]) => FileChange[]
+}
+
+function nativeExecution<T>(result: T): ExecutionPlan<T> {
+  return { result, plannerRegressions: [], verificationChanges: () => [] }
 }
 
 function validateChanges(changes: FileChange[]): void {

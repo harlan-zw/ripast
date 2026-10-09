@@ -88,7 +88,7 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
   return {
     changes,
     unrelatedGeneratedImports,
-    verificationChanges: nuxtRenameVerificationChanges(cwd, new Set([...plans.keys(), ...sites.map(site => site.filePath)].map(path => nuxtConsumerContext(path, cwd))), providers, from, to),
+    verificationChanges: finalChanges => nuxtRenameVerificationChanges(cwd, new Set([...plans.keys(), ...sites.map(site => site.filePath)].map(path => nuxtConsumerContext(path, cwd))), providers, from, to, finalChanges),
     transformEdits(path, source, semanticEdits) {
       const plan = plans.get(path)
       if (!plan)
