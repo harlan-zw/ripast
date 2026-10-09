@@ -24,7 +24,8 @@ it('blocked file move flushes large full JSON and leaves all files unchanged', (
     assert.ok(payload.regressions.length > 0)
     assert.ok(result.stdout.length > 500_000)
     assert.equal(fixture.read('packages/source/index.ts'), source)
-    assert.equal(fixture.read('consumer-0.ts'), consumer)
+    for (let i = 0; i < 40; i++)
+      assert.equal(fixture.read(`consumer-${i}.ts`), consumer)
     assert.equal(existsSync(resolve(fixture.dir, 'packages/dest/index.ts')), false)
   }
   finally { fixture.cleanup() }
@@ -162,3 +163,66 @@ function runTracked(cwd: string, args: string[]): Promise<{ code: number | null,
     })
   })
 }
+
+it('agent pages disclose the path base and bound unused declarations', () => {
+  const fixture = makeFixture(Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`file${i}.ts`, `const unused${i} = 1\n`])))
+  try {
+    const result = run(fixture.dir, ['unused', '--exports', 'local', '--json', '--profile', 'agent', '--limit', '2', '--offset', '2'])
+    assert.equal(result.status, 0, result.stderr)
+    const payload = JSON.parse(result.stdout)
+    assert.equal(payload.base, fixture.dir)
+    assert.equal(payload.total, 9)
+    assert.equal(payload.shown, 2)
+    assert.equal(payload.omitted, 7)
+    assert.equal(payload.offset, 2)
+  }
+  finally { fixture.cleanup() }
+})
+
+it('timings report finite phase measurements without contaminating JSON', () => {
+  const fixture = makeFixture({ 'source.ts': 'export const value = 1\n' })
+  try {
+    const result = run(fixture.dir, ['scan', 'value', '--json', '--profile', 'agent', '--timings'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(JSON.parse(result.stdout).total, 1)
+    const events = result.stderr.trim().split('\n').map(line => JSON.parse(line))
+    assert.ok(events.some(event => event.phase === 'command scan'))
+    assert.ok(events.every(event => typeof event.phase === 'string' && Number.isFinite(event.ms) && event.ms >= 0))
+    assert.equal(fixture.read('source.ts'), 'export const value = 1\n')
+  }
+  finally { fixture.cleanup() }
+})
+
+it.each([['unknown-command', '--json'], ['--json']])('root JSON outcome stays valid: %s', (...args) => {
+  const fixture = makeFixture({ 'source.ts': 'export const value = 1\n' })
+  try {
+    const result = run(fixture.dir, args)
+    const payload = JSON.parse(result.stdout)
+    assert.equal(payload.status, args[0] === '--json' ? 'help' : 'error')
+    assert.equal(result.status, args[0] === '--json' ? 0 : 1)
+    assert.equal(fixture.read('source.ts'), 'export const value = 1\n')
+  }
+  finally { fixture.cleanup() }
+})
+
+it('doctor fixes use compact text and apply every fix despite display limits', () => {
+  const source = `export { missing } from './missing'\n`
+  const fixture = makeFixture(Object.fromEntries(Array.from({ length: 4 }, (_, i) => [`file${i}.ts`, source])))
+  try {
+    const preview = run(fixture.dir, ['doctor', '--checks', 'dangling-reexport', '--fix', '--profile', 'agent', '--limit', '1'])
+    assert.equal(preview.status, 0, preview.stderr)
+    assert.match(preview.stdout, /omitted: 3/)
+    assert.doesNotMatch(preview.stdout, /--- a\//)
+    for (let i = 0; i < 4; i++)
+      assert.equal(fixture.read(`file${i}.ts`), source)
+    const applied = run(fixture.dir, ['doctor', '--checks', 'dangling-reexport', '--fix', '--apply', '--json', '--profile', 'agent', '--limit', '1', '--artifact', 'fix.json'])
+    assert.equal(applied.status, 0, applied.stderr)
+    const payload = JSON.parse(applied.stdout)
+    assert.equal(payload.changePage.total, 4)
+    assert.equal(payload.changePage.omitted, 3)
+    assert.equal(JSON.parse(fixture.read('fix.json')).changes.length, 4)
+    for (let i = 0; i < 4; i++)
+      assert.doesNotMatch(fixture.read(`file${i}.ts`), /missing/)
+  }
+  finally { fixture.cleanup() }
+})

@@ -160,7 +160,9 @@ export function formatDetail(detail: ComponentDetail, options: OutputSelection =
   lines.push(`  source: ${c.source}, scope: ${c.scope}`)
   if (detail.candidates.length > 1) {
     lines.push(`  other candidates with same name:`)
-    for (const cand of selectOutput(detail.candidates, options, candidate => candidate.rel).results) {
+    const candidates = selectOutput(detail.candidates, options, candidate => candidate.rel)
+    lines.push(`  candidates: ${formatOutputPage(candidates)}`)
+    for (const cand of candidates.results) {
       if (cand.id === c.id)
         continue
       lines.push(`    ${cand.rel}${cand.shadowed ? ' (shadowed)' : ''}`)

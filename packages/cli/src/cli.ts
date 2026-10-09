@@ -104,6 +104,7 @@ const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit m
 const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto uses std-env isAgent.' }
 
 const outputArgs = {
+  timings: { type: 'boolean' as const, default: false, description: 'Emit phase durations as stderr JSON lines.' },
   limit: { type: 'string' as const, description: 'Maximum displayed results. Agent default: 40. Does not restrict discovery or verification.' },
   offset: { type: 'string' as const, description: 'Skip displayed results. Repeat with a later offset to retrieve omitted results.' },
   file: { type: 'string' as const, description: 'Display results for this project-relative file only.' },
@@ -147,10 +148,10 @@ function discoveryJson<T>(results: T[], args: OutputArgs, file?: (item: T) => st
     return
   }
   const page = selectOutput(results, selection(args, agentProfile), file)
-  emitJson({ status: page.total ? 'ok' : 'empty', ...page, results: selectedFields(page.results, args) }, args, full)
+  emitJson({ status: page.total ? 'ok' : 'empty', base: process.cwd(), ...page, results: selectedFields(page.results, args) }, args, full)
 }
 function diagnostics(r: MutatingResult, args: OutputArgs, agentProfile: boolean) {
-  const all = [...r.regressions].map(d => ({ ...d, file: outputPath(d.file, process.cwd()) })).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col || a.code - b.code || a.message.localeCompare(b.message))
+  const all = [...r.regressions].map(d => ({ ...d, file: agentProfile ? outputPath(d.file, process.cwd()) : d.file })).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col || a.code - b.code || a.message.localeCompare(b.message))
   const filtered = args.code == null ? all : all.filter(d => d.code === Number(args.code))
   return { ...selectOutput(filtered, selection(args, agentProfile, 20), d => d.file), total: all.length }
 }
@@ -252,7 +253,7 @@ const scanCmd = defineCommand({
       const selected = new Set(page.results.map(node => node.file))
       const edges = graph.edges.filter(edge => selected.has(edge.from) && selected.has(edge.to))
       const prefix = graphFormat === 'dot' ? '// ' : '%% '
-      process.stdout.write(`${prefix + formatOutputPage(page)}, omitted edges: ${graph.edges.length - edges.length}\n`)
+      process.stdout.write(`${prefix}nodes: ${formatOutputPage(page)}, omitted edges: ${graph.edges.length - edges.length}\n`)
       process.stdout.write(`${formatScanGraph({ ...graph, nodes: page.results, edges }, graphFormat)}\n`)
       return
     }
@@ -450,6 +451,7 @@ function compactMutationResult(r: MutatingResult, apply: boolean, manifest = bui
   const { results: regressions, ...diagnosticPage } = diagnostics(r, args, true)
   return {
     status: blocked ? 'refused' : r.changes.length || manifest.moves?.length ? 'ok' : 'empty',
+    base: process.cwd(),
     mode: blocked ? 'blocked' : apply ? 'applied' : 'dry-run',
     verification: compactVerification(r.verification),
     ...(r.regressions.length ? { regressions, diagnosticPage } : {}),
@@ -533,7 +535,7 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
     }
   }
   if (!apply) {
-    process.stdout.write(`${s.files} files, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
+    process.stdout.write(`${s.files} file${s.files === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
     printDiffs(selectOutput(r.changes, selection(args, false), c => c.rel).results)
   }
   if (apply) {
@@ -784,7 +786,7 @@ const cssClassScanCmd = defineCommand({
       }
       const page = selectOutput(hits, selection(args, agentProfile), hit => args.file && hit.files.includes(String(args.file)) ? String(args.file) : '')
       const results = agentProfile ? page.results.map(hit => ({ token: hit.token, count: hit.count, files: hit.files.length })) : page.results
-      emitJson({ status: page.total ? 'ok' : 'empty', ...page, results: selectedFields(results, args) }, args, hits)
+      emitJson({ status: page.total ? 'ok' : 'empty', base: process.cwd(), ...page, results: selectedFields(results, args) }, args, hits)
       return
     }
     if (agentProfile) {
@@ -894,9 +896,11 @@ const componentsCmd = defineCommand({
         throw new Error(`No component named "${args.name}". Run components to list available names.`)
       }
       if (args.json) {
-        const normalized = { ...detail, component: { ...detail.component, file: outputPath(detail.component.file, process.cwd()) }, usages: detail.usages.map(u => ({ ...u, file: outputPath(u.file, process.cwd()) })) }
+        const normalizeComponent = (c: typeof detail.component) => ({ ...c, file: outputPath(c.file, process.cwd()), ...(c.shadowedBy ? { shadowedBy: outputPath(c.shadowedBy, process.cwd()) } : {}) })
+        const normalized = { ...detail, component: normalizeComponent(detail.component), candidates: detail.candidates.map(normalizeComponent), usages: detail.usages.map(u => ({ ...u, file: outputPath(u.file, process.cwd()) })) }
         const page = selectOutput(normalized.usages, selection(args, agentProfile, 50), usage => usage.rel)
-        emitJson({ status: 'ok', ...normalized, usages: selectedFields(page.results, args), usagePage: { ...page, results: undefined } }, args, detail)
+        const candidates = selectOutput(normalized.candidates, selection(args, agentProfile, 50), candidate => candidate.rel)
+        emitJson({ status: 'ok', base: process.cwd(), ...normalized, candidates: candidates.results, candidatePage: { ...candidates, results: undefined }, usages: selectedFields(page.results, args), usagePage: { ...page, results: undefined } }, args, detail)
         return
       }
       process.stdout.write(`${formatDetail(detail, selection(args, agentProfile, 50))}\n`)
@@ -904,10 +908,16 @@ const componentsCmd = defineCommand({
     }
     const inv = await buildComponentInventory(opts)
     if (args.json) {
-      if (args.dups)
-        discoveryJson(inv.duplicates, args, undefined, inv)
-      else
+      if (args.dups) {
+        const duplicates = inv.duplicates.map((duplicate) => {
+          const { results: entries, ...entryPage } = selectOutput(duplicate.entries, selection(args, agentProfile), entry => entry.rel)
+          return { ...duplicate, entries: entries.map(entry => ({ ...entry, file: outputPath(entry.file, process.cwd()) })), entryPage }
+        })
+        discoveryJson(duplicates, args, undefined, inv)
+      }
+      else {
         discoveryJson(inv.components.map(c => ({ ...c, file: outputPath(c.file, process.cwd()), ...(c.shadowedBy ? { shadowedBy: outputPath(c.shadowedBy, process.cwd()) } : {}) })), args, c => c.rel, inv)
+      }
       return
     }
     if (args.dups) {
@@ -915,11 +925,14 @@ const componentsCmd = defineCommand({
         process.stdout.write('no duplicate-name groups\n')
         return
       }
-      const lines: string[] = []
-      for (const dup of selectOutput(inv.duplicates, selection(args, agentProfile)).results) {
+      const page = selectOutput(inv.duplicates, selection(args, agentProfile))
+      const lines: string[] = [formatOutputPage(page)]
+      for (const dup of page.results) {
         lines.push(dup.name)
-        for (const e of dup.entries)
+        const entries = selectOutput(dup.entries, selection(args, agentProfile), entry => entry.rel)
+        for (const e of entries.results)
           lines.push(`  ${e.rel}${e.shadowed ? ' (shadowed)' : ''}`)
+        lines.push(`  entries: ${formatOutputPage(entries)}`)
       }
       process.stdout.write(`${lines.join('\n')}\n`)
       return
@@ -971,7 +984,7 @@ const doctorCmd = defineCommand({
       changedFiles = getChangedFiles({ cwd: process.cwd(), ref })
       if (!changedFiles.length) {
         if (args.json)
-          emitJson({ status: 'empty', findings: [], filesScanned: 0, total: 0, omitted: 0 }, args)
+          discoveryJson([], args, undefined, { status: 'empty', findings: [], filesScanned: 0 })
         else
           process.stdout.write('doctor: no changed files matched.\n')
         return
@@ -1040,7 +1053,7 @@ const doctorCmd = defineCommand({
     else if (args.json) {
       if (agentProfile) {
         const page = selectDoctorFindings(report, selection(args, true, 50))
-        emitJson({ status: page.total ? 'findings' : 'empty', ...page, results: selectedFields(page.results, args), filesScanned: report.filesScanned }, args, report)
+        emitJson({ status: page.total ? 'findings' : 'empty', base: process.cwd(), ...page, results: selectedFields(page.results, args), filesScanned: report.filesScanned }, args, report)
       }
       else {
         discoveryJson(report.findings, args, finding => finding.file, report)
@@ -1093,7 +1106,7 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
   const name = rawArgs[0]
   const commands = command.subCommands as Record<string, CommandDef>
   const selected = commands[name]
-  if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+  if (rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs.length === 0 || rawArgs.every(arg => arg === '--json')) {
     if (jsonRequested(rawArgs))
       process.stdout.write(`${JSON.stringify({ status: 'help', usage: await renderUsage(selected ?? command) })}\n`)
     else
@@ -1109,10 +1122,17 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
     ? {
         ...selected,
         async run(context: Parameters<NonNullable<typeof selected.run>>[0]) {
-          const needsAdapter = ['rename', 'move', 'rename-file', 'replace', 'doctor', 'components', 'vue-template-wrap', 'vue-template-unwrap'].includes(name)
-          if (needsAdapter && context.args.vue !== false && ensureAdapters && await ensureAdapters())
-            return
-          return selected.run?.(context)
+          const start = performance.now()
+          try {
+            const needsAdapter = ['rename', 'move', 'rename-file', 'replace', 'delete', 'doctor', 'components', 'vue-template-wrap', 'vue-template-unwrap'].includes(name)
+            if (needsAdapter && context.args.vue !== false && ensureAdapters && await ensureAdapters())
+              return
+            return await selected.run?.(context)
+          }
+          finally {
+            if (context.args.timings)
+              process.stderr.write(`${JSON.stringify({ phase: `command ${name}`, ms: performance.now() - start })}\n`)
+          }
         },
       }
     : command
@@ -1122,6 +1142,8 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
     const cause = error instanceof Error && error.cause ? String(error.cause) : undefined
     if (jsonRequested(rawArgs))
       process.stdout.write(`${JSON.stringify({ status: 'error', error: { message, next, ...(cause ? { cause } : {}) } })}\n`)
+    if (jsonRequested(rawArgs))
+      process.stderr.write(`ripide: ${message}\n`)
     else
       process.stderr.write(`ripide: ${message}\n${next}\n`)
     process.exitCode = 1

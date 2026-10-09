@@ -144,7 +144,7 @@ export function formatAgentScanHits(hits: CssClassScanHit[], limit: number = 40,
   if (!hits.length)
     return 'class-scan tokens=0 files=0'
   const shown = hits.slice(offset, offset + limit)
-  const lines = [`class-scan tokens=${hits.length} files=${new Set(hits.flatMap(h => h.files)).size} top=${shown.length} total=${total} omitted=${hits.length - shown.length} offset=${offset} format=token=count/files`]
+  const lines = [`class-scan tokens=${hits.length} files=${new Set(hits.flatMap(h => h.files)).size} top=${shown.length} format=token=count/files total=${total} omitted=${hits.length - shown.length} offset=${offset}`]
   const chunkSize = 8
   for (let i = 0; i < shown.length; i += chunkSize)
     lines.push(shown.slice(i, i + chunkSize).map(h => `${h.token}=${h.count}/${h.files.length}`).join(' '))

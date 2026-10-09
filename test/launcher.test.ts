@@ -168,3 +168,31 @@ it.each([['--help'], ['scan', 'target', '--help'], ['tree', '--json', '--profile
   }
   finally { fx.cleanup() }
 })
+
+it.each(['empty', 'invalid', 'refused'])('adapter subprocess %s keeps one actionable JSON outcome', (outcome) => {
+  const response = outcome === 'empty' ? '' : outcome === 'invalid' ? '{broken' : '{"status":"refused","verification":["ts","project",0,1]}'
+  const fx = makeFixture({
+    'package.json': '{"dependencies":{"vue":"*"}}',
+    'source.ts': 'export const old = 1',
+    'pnpm': `#!/bin/sh\nprintf '%s' '${response}'\nexit 1\n`,
+  })
+  try {
+    const launcher = prepareLauncher(fx)
+    chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
+    const child = spawnSync(process.execPath, [launcher, 'rename', 'old', 'next', '--apply', '--json'], {
+      cwd: fx.dir,
+      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPIDE_REEXEC: '' },
+      encoding: 'utf8',
+      timeout: 10_000,
+    })
+    assert.equal(child.status, 1)
+    const payload = JSON.parse(child.stdout)
+    assert.equal(payload.status, outcome === 'refused' ? 'refused' : 'error')
+    if (outcome !== 'refused') {
+      assert.ok(payload.error.message)
+      assert.ok(payload.error.next)
+    }
+    assert.equal(fx.read('source.ts'), 'export const old = 1')
+  }
+  finally { fx.cleanup() }
+})

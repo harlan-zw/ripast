@@ -79,13 +79,15 @@ export function defineStrictCommand<const T extends ArgsDef>(definition: Command
       }
       if (context.args.graph && context.args.json)
         throw new Error('Options --graph and --json cannot be combined. Use scan --json for structured hits.')
-      if ((context.args.fields || context.args.minify) && !context.args.json)
-        throw new Error('Options --fields and --minify require --json.')
+      if ((context.args.fields || context.args.minify || context.args.artifact) && !context.args.json)
+        throw new Error('Options --fields, --minify, and --artifact require --json.')
       if (context.args.apply && context.args.fix === false)
         throw new Error('Option --apply requires --fix for doctor.')
       const meta = typeof definition.meta === 'function' ? await definition.meta() : await definition.meta
-      if (context.args.fields && !['scan', 'tree', 'unused', 'components', 'doctor', 'css-class-scan'].includes(meta?.name ?? ''))
+      if (context.args.fields && (context.args.fix || !['scan', 'tree', 'unused', 'components', 'doctor', 'css-class-scan'].includes(meta?.name ?? '')))
         throw new Error('Option --fields is available for discovery commands only.')
+      if (context.args.code && !['rename', 'replace', 'move', 'delete', 'rename-file'].includes(meta?.name ?? ''))
+        throw new Error('Option --code is available for mutation diagnostics only. Use doctor --checks to select checks.')
       if (context.args.kind) {
         const kinds = ['identifier-reference', 'identifier-binding', 'import-specifier', 'member-access', 'property', 'jsx', 'string-literal', 'label']
         for (const kind of String(context.args.kind).split(',')) {
