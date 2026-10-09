@@ -1,40 +1,9 @@
 #!/usr/bin/env node
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import process from 'node:process'
 import spawn from 'cross-spawn'
-
-const FRAMEWORK_MARKERS = {
-  vue: ['vue', 'nuxt', '@nuxt/kit'],
-  // svelte: ['svelte', '@sveltejs/kit'], // adapter not yet published
-}
-
-function detectFrameworks(cwd) {
-  const out = []
-  let dir = cwd
-  for (let i = 0; i < 6; i++) {
-    const pkgPath = join(dir, 'package.json')
-    if (existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-        const allDeps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies }
-        for (const [name, markers] of Object.entries(FRAMEWORK_MARKERS)) {
-          if (out.includes(name))
-            continue
-          if (markers.some(m => allDeps[m]))
-            out.push(name)
-        }
-      }
-      catch {}
-    }
-    const parent = dirname(dir)
-    if (parent === dir)
-      break
-    dir = parent
-  }
-  return out
-}
 
 function jsonRequested(rawArgs) {
   let requested = false
@@ -113,4 +82,4 @@ function ensureAdapters(needed) {
 }
 
 const { runCli } = await import('../dist/cli.mjs')
-await runCli(process.argv.slice(2), () => ensureAdapters(detectFrameworks(process.cwd())))
+await runCli(process.argv.slice(2), ensureAdapters)
