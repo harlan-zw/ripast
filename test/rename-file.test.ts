@@ -142,7 +142,7 @@ describe('rename-file', () => {
       'src/main.ts': 'import { ONE } from \'./util.ts\'\nexport const r = ONE\n',
     })
     try {
-      const r = await runRenameFile('src/util.ts', 'src/lib/util.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+      const r = await runRenameFile('src/util.ts', 'src/lib/util.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       assert.deepEqual(r.regressions, [], 'no regressions returned in verify-off mode')
     }
     finally { fx.cleanup() }
@@ -205,7 +205,7 @@ describe('rename-file', () => {
     write('apps/site/server/foo.ts', 'import { logger } from \'~/shared/server/logger\'\nexport const r = logger.warn(\'x\')\n')
     write('apps/pro/server/foo.ts', 'import { logger } from \'~/shared/server/logger\'\nexport const r = logger.warn(\'x\')\n')
     try {
-      const r = await runRenameFile('shared/server/logger.ts', 'layers/core/server/utils/logger.ts', { ...{ cwd: dir, verify: false }, engine: vueServices() })
+      const r = await runRenameFile('shared/server/logger.ts', 'layers/core/server/utils/logger.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(r.changes)
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
       renameSync(r.fileMove.from, r.fileMove.to)
@@ -234,7 +234,7 @@ describe('rename-file', () => {
 `,
     })
     try {
-      const r = await runRenameFile('components/Button.vue', 'components/BaseButton.vue', { ...{ cwd: fx.dir, verify: 'none' }, engine: vueServices() })
+      const r = await runRenameFile('components/Button.vue', 'components/BaseButton.vue', { ...{ cwd: fx.dir, verifyMode: 'none' }, engine: vueServices() })
       writeChanges(r.changes)
       renameSync(r.fileMove.from, r.fileMove.to)
 

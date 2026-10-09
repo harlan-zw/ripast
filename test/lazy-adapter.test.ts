@@ -12,7 +12,7 @@ it.each(['rename', 'move', 'rename-file'])('allows pure TypeScript %s when an un
     'consumer.ts': 'import { target } from \'./source\'\nconsole.log(target)',
   })
   try {
-    const options = { cwd: fx.dir, verify: false }
+    const options = { cwd: fx.dir, verifyMode: 'none' as const }
     const engine = await createCliEngine(fx.dir, true, imports)
     const result = operation === 'rename'
       ? await engine.rename('target', 'next', options)

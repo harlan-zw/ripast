@@ -13,7 +13,7 @@ import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
-import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
+import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerificationOptions, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
 import { createVerification } from './verification.ts'
@@ -24,7 +24,7 @@ export interface ReplaceOptions {
   profile?: ProfileSink
   cwd?: string
   glob?: string | string[]
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
   targetScope?: string
   /** Import specifier for the validated target, including framework aliases. */
   targetImport?: string
@@ -45,12 +45,12 @@ interface ReplacementTarget {
 }
 
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
+  const verifyMode = resolveVerificationOptions(opts, 'project')
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
   const engine = opts.engine
   assertSourceSupport(cwd, engine)
   engine?.assertOperation({ operation: 'replace', from, to }, cwd)
-  const verifyMode = resolveVerifyMode(opts.verify === undefined || opts.verify === true ? 'project' : opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
     : timed(profile, 'target discovery', () => rgFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine)))

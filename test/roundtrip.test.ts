@@ -33,14 +33,14 @@ for (const [label, files] of Object.entries(RENAME_FIXTURES)) {
       const originals: Record<string, string> = {}
       for (const f of Object.keys(files)) originals[f] = fx.read(f)
 
-      const forward = await runRename('foo' in usedNames(files) ? 'foo' : 'tgt' in usedNames(files) ? 'tgt' : 'MyType', '__tmp_renamed__', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+      const forward = await runRename('foo' in usedNames(files) ? 'foo' : 'tgt' in usedNames(files) ? 'tgt' : 'MyType', '__tmp_renamed__', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(forward.changes)
 
       const originalName = Object.keys(originals).some(f => originals[f].includes('foo'))
         ? 'foo'
         : Object.keys(originals).some(f => originals[f].includes('tgt')) ? 'tgt' : 'MyType'
 
-      const back = await runRename('__tmp_renamed__', originalName, { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+      const back = await runRename('__tmp_renamed__', originalName, { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(back.changes)
 
       for (const f of Object.keys(files)) {
@@ -59,7 +59,7 @@ it('scan count is conserved across rename', async () => {
   })
   try {
     const beforeHits = scan('foo', { ...{ cwd: fx.dir }, engine: vueServices() }).length
-    const r = await runRename('foo', 'bar', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const r = await runRename('foo', 'bar', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(r.changes)
     const afterHits = scan('bar', { ...{ cwd: fx.dir }, engine: vueServices() }).length
     assert.equal(afterHits, beforeHits, 'total occurrence count must be conserved')
@@ -77,10 +77,10 @@ it('move roundtrip is identity: simple function', async () => {
   try {
     const originals = { a: fx.read('a.ts'), b: fx.read('b.ts') }
 
-    const forward = await runMove('helper', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const forward = await runMove('helper', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(forward.changes)
 
-    const back = await runMove('helper', 'c.ts', 'a.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const back = await runMove('helper', 'c.ts', 'a.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(back.changes)
 
     assertSimilarish(fx.read('a.ts'), originals.a, 'a.ts roundtrip')
@@ -99,8 +99,8 @@ it('move roundtrip preserves import sites', async () => {
     const beforeHelper = scan('helper', { ...{ cwd: fx.dir }, engine: vueServices() }).length
     const beforeOther = scan('other', { ...{ cwd: fx.dir }, engine: vueServices() }).length
 
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
-    writeChanges((await runMove('helper', 'c.ts', 'a.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
+    writeChanges((await runMove('helper', 'c.ts', 'a.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
 
     assert.equal(scan('helper', { ...{ cwd: fx.dir }, engine: vueServices() }).length, beforeHelper, 'helper count conserved')
     assert.equal(scan('other', { ...{ cwd: fx.dir }, engine: vueServices() }).length, beforeOther, 'other count conserved (unrelated)')

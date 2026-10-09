@@ -10,7 +10,7 @@ import { dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { computeSpecifier } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
-import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { isCaseOnlyFileRename, mergeFileChanges } from './util.ts'
 import { createVerification } from './verification.ts'
@@ -22,7 +22,7 @@ export interface RenameFileOptions {
   cwd?: string
   /** Configured project used for import rewrites and verification. */
   tsconfig?: string
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
 }
 
 const TS_LIKE_RE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
@@ -42,6 +42,7 @@ export interface RenameFileResult {
 }
 
 export async function runRenameFile(oldPath: string, newPath: string, opts: RenameFileOptions = {}): Promise<RenameFileResult> {
+  const verifyMode = resolveVerificationOptions(opts)
   const cwd = opts.cwd ?? process.cwd()
   const engine = opts.engine
   assertSourceSupport(cwd, engine)
@@ -69,7 +70,6 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   if (!tsconfigPath)
     throw new Error('ripide rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
-  const verifyMode = resolveVerifyMode(opts.verify)
   const adapter = engine?.adapter ?? null
   const warnings: string[] = []
   const server = !adapter || verifyMode !== 'none' ? await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath })) : null

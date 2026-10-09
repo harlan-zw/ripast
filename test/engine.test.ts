@@ -25,11 +25,11 @@ it('ignores shell exports in configuration dotfiles without omitting authored so
   writeFileSync(join(cwd, '.envrc'), 'export FOO=bar\n')
   writeFileSync(join(cwd, 'source.ts'), 'export const shared = 1\n')
   const engine = createEngine()
-  const result = await engine.rename('shared', 'next', { cwd, verify: false })
+  const result = await engine.rename('shared', 'next', { cwd, verifyMode: 'none' as const })
   engine.commit(result)
   expect(readFileSync(join(cwd, 'source.ts'), 'utf8')).toContain('export const next')
   writeFileSync(join(cwd, 'view.unknown'), 'export const consumer = 1\n')
-  await expect(engine.rename('next', 'third', { cwd, verify: false })).rejects.toThrow(/Required extension missing/)
+  await expect(engine.rename('next', 'third', { cwd, verifyMode: 'none' as const })).rejects.toThrow(/Required extension missing/)
 })
 
 it.each([false, true])('checks semantic plans once unless hooks change them, modified=%s', async (modified) => {
@@ -48,7 +48,7 @@ it.each([false, true])('checks semantic plans once unless hooks change them, mod
     if (modified)
       hooks.hook('verify:before', ({ changes }) => { changes[0]!.after += '\n' })
   } }] })
-  const result = await engine.rename('shared', 'next', { cwd, verify: 'project' })
+  const result = await engine.rename('shared', 'next', { cwd, verifyMode: 'project' })
   expect(checks).toBe(modified ? 2 : 1)
   expect(result.verification).toMatchObject({ _tag: 'Checked', checks: expect.arrayContaining([{ checker: 'vue', scope: 'project', files: 1, newErrors: 0 }]) })
   engine.commit(result)
@@ -176,7 +176,7 @@ it.each(['touched', 'project'] as const)('renames a TS provider, TS importer, an
       return { changes: [{ path, rel: 'view.custom', before, after: before.replace(from, to) }], regressions: [], warnings: [], scanned: 1 }
     },
   }] })
-  const result = await engine.rename('shared', 'renamed', { cwd, verify })
+  const result = await engine.rename('shared', 'renamed', { cwd, verifyMode: typeof verify === 'boolean' ? verify ? 'touched' : 'none' : verify })
   expect(result.regressions).toEqual([])
   expect(result.changes.map(change => change.rel).sort()).toEqual(['consumer.ts', 'source.ts', 'view.custom'])
   expect(readFileSync(join(cwd, 'source.ts'), 'utf8')).toContain('export const shared')
@@ -280,7 +280,7 @@ it.each(['hard-link', 'dangling-link'] as const)('refuses a %s target created af
   const target = join(cwd, 'target.ts')
   writeFileSync(source, 'export const value = 1\n')
   const engine = createEngine()
-  const result = await engine.renameFile('Source.ts', 'target.ts', { cwd, verify: false })
+  const result = await engine.renameFile('Source.ts', 'target.ts', { cwd, verifyMode: 'none' as const })
   if (kind === 'hard-link')
     linkSync(source, target)
   else

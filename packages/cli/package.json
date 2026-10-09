@@ -30,6 +30,10 @@
     ".": {
       "types": "./dist/cli.d.mts",
       "import": "./dist/cli.mjs"
+    },
+    "./presentation": {
+      "types": "./dist/presentation/index.d.mts",
+      "import": "./dist/presentation/index.mjs"
     }
   },
   "main": "./dist/cli.mjs",
@@ -52,6 +56,7 @@
   "dependencies": {
     "citty": "^0.2.2",
     "cross-spawn": "^7.0.6",
+    "diff": "^9.0.0",
     "ripide-api": "workspace:*",
     "std-env": "^4.3.0"
   }

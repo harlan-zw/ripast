@@ -25,9 +25,8 @@ it.each([
     const result = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, 'replace', 'original', 'replacement', '--apply', '--profile', 'full', '--json', ...args], { cwd: fx.dir, encoding: 'utf8' })
     assert.equal(result.status, 1, result.stderr)
     const payload = JSON.parse(result.stdout)
-    assert.equal(payload.applied, false)
-    assert.equal(payload.blockedByRegression, true)
-    assert.ok(payload.regressions.some((regression: { file: string, code: number }) => regression.file === `${fx.dir}/consumer.ts` && regression.code === 2322))
+    assert.equal(payload._tag, 'Refused')
+    assert.ok(payload.data.regressions.some((regression: { file: string, code: number }) => regression.file === `${fx.dir}/consumer.ts` && regression.code === 2322))
     assert.equal(fx.read('bridge.ts'), before)
   }
   finally { fx.cleanup() }
@@ -50,13 +49,11 @@ it('replacement checks unchanged Vue consumers after changing a TypeScript expor
 })
 
 it.each([
-  { verify: undefined, blocked: true },
-  { verify: true, blocked: true },
-  { verify: 'project' as const, blocked: true },
-  { verify: 'touched' as const, blocked: false },
-  { verify: false, blocked: false },
-  { verify: 'none' as const, blocked: false },
-])('replacement respects verification $verify', async ({ verify, blocked }) => {
+  { verifyMode: undefined, blocked: true },
+  { verifyMode: 'project' as const, blocked: true },
+  { verifyMode: 'touched' as const, blocked: false },
+  { verifyMode: 'none' as const, blocked: false },
+])('replacement respects verification $verifyMode', async ({ verifyMode, blocked }) => {
   const fx = makeFixture({
     'original.ts': 'export function original() { return 42 }\n',
     'replacement.ts': 'export function replacement() { return "text" }\n',
@@ -64,7 +61,7 @@ it.each([
     'consumer.ts': 'import { value } from "./bridge.ts"\nexport const result: number = value\n',
   })
   try {
-    const result = await runReplace('original', 'replacement', { ...{ cwd: fx.dir, verify }, engine: vueServices() })
+    const result = await runReplace('original', 'replacement', { ...{ cwd: fx.dir, verifyMode }, engine: vueServices() })
     assert.equal(result.regressions.some(regression => regression.file.endsWith('/consumer.ts') && regression.code === 2322), blocked)
     assert.equal(result.changes[0]?.rel, 'bridge.ts')
   }

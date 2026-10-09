@@ -5,7 +5,7 @@ import { parseSourceFile } from '../packages/core/src/util.ts'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
-it.each(['touched', 'none'] as const)('rewrites Vue directory-index imports with %s verification', async (verify) => {
+it.each(['touched', 'none'] as const)('rewrites Vue directory-index imports with %s verification', async (verifyMode) => {
   const fixture = makeFixture({
     'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, module: 'ESNext', moduleResolution: 'bundler', noEmit: true, baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/**/*.ts', 'src/**/*.vue'] }),
     'src/utils/index.ts': 'export const amount = 42\n',
@@ -14,7 +14,7 @@ it.each(['touched', 'none'] as const)('rewrites Vue directory-index imports with
   })
   try {
     const engine = vueServices()
-    const result = await runRenameFile('src/utils/index.ts', 'src/utils/value.ts', { cwd: fixture.dir, engine, verify })
+    const result = await runRenameFile('src/utils/index.ts', 'src/utils/value.ts', { cwd: fixture.dir, engine, verifyMode })
     for (const [file, specifier] of [['src/Relative.vue', './utils/value'], ['src/Alias.vue', '@/utils/value']]) {
       const change = result.changes.find(change => change.rel === file)
       assert.ok(change, `Vue consumer ${file} must follow the moved module`)

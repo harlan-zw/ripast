@@ -12,7 +12,7 @@ import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
-import { assertSourceSupport, findTsconfig, isExtensionPath, isInsideAutoImportScope, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { assertSourceSupport, findTsconfig, isExtensionPath, isInsideAutoImportScope, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
 import { createVerification } from './verification.ts'
@@ -22,7 +22,7 @@ export interface DeleteOptions {
   engine?: EngineServices
   profile?: ProfileSink
   cwd?: string
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
 }
 
 export interface DeleteReference {
@@ -39,12 +39,12 @@ export interface DeleteResult {
 }
 
 export async function runDelete(symbol: string, fromPath: string, opts: DeleteOptions = {}): Promise<DeleteResult> {
+  const verifyMode = resolveVerificationOptions(opts)
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
   const engine = opts.engine
   assertSourceSupport(cwd, engine)
   engine?.assertOperation({ operation: 'delete', symbol, from: fromPath }, cwd)
-  const verifyMode = resolveVerifyMode(opts.verify)
   const fromAbs = resolve(cwd, fromPath)
   // Escaped identifiers and namespace use need not contain the symbol's text.
   const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, engine, listAll: true }))

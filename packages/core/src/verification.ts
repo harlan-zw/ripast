@@ -17,7 +17,6 @@ export type Verification
     | { _tag: 'Skipped', reason: 'disabled' | 'no-changes' | 'not-applicable' }
 
 export type DiagnosticRecorder = (summary: DiagnosticSummary) => void
-export type CompactDiagnosticCheck = [checker: DiagnosticCheck['checker'], scope: DiagnosticCheck['scope'], files: number, newErrors: number, ignoredErrors?: number]
 
 /** A receipt records completed checks. Requested options cannot produce success. */
 export function createVerification(verifyMode: VerifyMode, hasChanges: boolean) {
@@ -45,18 +44,4 @@ export function createVerification(verifyMode: VerifyMode, hasChanges: boolean) 
       return { _tag: 'Skipped', reason: verifyMode === 'none' ? 'disabled' : hasChanges ? 'not-applicable' : 'no-changes' }
     },
   }
-}
-
-export function compactVerification(verification: Verification): CompactDiagnosticCheck[] | Extract<Verification, { _tag: 'Skipped' }>['reason'] {
-  if (verification._tag === 'Skipped')
-    return verification.reason
-  return verification.checks.map(({ checker, scope, files, newErrors, ignoredErrors }) => ignoredErrors
-    ? [checker, scope, files, newErrors, ignoredErrors]
-    : [checker, scope, files, newErrors])
-}
-
-export function formatVerification(verification: Verification): string {
-  if (verification._tag === 'Skipped')
-    return `verification: skipped (${verification.reason})`
-  return verification.checks.map(check => `${check.checker} diagnostics: ${check.scope}, ${check.files} files, ${check.newErrors} new errors${check.ignoredErrors ? `, ${check.ignoredErrors} ignored errors` : ''}`).join('\n')
 }

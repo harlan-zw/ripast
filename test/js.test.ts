@@ -25,7 +25,7 @@ it('rename updates .js declaration and cross-file .js imports', async () => {
     'b.js': 'import { tool } from \'./a.js\'\nexport const r = tool()\n',
   })
   try {
-    const result = await runRename('tool', 'gadget', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const result = await runRename('tool', 'gadget', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(result.changes)
     assert.match(fx.read('a.js'), /export function gadget/)
     assert.doesNotMatch(fx.read('a.js'), /export function tool/)
@@ -42,7 +42,7 @@ it('move relocates a .js function and rewrites import sites', async () => {
     'c.js': '',
   })
   try {
-    const result = await runMove('tool', 'a.js', 'c.js', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const result = await runMove('tool', 'a.js', 'c.js', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(result.changes)
     assert.match(fx.read('c.js'), /export function tool/)
     assert.doesNotMatch(fx.read('a.js'), /export function tool/)

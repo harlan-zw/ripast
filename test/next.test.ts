@@ -83,7 +83,7 @@ describe('next App Router fixture', () => {
     const fx = makeNextFixture()
     try {
       checkProject(fx.dir)
-      const result = await runRename('formatCount', 'displayCount', { ...{ cwd: fx.dir, verify: 'project' }, engine: vueServices() })
+      const result = await runRename('formatCount', 'displayCount', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
       expect(result.regressions).toEqual([])
       expect(result.changes.map(change => change.rel).sort()).toEqual([
         'app/api/status/route.ts',
@@ -103,13 +103,13 @@ describe('next App Router fixture', () => {
     const fx = makeNextFixture()
     try {
       checkProject(fx.dir)
-      const renamed = await runRename('Counter', 'CountButton', { ...{ cwd: fx.dir, verify: 'project' }, engine: vueServices() })
+      const renamed = await runRename('Counter', 'CountButton', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
       expect(renamed.regressions).toEqual([])
       writeChanges(renamed.changes)
 
       const file = await runRenameFile('components/Counter.tsx', 'components/controls/CountButton.tsx', { ...{
         cwd: fx.dir,
-        verify: 'project',
+        verifyMode: 'project',
       }, engine: vueServices() })
       expect(file.regressions).toEqual([])
       writeChanges(file.changes)
@@ -120,7 +120,7 @@ describe('next App Router fixture', () => {
 
       const moved = await runMove('formatCount', 'lib/count.ts', 'lib/display.ts', { ...{
         cwd: fx.dir,
-        verify: 'project',
+        verifyMode: 'project',
       }, engine: vueServices() })
       expect(moved.regressions).toEqual([])
       writeChanges(moved.changes)

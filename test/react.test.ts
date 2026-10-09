@@ -29,7 +29,7 @@ export function View() { return <><Action /><Direct /><Shadow /></> }`,
     expect(reactDiagnostics(fx)).toEqual([])
     const before = renderReactFixture(fx, `src/View.${extension}`)
     expect(before).toBe('<button>primary</button><button>primary</button><span>local</span>')
-    const result = await runRename('Button', 'PrimaryButton', { ...{ cwd: fx.dir, scope: `src/Button.${extension}`, verify: 'project' }, engine: vueServices() })
+    const result = await runRename('Button', 'PrimaryButton', { ...{ cwd: fx.dir, scope: `src/Button.${extension}`, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -58,7 +58,7 @@ export function View() { return <><Action label="main" /><Footer /></> }`,
       'src/components/Button.tsx': '',
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verify: 'project' }, engine: vueServices() })
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -74,7 +74,7 @@ export function PrimaryButton() { return <section><Button /></section> }`,
 export function View() { return <><Button /><Button /></> }`,
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runReplace('Button', 'PrimaryButton', { ...{ cwd: fx.dir, targetScope: 'src/PrimaryButton.tsx', verify: 'project' }, engine: vueServices() })
+    const result = await runReplace('Button', 'PrimaryButton', { ...{ cwd: fx.dir, targetScope: 'src/PrimaryButton.tsx', verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -91,7 +91,7 @@ export function View() { return <Button /> }`,
       'src/components/Button.tsx': '',
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verify: 'project' }, engine: vueServices() })
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -108,7 +108,7 @@ export function View() { return <Button /> }`,
       'src/components/Button.tsx': '',
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verify: 'project' }, engine: vueServices() })
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -124,7 +124,7 @@ export function View() { return <Action /> }`,
       'src/components/Button.tsx': '',
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verify: 'project' }, engine: vueServices() })
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])

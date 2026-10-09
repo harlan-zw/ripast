@@ -21,7 +21,7 @@ import { runCssClassFileScan, runCssClassScan } from './css-class-scan.ts'
 import { runDelete } from './delete.ts'
 import { runDoctor } from './doctor.ts'
 import { runMove } from './move.ts'
-import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { runRenameFile, verifyFileRename } from './rename-file.ts'
 import { runRename } from './rename.ts'
 import { runReplace } from './replace.ts'
@@ -149,8 +149,9 @@ export function createEngine(options: EngineOptions = {}) {
     },
   }
   const plans = new WeakMap<object, { fingerprint: string, movedSource: string | null }>()
-  async function execute<T extends { changes: FileChange[], regressions: Regression[] }>(request: OperationRequest, opts: { cwd?: string, tsconfig?: string, verify?: boolean | 'none' | 'touched' | 'project' }, action: () => Promise<T>): Promise<T> {
+  async function execute<T extends { changes: FileChange[], regressions: Regression[] }>(request: OperationRequest, opts: { cwd?: string, tsconfig?: string, verifyMode?: 'none' | 'touched' | 'project' }, action: () => Promise<T>): Promise<T> {
     const cwd = opts.cwd ?? process.cwd()
+    const verifyMode = resolveVerificationOptions(opts, request.operation === 'replace' ? 'project' : 'touched')
     const tsconfig = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
     assertSourceSupport(cwd, services)
     services.assertOperation(request, cwd)
@@ -164,15 +165,15 @@ export function createEngine(options: EngineOptions = {}) {
     validateChanges(result.changes)
     const planChanged = JSON.stringify(result.changes) !== originalPlan || extensions.some(extension => extension.planRename)
     const previousVerification = 'verification' in result ? result.verification as Verification : undefined
-    const verification = createVerification(resolveVerifyMode(opts.verify), !!result.changes.length || isFileRenameResult(result))
-    if (resolveVerifyMode(opts.verify) !== 'none') {
+    const verification = createVerification(verifyMode, !!result.changes.length || isFileRenameResult(result))
+    if (verifyMode !== 'none') {
       // Hook-added plans share the same verification boundary as native plans.
       const scripts = result.changes.filter(change => !services.owns(change.path))
       if (scripts.length && planChanged) {
         const server = await startTsServer(cwd, { tsconfig: tsconfig ?? undefined })
         try {
           if (isFileRenameResult(result)) {
-            result.regressions.push(...await verifyFileRename(server, cwd, result.fileMove.from, result.fileMove.to, result.changes, result.selfChange, resolveVerifyMode(opts.verify), (consumer, specifier) => services.adapter?.isPlannedImportTarget?.(cwd, consumer, specifier, result.fileMove.to) ?? false, verification))
+            result.regressions.push(...await verifyFileRename(server, cwd, result.fileMove.from, result.fileMove.to, result.changes, result.selfChange, verifyMode, (consumer, specifier) => services.adapter?.isPlannedImportTarget?.(cwd, consumer, specifier, result.fileMove.to) ?? false, verification))
           }
           else {
             result.regressions.push(...await findRegressions(server, scripts, projectScriptFiles(cwd, undefined, services), verification.extension('typescript')))
@@ -223,7 +224,7 @@ export function createEngine(options: EngineOptions = {}) {
       if (coreBindings || !planners.length)
         results.push(await runRename(from, to, { ...opts, engine: services }))
       for (const extension of planners)
-        results.push({ ...await extension.planRename!({ from, to, options: opts, services }), verification: { _tag: 'Skipped', reason: resolveVerifyMode(opts.verify) === 'none' ? 'disabled' : 'not-applicable' } })
+        results.push({ ...await extension.planRename!({ from, to, options: opts, services }), verification: { _tag: 'Skipped', reason: resolveVerificationOptions(opts) === 'none' ? 'disabled' : 'not-applicable' } })
       return combineRenameResults(results)
     }),
     move: (symbol: string, from: string, to: string, opts: MoveOptions = {}) => execute({ operation: 'move', symbol, from, to }, opts, () => runMove(symbol, from, to, { ...opts, engine: services })),

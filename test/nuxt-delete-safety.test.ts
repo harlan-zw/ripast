@@ -81,7 +81,7 @@ it.each(['missing', 'malformed', 'bare-package', 'missing-export'])('refuses unr
     else
       writeFileSync(join(dir, '.nuxt/imports.d.ts'), 'export {}')
     const before = readFileSync(join(dir, 'utils/format.ts'), 'utf8')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir, verify: false }, engine: vueServices() }), /cannot resolve auto-import metadata/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() }), /cannot resolve auto-import metadata/)
     assert.equal(readFileSync(join(dir, 'utils/format.ts'), 'utf8'), before)
   }
   finally {
@@ -102,7 +102,7 @@ it('refuses deletion of a live provider whose generated global uses a bare packa
     writeFileSync(join(dir, 'node_modules/ripide-live-provider/package.json'), JSON.stringify({ name: 'ripide-live-provider', version: '1.0.0', main: '../../lib/value.ts', types: '../../lib/value.ts' }))
     writeFileSync(join(dir, 'pages/index.vue'), '<template>{{ value(7) }}</template>')
     const before = readFileSync(join(dir, 'lib/value.ts'), 'utf8')
-    await assert.rejects(() => runDelete('value', 'lib/value.ts', { ...{ cwd: dir, verify: false }, engine: vueServices() }), /reference/)
+    await assert.rejects(() => runDelete('value', 'lib/value.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() }), /reference/)
     assert.equal(readFileSync(join(dir, 'lib/value.ts'), 'utf8'), before)
   }
   finally {
@@ -203,7 +203,7 @@ it('refuses escaped TypeScript auto-import consumers', async () => {
   const dir = fixture()
   try {
     writeFileSync(join(dir, 'consumer.ts'), 'export const label = for\\u006Dat(7)')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir, verify: false }, engine: vueServices() }), /auto-import/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() }), /auto-import/)
   }
   finally {
     rmSync(dir, { recursive: true, force: true })

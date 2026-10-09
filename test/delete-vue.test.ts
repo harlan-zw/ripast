@@ -23,7 +23,7 @@ it.each([
   })
   try {
     const location = _.includes('namespace') ? /namespace import at Consumer\.vue:2:/ : /still has.*reference[\s\S]*Consumer\.vue/
-    await assert.rejects(runDelete('helper', 'source.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), location)
+    await assert.rejects(runDelete('helper', 'source.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), location)
   }
   finally { fx.cleanup() }
 })
@@ -41,7 +41,7 @@ it.each([
     'Consumer.vue': `<script>${binding}\nexport default { value: helper() }</script><template>{{ helper() }}</template>`,
   })
   try {
-    writeChanges((await runDelete('helper', 'source.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runDelete('helper', 'source.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const { descriptor } = parse(fx.read('Consumer.vue'))
     fx.write('Consumer.ts', compileScript(descriptor, { id: 'consumer' }).content)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/Consumer.ts`).href)})).default.value)`], { encoding: 'utf8' })
@@ -56,7 +56,7 @@ it('delete checks both Vue script blocks without a tsconfig', async () => {
     'Consumer.vue': '<script>import { helper } from \'./source.ts\'\nexport default { result: helper() }</script><script setup>const longer = "unrelated longer setup block"</script><template>{{ longer }}</template>',
   }, false)
   try {
-    await assert.rejects(runDelete('helper', 'source.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), /still has.*reference[\s\S]*Consumer\.vue/)
+    await assert.rejects(runDelete('helper', 'source.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /still has.*reference[\s\S]*Consumer\.vue/)
   }
   finally { fx.cleanup() }
 })

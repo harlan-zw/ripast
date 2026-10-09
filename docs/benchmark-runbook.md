@@ -23,7 +23,7 @@ Batch independent reads. Keep dependent mutations and checks sequential.
 | Search | Relevant locations, short context, total and omitted counts | Arguments and all matches |
 | Inspection | Requested subtree, signatures, names, and relationships | Complete source or graph |
 | Preview | Changed paths, narrow diff, verification receipts, and diagnostics | Complete plan and source |
-| Apply | Actual exit, applied or refused mode, scope, and changed paths | Raw streams and byte changes |
+| Apply | Actual exit, outcome tag, scope, and changed paths | Raw streams and byte changes |
 | Successful check | Name, exit, duration, and summary | Complete streams |
 | Failed check | Cause, relevant locations, diagnostic counts, and artifact path | All diagnostics and streams |
 | Tool discovery | Needed capability and resolved artifact | Catalog, manifests, and hashes |
@@ -35,8 +35,12 @@ Put actionable errors before bulk payloads.
 Never silently drop diagnostics to meet an output budget.
 Artifact bytes are not model input bytes or tokens.
 
-Agent mutation JSON provides changed-line tuples and diagnostic receipts.
+Compact mutation JSON provides changed-line tuples and diagnostic receipts inside `data`.
+Read `_tag` for the outcome. Every response also identifies `command` and `base`.
+JSON defaults are independent of agent detection. Keep explicit profiles equal across comparison arms.
 Use `--profile full --json` when complete before/after source is required.
+Record the verification mode and operation defaults. Use only `--verify-mode none|touched|project`.
+SDK callers use `verifyMode`. Preserve rejected legacy option attempts in raw evidence.
 Read changed code on demand. Follow editing-tool requirements for fresh reads.
 
 If JSON is malformed, record that fact and preserve the raw bytes.

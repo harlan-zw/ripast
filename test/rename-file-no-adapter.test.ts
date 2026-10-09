@@ -94,7 +94,7 @@ describe('rename-file without a framework adapter', () => {
       'src/b.ts': `import { foo } from './a.ts'\nexport const bar = foo + 1\n`,
     })
     try {
-      const r = await runRenameFile('src/a.ts', 'src/aa.ts', { cwd: fx.dir, verify: 'none' })
+      const r = await runRenameFile('src/a.ts', 'src/aa.ts', { cwd: fx.dir, verifyMode: 'none' })
       writeChanges(r.changes)
       renameSync(r.fileMove.from, r.fileMove.to)
       assert.match(fx.read('src/b.ts'), /from '\.\/aa(?:\.ts)?'/, 'consumer import rewritten')
@@ -106,7 +106,7 @@ describe('rename-file without a framework adapter', () => {
     const fx = makeFx({ 'src/A.vue': `<template><div /></template>\n` })
     try {
       await assert.rejects(
-        runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verify: 'none' }),
+        runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verifyMode: 'none' }),
         /Required extension missing/,
       )
     }
@@ -120,7 +120,7 @@ it('refuses unchecked Vue directory-index consumers without an extension', async
     'Consumer.vue': '<script setup lang="ts">import { amount } from "./utils"</script><template>{{ amount }}</template>',
   })
   try {
-    await assert.rejects(runRenameFile('utils/index.ts', 'utils/value.ts', { cwd: fx.dir, verify: false }), /Required extension missing/)
+    await assert.rejects(runRenameFile('utils/index.ts', 'utils/value.ts', { cwd: fx.dir, verifyMode: 'none' as const }), /Required extension missing/)
     assert.equal(fx.read('utils/index.ts'), 'export const amount = 1')
   }
   finally { fx.cleanup() }

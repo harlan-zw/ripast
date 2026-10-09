@@ -14,7 +14,7 @@ it('rename-file updates explicit source extensions when module kind changes', as
     'consumer.ts': 'import { value } from \'./source.ts\'\nexport const result = value\n',
   })
   try {
-    const result = await runRenameFile('source.ts', 'target.mts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const result = await runRenameFile('source.ts', 'target.mts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     renameSync(result.fileMove.from, result.fileMove.to)
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/consumer.ts`).href)})).result)`], { encoding: 'utf8' })
@@ -27,7 +27,7 @@ it('rename-file refuses symbolic link sources before moving them', async () => {
   const fx = makeFixture({ 'source.ts': 'export const value = 42\n' })
   try {
     symlinkSync('source.ts', `${fx.dir}/link.ts`)
-    await assert.rejects(runRenameFile('link.ts', 'nested/link.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), /symbolic link/)
+    await assert.rejects(runRenameFile('link.ts', 'nested/link.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /symbolic link/)
   }
   finally { fx.cleanup() }
 })

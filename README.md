@@ -270,12 +270,15 @@ ripide unused --exports all --json
 <details>
 <summary><b>🤖 Drive from an AI agent</b></summary>
 
-`--json` emits machine-readable output. `--profile agent` returns compact summaries and is selected automatically in detected agent environments.
-For mutating commands, agent JSON returns `[path, lines]` tuples instead of full source files.
+`--json` emits the same contract in terminals and detected agent environments.
+The default JSON profile is compact. Use `--profile full` for complete source content.
+Every response contains `_tag`, `command`, `base`, and `data`.
+Mutation tags are `Preview`, `Applied`, `Refused`, or `Empty`. Discovery uses `Result`; failures use `Error`.
+For mutating commands, compact JSON returns `[path, lines]` tuples inside `data` instead of full source files.
 If line ranges shift, tuples include both ranges: `[path, beforeLines, afterLines]`.
 Lines are one-based and inclusive. `"3,10-12"` identifies separate ranges; `"3+"` marks a gap after line 3.
 File moves appear separately as `moves: [[from, to]]`.
-Results include `mode` and `verification`. Empty warnings and regressions are omitted.
+The `_tag` identifies the outcome. The `data.verification` field reports checks. Empty warnings and regressions are omitted.
 Verification entries use `[checker, scope, files, newErrors]`.
 An optional fifth number counts errors excluded from the result.
 Skipped checks return `"disabled"`, `"no-changes"`, or `"not-applicable"`.
@@ -287,9 +290,11 @@ If verification finds new type errors, the command refuses `--apply` and exits w
 ```bash
 ripide rename useStore useAppStore --apply --profile agent --json
 # {
-#   "mode": "applied",
-#   "changes": [["src/store.ts", "12"], ["src/app.ts", "1,8"]],
-#   "verification": [["typescript", "touched", 2, 0]]
+#   "_tag": "Applied", "command": "rename", "base": "/project",
+#   "data": {
+#     "changes": [["src/store.ts", "12"], ["src/app.ts", "1,8"]],
+#     "verification": [["typescript", "touched", 2, 0]]
+#   }
 # }
 ```
 
@@ -300,21 +305,25 @@ ripide rename useStore useAppStore --apply --profile agent --json
 `rename`, `replace`, `move`, `delete`, and `rename-file` enable verification by default.
 They compare type errors before and after the change, then refuse `--apply` if new errors appear.
 The receipt identifies the checker, scope, checked file count, and new error count.
-Full JSON uses named check fields. Agent JSON uses the compact tuples shown above.
+Full JSON uses named check fields. Compact JSON uses the tuples shown above.
 `typescript` uses TypeScript's native language server diagnostics. `vue` uses the Vue adapter's diagnostics.
 These checks compare error diagnostics against proposed content before writing files.
 They do not run `tsc --noEmit`, a build, or tests.
 If the receipt covers your required scope, do not repeat that diagnostic check without another edit.
-`replace` checks the project by default, including unchanged consumers of modified exports.
-Other refactors check touched files by default. Use `--verify-mode project` for broader checks, including unchanged Vue consumers.
+Replacement defaults to project checks. Other refactors default to touched files in both the CLI and SDK.
+Use `--verify-mode project` for broader checks, including unchanged Vue consumers.
 Project verification respects file discovery ignores. Refactor globs limit edits without narrowing project verification.
-Use `--no-verify` or `--verify-mode none` to skip verification. CSS class renames do not run a typecheck.
+Use `--verify-mode none` to skip verification. The SDK accepts `verifyMode: 'none' | 'touched' | 'project'`.
+The boolean SDK `verify` option and CLI `--verify` / `--no-verify` flags are removed.
+CSS class renames do not run a typecheck.
 
 ### Profiles
 
 `--profile auto|agent|full` controls output verbosity.
-The default, `auto`, uses `std-env`'s `isAgent` detection.
-Agents get compact summaries; terminals get full diffs and trees.
+For text, `auto` uses `std-env`'s `isAgent` detection.
+Agents get compact summaries; terminals get full diffs and trees. JSON `auto` always uses compact output.
+
+See [API contract migration](docs/api-contracts.md) for JSON consumers and SDK formatting imports.
 
 ## Commands
 
@@ -399,7 +408,7 @@ ripide tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 
 ## Credits
 
-- [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind rename, references, file renames, and `--verify`.
+- [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind rename, references, file renames, and verification.
 - [Volar](https://github.com/volarjs/volar.js) + [@vue/language-tools](https://github.com/vuejs/language-tools): cross-`.vue` rename and diagnostics.
 - [oxc](https://github.com/oxc-project/oxc): fast parser for template-expression classification.
 - [ripgrep](https://github.com/BurntSushi/ripgrep): finds candidate files before parsing.

@@ -87,7 +87,7 @@ it('rename finds a local variable inside a function', async () => {
     'a.ts': 'export function count(closes: number) { const markedCloses = closes; const hits = [markedCloses]; return hits.length + closes }\n',
   })
   try {
-    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir, verify: true }, engine: vueServices() })
+    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir, verifyMode: 'touched' as const }, engine: vueServices() })
     writeChanges(result.changes)
     assert.equal(result.regressions.length, 0)
     assert.match(fx.read('a.ts'), /const markedHits = \[markedCloses\]; return markedHits.length \+ closes/)
@@ -135,7 +135,7 @@ it.each([
     [path]: source,
   })
   try {
-    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir, verify: true }, engine: vueServices() })
+    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir, verifyMode: 'touched' as const }, engine: vueServices() })
     assert.equal(result.regressions.length, 0)
     assert.deepEqual(result.changes.map(change => change.rel), ['composables/a.ts'])
     writeChanges(result.changes)

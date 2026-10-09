@@ -12,7 +12,7 @@ it('rename throws on ambiguity across multiple files', async () => {
   })
   try {
     await assert.rejects(
-      async () => runRename('helper', 'newHelper', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }),
+      async () => runRename('helper', 'newHelper', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }),
       /declared in multiple files/,
     )
   }
@@ -25,7 +25,7 @@ it('rename --scope resolves ambiguity', async () => {
     'b.ts': 'export function helper() { return 2 }\nexport const bVal = helper()\n',
   })
   try {
-    const r = await runRename('helper', 'newHelper', { ...{ cwd: fx.dir, verify: false, scope: 'a.ts' }, engine: vueServices() })
+    const r = await runRename('helper', 'newHelper', { ...{ cwd: fx.dir, verifyMode: 'none' as const, scope: 'a.ts' }, engine: vueServices() })
     writeChanges(r.changes)
     assert.match(fx.read('a.ts'), /export function newHelper/)
     assert.match(fx.read('a.ts'), /aVal = newHelper\(\)/)
@@ -40,7 +40,7 @@ it('rename --all renames every declaration in every file', async () => {
     'b.ts': 'export function helper() {}\n',
   })
   try {
-    const r = await runRename('helper', 'newHelper', { ...{ cwd: fx.dir, verify: false, allowMultiple: true }, engine: vueServices() })
+    const r = await runRename('helper', 'newHelper', { ...{ cwd: fx.dir, verifyMode: 'none' as const, allowMultiple: true }, engine: vueServices() })
     writeChanges(r.changes)
     assert.match(fx.read('a.ts'), /export function newHelper/)
     assert.match(fx.read('b.ts'), /export function newHelper/)
@@ -55,7 +55,7 @@ it('rename --scope with no matching declaration gives a scope-specific error', a
   })
   try {
     await assert.rejects(
-      async () => runRename('helper', 'newHelper', { ...{ cwd: fx.dir, verify: false, scope: 'b.ts' }, engine: vueServices() }),
+      async () => runRename('helper', 'newHelper', { ...{ cwd: fx.dir, verifyMode: 'none' as const, scope: 'b.ts' }, engine: vueServices() }),
       /no declaration of "helper" in b\.ts/,
     )
   }

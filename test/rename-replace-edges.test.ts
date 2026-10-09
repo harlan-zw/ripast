@@ -14,7 +14,7 @@ it('replace preserves object shorthand keys', async () => {
     'consumer.ts': 'import { old } from "./old.ts"\nexport const result = { old }\n',
   })
   try {
-    writeChanges((await runReplace('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runReplace('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.deepEqual(consumer.result, { old: 2 })
   }
@@ -26,7 +26,7 @@ it('rename finds destructured local declarations', async () => {
     'consumer.ts': 'export function run() { const { old } = { old: 3 }; return old }\n',
   })
   try {
-    const result = await runRename('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const result = await runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(result.changes.length, 1)
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
@@ -40,7 +40,7 @@ it('rename finds function parameters', async () => {
     'consumer.ts': 'export function run(old: number) { return old + 1 }\n',
   })
   try {
-    const result = await runRename('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const result = await runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(result.changes.length, 1)
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
@@ -57,7 +57,7 @@ it('replace preserves public export names', async () => {
     'downstream.ts': 'import { old } from "./consumer.ts"\nexport const result = old\n',
   })
   try {
-    writeChanges((await runReplace('old', 'better', { ...{ cwd: fx.dir, glob: ['consumer.ts', 'better.ts'], verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runReplace('old', 'better', { ...{ cwd: fx.dir, glob: ['consumer.ts', 'better.ts'], verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const downstream = await import(pathToFileURL(resolve(fx.dir, 'downstream.ts')).href)
     assert.equal(downstream.result, 2)
   }
@@ -69,7 +69,7 @@ it('rename finds top-level destructured declarations', async () => {
     'consumer.ts': 'export const { old } = { old: 3 }\n',
   })
   try {
-    writeChanges((await runRename('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.equal(consumer.better, 3)
   }
@@ -86,7 +86,7 @@ it.each([
 ])('rename supports %s bindings', async (_name, source) => {
   const fx = makeFixture({ 'consumer.ts': source })
   try {
-    const result = await runRename('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const result = await runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(result.changes.length, 1)
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
@@ -118,7 +118,7 @@ it('replace preserves aliased shorthand keys and export names', async () => {
     'consumer.ts': 'import { old as alias } from "./old.ts"\nexport const result = { alias }\nexport { alias, alias as publicName }\n',
   })
   try {
-    writeChanges((await runReplace('alias', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runReplace('alias', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.deepEqual(consumer.result, { alias: 2 })
     assert.equal(consumer.alias, 2)
@@ -134,7 +134,7 @@ it('replace keeps shorthand and export names when target has the same name', asy
     'consumer.ts': 'import { old } from "./old.ts"\nexport const result = { old }\nexport { old }\n',
   })
   try {
-    writeChanges((await runReplace('old', 'old', { ...{ cwd: fx.dir, targetScope: 'better.ts', verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runReplace('old', 'old', { ...{ cwd: fx.dir, targetScope: 'better.ts', verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.deepEqual(consumer.result, { old: 2 })
     assert.equal(consumer.old, 2)
@@ -149,7 +149,7 @@ it('replace leaves references through other imports of the same symbol intact', 
     'consumer.ts': 'import { old, old as alias } from "./old.ts"\nimport * as ns from "./old.ts"\nexport { old as passthrough } from "./old.ts"\nexport const result = [old, alias, ns.old]\n',
   })
   try {
-    writeChanges((await runReplace('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runReplace('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.deepEqual(consumer.result, [2, 1, 1])
     assert.equal(consumer.passthrough, 1)
@@ -162,7 +162,7 @@ it('rename all includes parameters beside local variable declarations', async ()
     'consumer.ts': 'export function first(old: number) { return old }\nexport function second() { const old = 2; return old }\n',
   })
   try {
-    const result = await runRename('old', 'better', { ...{ cwd: fx.dir, verify: false, allowMultiple: true }, engine: vueServices() })
+    const result = await runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const, allowMultiple: true }, engine: vueServices() })
     const program = createSourceFile('consumer.ts', result.changes[0].after, ScriptTarget.Latest, true)
     const first = program.statements.find(isFunctionDeclaration)!
     assert.equal(first.parameters[0].name.getText(program), 'better')
@@ -182,7 +182,7 @@ it('replace refuses escaped references before removing their import', async () =
     'consumer.ts': source,
   })
   try {
-    await assert.rejects(runReplace('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), /cannot resolve escaped references/)
+    await assert.rejects(runReplace('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /cannot resolve escaped references/)
     assert.equal(fx.read('consumer.ts'), source)
   }
   finally { fx.cleanup() }
@@ -192,9 +192,9 @@ it('rename refuses an escaped declaration when TypeScript returns no edits', asy
   const source = 'export const \\u006fld = 3\n'
   const fx = makeFixture({ 'consumer.ts': source })
   try {
-    await assert.rejects(runRename('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), /could not rename declaration/)
+    await assert.rejects(runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /could not rename declaration/)
     assert.equal(fx.read('consumer.ts'), source)
-    const unchanged = await runRename('old', 'old', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const unchanged = await runRename('old', 'old', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     assert.deepEqual(unchanged.changes, [])
   }
   finally { fx.cleanup() }
@@ -204,7 +204,7 @@ it('rename refuses escaped consumers before returning incomplete changes', async
   const source = 'import { old } from "./old.ts"\nexport const result = \\u006fld\n'
   const fx = makeFixture({ 'old.ts': 'export const old = 3\n', 'consumer.ts': source })
   try {
-    await assert.rejects(runRename('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), /cannot resolve escaped references/)
+    await assert.rejects(runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /cannot resolve escaped references/)
     assert.equal(fx.read('consumer.ts'), source)
     assert.equal(fx.read('old.ts'), 'export const old = 3\n')
   }

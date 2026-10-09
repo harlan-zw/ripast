@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { formatAgentScanHits } from '../packages/core/src/css-class-scan.ts'
-import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, formatAgentDeclarationTree, formatDeclarationTree, formatScanGraph, formatUnusedDeclarations, scan } from '../packages/core/src/scan.ts'
+import { formatAgentScanHits } from '../packages/cli/src/presentation/css-class-scan.ts'
+import { formatAgentDeclarationTree, formatDeclarationTree, formatScanGraph, formatUnusedDeclarations } from '../packages/cli/src/presentation/scan.ts'
+import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, scan } from '../packages/core/src/scan.ts'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 

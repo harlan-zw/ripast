@@ -29,7 +29,7 @@ it('moves a declaration with package imports into a new directory', async () => 
   }
 })
 
-it.each(['touched', 'project'] as const)('keeps a moved dependency error with %s verification', async (verify) => {
+it.each(['touched', 'project'] as const)('keeps a moved dependency error with %s verification', async (verifyMode) => {
   const fx = makeFixture({
     'tsconfig.json': JSON.stringify({
       compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', jsx: 'preserve', noEmit: true },
@@ -42,7 +42,7 @@ it.each(['touched', 'project'] as const)('keeps a moved dependency error with %s
   })
   try {
     expect(spawnSync(resolveNativeTsc(), ['--noEmit', '-p', join(fx.dir, 'tsconfig.json')], { encoding: 'utf8' }).status).toBe(0)
-    const result = await runMove('Counter', 'src/features/Counter.tsx', 'src/components/Counter.tsx', { ...{ cwd: fx.dir, verify }, engine: vueServices() })
+    const result = await runMove('Counter', 'src/features/Counter.tsx', 'src/components/Counter.tsx', { ...{ cwd: fx.dir, verifyMode }, engine: vueServices() })
     expect(result.regressions.map(({ file, code, message }) => ({ file, code, message }))).toEqual([{
       file: join(fx.dir, 'src/components/Counter.tsx'),
       code: 2307,
@@ -55,7 +55,7 @@ it.each(['touched', 'project'] as const)('keeps a moved dependency error with %s
   }
 })
 
-it.each(['touched', 'project'] as const)('verifies extensionless TSX consumers in a new directory with %s scope', async (verify) => {
+it.each(['touched', 'project'] as const)('verifies extensionless TSX consumers in a new directory with %s scope', async (verifyMode) => {
   const fx = makeFixture({
     'tsconfig.json': JSON.stringify({
       compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', jsx: 'preserve', paths: { '@/*': ['./src/*'] }, noEmit: true },
@@ -67,7 +67,7 @@ it.each(['touched', 'project'] as const)('verifies extensionless TSX consumers i
   })
   try {
     expect(spawnSync(resolveNativeTsc(), ['--noEmit', '-p', join(fx.dir, 'tsconfig.json')], { encoding: 'utf8' }).status).toBe(0)
-    const result = await runMove('Counter', 'src/Counter.tsx', 'src/components/Counter.tsx', { ...{ cwd: fx.dir, verify }, engine: vueServices() })
+    const result = await runMove('Counter', 'src/Counter.tsx', 'src/components/Counter.tsx', { ...{ cwd: fx.dir, verifyMode }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     expect(existsSync(join(fx.dir, 'src/components'))).toBe(false)
     writeChanges(result.changes)

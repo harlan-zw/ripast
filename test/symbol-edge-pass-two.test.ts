@@ -58,7 +58,7 @@ it('replace can target a declaration exported through a local alias', async () =
     'consumer.ts': 'import { old } from "./old.ts"\nexport const result = old\n',
   })
   try {
-    writeChanges((await runReplace('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
+    writeChanges((await runReplace('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.equal(consumer.result, 3)
   }
@@ -194,7 +194,7 @@ it.each(['rename', 'replace'] as const)('%s preserves plain references bound to 
     'consumer.ts': 'import { old } from "./old.ts"\nexport const result = old\nexport function shadow() { const \\u006fld = 2; return old }\n',
   })
   try {
-    const result = operation === 'rename' ? await runRename('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }) : await runReplace('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const result = operation === 'rename' ? await runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }) : await runReplace('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.equal(consumer.result, operation === 'rename' ? 3 : 4)
@@ -207,7 +207,7 @@ it('rename refuses escaped destructuring keys that can track a renamed property'
   const source = 'export const old = 1\nconst object = { old }\nexport function run() { const { \\u006fld } = object; return \\u006fld }\n'
   const fx = makeFixture({ 'consumer.ts': source })
   try {
-    await assert.rejects(runRename('old', 'better', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), /cannot resolve escaped references/)
+    await assert.rejects(runRename('old', 'better', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /cannot resolve escaped references/)
     assert.equal(fx.read('consumer.ts'), source)
   }
   finally { fx.cleanup() }

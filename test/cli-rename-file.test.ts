@@ -8,13 +8,35 @@ import { it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
+it.each([undefined, 'project'])('rename-file preserves default scope and accepts explicit project scope %s', (mode) => {
+  const fixture = makeFixture({
+    'source.ts': 'export const value = 42\n',
+    'consumer.ts': 'import { value } from "./source.ts"\nconsole.log(value)\n',
+    'unrelated.ts': 'export const unrelated = 1\n',
+  })
+  try {
+    const args = [resolve('packages/cli/dist/cli.mjs'), 'rename-file', 'source.ts', 'target.ts', '--no-vue', '--json', '--profile', 'full']
+    if (mode)
+      args.push('--verify-mode', mode)
+    const result = spawnSync(process.execPath, args, { cwd: fixture.dir, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.equal(output._tag, 'Preview')
+    assert.equal(output.data.verification._tag, 'Checked')
+    assert.equal(output.data.verification.checks[0].scope, mode ?? 'touched')
+    assert.equal(existsSync(resolve(fixture.dir, 'target.ts')), false)
+    assert.equal(fixture.read('consumer.ts'), 'import { value } from "./source.ts"\nconsole.log(value)\n')
+  }
+  finally { fixture.cleanup() }
+})
+
 it.skipIf(process.platform === 'win32')('rename-file SDK refuses a dangling target symlink', async () => {
   const fixture = makeFixture({ 'source.ts': 'export const value = 42\n' })
   try {
     symlinkSync('missing.ts', resolve(fixture.dir, 'target.ts'))
     await assert.rejects(runRenameFile('source.ts', 'target.ts', { ...{
       cwd: fixture.dir,
-      verify: false,
+      verifyMode: 'none' as const,
     }, engine: vueServices() }), /target "target\.ts" already exists/)
     assert.equal(readlinkSync(resolve(fixture.dir, 'target.ts')), 'missing.ts')
     assert.equal(fixture.read('source.ts'), 'export const value = 42\n')
@@ -38,7 +60,8 @@ it.skipIf(process.platform === 'win32').each([false, true])('rename-file refuses
       'source.ts',
       'target.ts',
       '--no-vue',
-      '--no-verify',
+      '--verify-mode',
+      'none',
       '--profile',
       'full',
       '--json',
@@ -70,7 +93,8 @@ it('rename-file preserves consumers when the destination directory cannot be cre
       'source.ts',
       'blocked/target.ts',
       '--no-vue',
-      '--no-verify',
+      '--verify-mode',
+      'none',
       '--apply',
       '--profile',
       'full',
@@ -110,7 +134,8 @@ syncBuiltinESMExports()
       'source.ts',
       'moved/target.ts',
       '--no-vue',
-      '--no-verify',
+      '--verify-mode',
+      'none',
       '--apply',
       '--profile',
       'full',
@@ -146,7 +171,7 @@ it('rename-file applies consumer and moved-file imports as one operation', () =>
       '--json',
     ], { cwd: fixture.dir, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
-    assert.equal(JSON.parse(result.stdout).applied, true)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Applied')
     assert.equal(existsSync(resolve(fixture.dir, 'source.ts')), false)
     const consumer = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'consumer.ts'], {
       cwd: fixture.dir,

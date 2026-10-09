@@ -32,7 +32,7 @@ it.each([
       assert.deepEqual([...diagnostics.values()].flat(), [], 'fixture must compile before the move')
     }
     finally { baseline.dispose() }
-    const result = await runMove('helper', 'source.ts', 'target.ts', { ...{ cwd: fx.dir, verify: 'touched' }, engine: vueServices() })
+    const result = await runMove('helper', 'source.ts', 'target.ts', { ...{ cwd: fx.dir, verifyMode: 'touched' }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const server = await startTsServer(fx.dir)
@@ -53,7 +53,7 @@ it('move rejects a captured non-exported sibling despite a nested shadow', async
     'target.ts': '',
   })
   try {
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), /non-exported symbol/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }), /non-exported symbol/)
     assert.equal(fx.read('target.ts'), '')
   }
   finally { fx.cleanup() }
@@ -77,7 +77,7 @@ export function Button() {
     assert.deepEqual(reactDiagnostics(fx), [])
     const markup = renderReactFixture(fx, 'src/View.tsx')
     assert.equal(markup, '<strong>outer</strong><span>local</span>')
-    const result = await runMove('Button', 'src/source.tsx', 'src/target.tsx', { ...{ cwd: fx.dir, verify: 'project' }, engine: vueServices() })
+    const result = await runMove('Button', 'src/source.tsx', 'src/target.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     assert.deepEqual(reactDiagnostics(fx), [])

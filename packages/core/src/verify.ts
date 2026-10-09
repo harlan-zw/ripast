@@ -2,7 +2,6 @@ import type { EngineServices } from './engine.ts'
 import type { TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { DiagnosticRecorder } from './verification.ts'
-import { relative } from 'node:path'
 import { diagnosticRegressions } from './diagnostic-matching.ts'
 import { rgFiles } from './util.ts'
 
@@ -54,12 +53,4 @@ export async function findRegressions(server: TsServer, changes: FileChange[], f
   const out = diagnosticRegressions(before, after, changes)
   onChecked?.({ files: scope.length, newErrors: out.length })
   return out
-}
-
-export function formatRegressions(regressions: Regression[], cwd: string): string {
-  const lines = [`${regressions.length} new type diagnostic${regressions.length === 1 ? '' : 's'} introduced:`]
-  for (const r of regressions) {
-    lines.push(`  ${relative(cwd, r.file)}:${r.line}:${r.col} TS${r.code} ${r.message}`)
-  }
-  return lines.join('\n')
 }

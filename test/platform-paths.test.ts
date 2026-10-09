@@ -64,7 +64,7 @@ it.each([false, true])('rewrites a file move and its own imports through native 
     'main.ts': 'import { value } from "./src café/source.ts"; console.log(value)\r\n',
   })
   try {
-    const result = await runRenameFile(join('src café', 'source.ts'), join('lib space', 'source.ts'), { ...{ cwd: fx.dir, vue: useVue, verify: false }, engine: vueServices() })
+    const result = await runRenameFile(join('src café', 'source.ts'), join('lib space', 'source.ts'), { ...{ cwd: fx.dir, vue: useVue, verifyMode: 'none' as const }, engine: vueServices() })
     mkdirSync(dirname(result.fileMove.to), { recursive: true })
     renameSync(result.fileMove.from, result.fileMove.to)
     if (result.selfChange)
@@ -83,7 +83,7 @@ it('rewrites Vue consumers when moving from a native source path', async () => {
   })
   try {
     fx.write('tsconfig.json', JSON.stringify({ compilerOptions: { module: 'ESNext', moduleResolution: 'bundler', noEmit: true }, include: ['**/*.ts', '**/*.vue'] }))
-    const result = await runMove('value', join('src', 'source.ts'), join('lib', 'target.ts'), { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const result = await runMove('value', join('src', 'source.ts'), join('lib', 'target.ts'), { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     const change = result.changes.find(c => c.path === join(fx.dir, 'src/Main.vue'))
     assert.ok(change)
     assert.match(change.after, /from ['"]\.\.\/lib\/target['"]/)
@@ -114,7 +114,7 @@ it.each([false, true])('commits a case-only file rename with vue=%s', async (use
   })
   try {
     const engine = createEngine({ extensions: useVue ? [createVueExtension()] : [] })
-    const result = await engine.renameFile('Source.ts', 'source.ts', { cwd: fx.dir, verify: false })
+    const result = await engine.renameFile('Source.ts', 'source.ts', { cwd: fx.dir, verifyMode: 'none' as const })
     const change = result.changes.find(c => c.path === join(fx.dir, 'main.ts'))
     assert.ok(change)
     assert.match(change.after, /from ['"]\.\/source\.ts['"]/)
@@ -135,7 +135,7 @@ it('accepts the source entry under another casing on a case-insensitive filesyst
   syncBuiltinESMExports()
   try {
     const engine = createEngine({ extensions: [createVueExtension()] })
-    const result = await engine.renameFile('Source.ts', 'source.ts', { cwd: fx.dir, verify: false })
+    const result = await engine.renameFile('Source.ts', 'source.ts', { cwd: fx.dir, verifyMode: 'none' as const })
     assert.deepEqual(result.fileMove, { from: source, to: target })
     assert.equal(fx.read('Source.ts'), 'export const value = 42\n')
     engine.commit(result)
