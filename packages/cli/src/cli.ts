@@ -1152,7 +1152,7 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
               ? [recoverSmushedPair(context.args.old as string, context.args.new as string).new]
               : name === 'move' ? [context.args.to as string] : []
             rejectArtifactCollision(context.args, destinations)
-            const needsAdapter = ['rename', 'move', 'rename-file', 'replace', 'delete', 'doctor', 'components', 'vue-template-wrap', 'vue-template-unwrap'].includes(name)
+            const needsAdapter = ['rename', 'move', 'rename-file', 'replace', 'delete', 'doctor', 'components', 'scan', 'tree', 'unused', 'css-class-scan', 'css-class-rename', 'vue-template-wrap', 'vue-template-unwrap'].includes(name)
             if (needsAdapter && context.args.vue !== false && ensureAdapters && await ensureAdapters())
               return
             return await selected.run?.(context)
