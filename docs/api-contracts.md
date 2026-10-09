@@ -29,7 +29,7 @@ Legacy SDK options and invalid modes fail before discovery or writes.
 | Operation | CLI default | SDK default |
 | --- | --- | --- |
 | Replace | Project | Project |
-| Rename file | Project | Touched |
+| Rename file | Touched | Touched |
 | Rename, move, delete | Touched | Touched |
 
 ## Formatting imports

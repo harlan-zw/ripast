@@ -583,14 +583,14 @@ const renameFileCmd = defineCommand({
     new: { type: 'positional', required: true },
     tsconfig: { type: 'string' },
     apply: applyArg,
-    verifyMode: { ...verifyModeArg, description: 'Verification mode: touched, project, or none. Defaults to project.' },
+    verifyMode: verifyModeArg,
     vue: vueArg,
     profile: profileArg,
     ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
-    const verifyMode = resolveCliVerifyMode(args.verifyMode, 'project')
+    const verifyMode = resolveCliVerifyMode(args.verifyMode)
     const recovered = recoverSmushedPair(args.old as string, args.new as string)
     if (recovered.warning)
       process.stderr.write(`warning: ${recovered.warning}\n`)

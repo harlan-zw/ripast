@@ -14,8 +14,7 @@ Skipped checks return `disabled`, `no-changes`, or `not-applicable`.
 Full JSON uses tagged `Checked` or `Skipped` receipts with named fields.
 Zero new errors applies only to the reported scope. It does not prove a clean build or passing tests.
 Use `--verify-mode touched|project|none` to select scope. Keep verification enabled.
-CLI replacement and file renames check the project by default. Other symbol refactors default to touched files.
-SDK replacement defaults to project checks. Other SDK refactors default to touched files.
+Replacement defaults to project checks. Other refactors default to touched files in both the CLI and SDK.
 The SDK accepts `verifyMode: 'none' | 'touched' | 'project'`. Boolean `verify` options and legacy CLI verification flags fail.
 Project verification includes unchanged Vue consumers. It requires the Vue adapter when Vue files exist.
 Refactor globs limit edits without narrowing project verification. File discovery ignores still apply.

@@ -7,6 +7,27 @@ import { runRenameFile } from 'ripide-api'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
+it.each([undefined, 'project'])('rename-file preserves default scope and accepts explicit project scope %s', (mode) => {
+  const fixture = makeFixture({
+    'source.ts': 'export const value = 42\n',
+    'consumer.ts': 'import { value } from "./source.ts"\nconsole.log(value)\n',
+    'unrelated.ts': 'export const unrelated = 1\n',
+  })
+  try {
+    const args = [resolve('packages/cli/dist/cli.mjs'), 'rename-file', 'source.ts', 'target.ts', '--no-vue', '--json', '--profile', 'full']
+    if (mode) args.push('--verify-mode', mode)
+    const result = spawnSync(process.execPath, args, { cwd: fixture.dir, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.equal(output._tag, 'Preview')
+    assert.equal(output.data.verification._tag, 'Checked')
+    assert.equal(output.data.verification.checks[0].scope, mode ?? 'touched')
+    assert.equal(existsSync(resolve(fixture.dir, 'target.ts')), false)
+    assert.equal(fixture.read('consumer.ts'), 'import { value } from "./source.ts"\nconsole.log(value)\n')
+  }
+  finally { fixture.cleanup() }
+})
+
 it.skipIf(process.platform === 'win32')('rename-file SDK refuses a dangling target symlink', async () => {
   const fixture = makeFixture({ 'source.ts': 'export const value = 42\n' })
   try {

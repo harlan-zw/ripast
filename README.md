@@ -310,8 +310,7 @@ Full JSON uses named check fields. Compact JSON uses the tuples shown above.
 These checks compare error diagnostics against proposed content before writing files.
 They do not run `tsc --noEmit`, a build, or tests.
 If the receipt covers your required scope, do not repeat that diagnostic check without another edit.
-The CLI defaults to project checks for `replace` and `rename-file`. Other refactors default to touched files.
-The SDK defaults to project checks for replacement, and touched files for other refactors.
+Replacement defaults to project checks. Other refactors default to touched files in both the CLI and SDK.
 Use `--verify-mode project` for broader checks, including unchanged Vue consumers.
 Project verification respects file discovery ignores. Refactor globs limit edits without narrowing project verification.
 Use `--verify-mode none` to skip verification. The SDK accepts `verifyMode: 'none' | 'touched' | 'project'`.
