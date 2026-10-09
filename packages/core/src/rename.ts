@@ -12,7 +12,7 @@ import { loadAdapter, needsVueAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
+import { findTsconfig, isVuePath, resolveVerificationOptions, verifyScope } from './project.ts'
 import { recoverPropertyReferences } from './rename-property-references.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { applyTextEdits, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
@@ -24,7 +24,7 @@ export interface RenameOptions {
   /** Configured project used for renames and verification. */
   tsconfig?: string
   glob?: string | string[]
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
   scope?: string
   allowMultiple?: boolean
   vue?: boolean
@@ -49,7 +49,7 @@ interface Declaration {
 export async function runRename(from: string, to: string, opts: RenameOptions = {}): Promise<RenameResult> {
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
-  const verifyMode = resolveVerifyMode(opts.verify)
+  const verifyMode = resolveVerificationOptions(opts)
   const vueEnabled = opts.vue ?? true
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
   const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }))

@@ -95,7 +95,7 @@ describe('rename-file without a framework adapter', () => {
       'src/b.ts': `import { foo } from './a.ts'\nexport const bar = foo + 1\n`,
     })
     try {
-      const r = await runRenameFile('src/a.ts', 'src/aa.ts', { cwd: fx.dir, verify: 'none' })
+      const r = await runRenameFile('src/a.ts', 'src/aa.ts', { cwd: fx.dir, verifyMode: 'none' })
       writeChanges(r.changes)
       renameSync(r.fileMove.from, r.fileMove.to)
       assert.match(fx.read('src/b.ts'), /from '\.\/aa(?:\.ts)?'/, 'consumer import rewritten')
@@ -107,10 +107,22 @@ describe('rename-file without a framework adapter', () => {
     const fx = makeFx({ 'src/A.vue': `<template><div /></template>\n` })
     try {
       await assert.rejects(
-        runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verify: 'none' }),
+        runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verifyMode: 'none' }),
         /requires the Vue adapter/,
       )
     }
     finally { fx.cleanup() }
   })
+})
+
+it('warns about unchecked Vue directory-index consumers without an adapter', async () => {
+  const fx = makeFixture({
+    'utils/index.ts': 'export const amount = 1',
+    'Consumer.vue': '<script setup lang="ts">import { amount } from "./utils"</script><template>{{ amount }}</template>',
+  })
+  try {
+    const result = await runRenameFile('utils/index.ts', 'utils/value.ts', { cwd: fx.dir, verifyMode: 'none' })
+    assert.deepEqual(result.warnings, ['1 .vue file(s) were not checked; install ripide-vue to rewrite .vue import sites'])
+  }
+  finally { fx.cleanup() }
 })

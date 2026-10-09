@@ -82,9 +82,8 @@ console.log(JSON.stringify(call(() => "local")))
       '--json',
     ], { cwd: fx.dir, encoding: 'utf8' })
     const result = JSON.parse(output)
-    assert.equal(result.applied, true)
-    assert.equal(result.blockedByRegression, false)
-    assert.deepEqual(result.regressions, [])
+    assert.equal(result._tag, 'Applied')
+    assert.deepEqual(result.data.regressions, [])
     const value = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'consumer.ts'], {
       cwd: fx.dir,
       encoding: 'utf8',

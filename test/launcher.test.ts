@@ -74,13 +74,13 @@ it('built CLI renames a symbol without ripgrep when Vue work is disabled', () =>
     'source.ts': 'export const target = 1',
   })
   try {
-    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripide.mjs'), 'rename', 'target', 'next', '--no-vue', '--no-verify', '--profile', 'full', '--json'], {
+    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripide.mjs'), 'rename', 'target', 'next', '--no-vue', '--verify-mode', 'none', '--profile', 'full', '--json'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 0, child.stderr)
-    const result = JSON.parse(child.stdout)
+    const result = JSON.parse(child.stdout).data
     assert.ok(result.changes.some((change: { after: string }) => change.after.includes('export const next')))
     assert.match(child.stderr, /Using Node file search/)
     assert.doesNotMatch(child.stderr, /pnpm was not found/)
@@ -162,7 +162,7 @@ it.each([['--help'], ['scan', 'target', '--help'], ['tree', '--json', '--profile
     assert.equal(child.status, args.includes('invalid') ? 1 : 0, child.stderr)
     assert.doesNotMatch(child.stderr, /Missing adapters|package managers/)
     if (args.includes('--json'))
-      assert.equal(JSON.parse(child.stdout).status, 'error')
+      assert.equal(JSON.parse(child.stdout)._tag, 'Error')
     else
       assert.match(child.stdout, /USAGE/)
   }
@@ -170,7 +170,7 @@ it.each([['--help'], ['scan', 'target', '--help'], ['tree', '--json', '--profile
 })
 
 it.each(['empty', 'invalid', 'refused'])('adapter subprocess %s keeps one actionable JSON outcome', (outcome) => {
-  const response = outcome === 'empty' ? '' : outcome === 'invalid' ? '{broken' : '{"status":"refused","verification":["ts","project",0,1]}'
+  const response = outcome === 'empty' ? '' : outcome === 'invalid' ? '{broken' : '{"_tag":"Refused","command":"rename","base":".","data":{"verification":["ts","project",0,1]}}'
   const fx = makeFixture({
     'package.json': '{"dependencies":{"vue":"*"}}',
     'source.ts': 'export const old = 1',
@@ -187,10 +187,10 @@ it.each(['empty', 'invalid', 'refused'])('adapter subprocess %s keeps one action
     })
     assert.equal(child.status, 1)
     const payload = JSON.parse(child.stdout)
-    assert.equal(payload.status, outcome === 'refused' ? 'refused' : 'error')
+    assert.equal(payload._tag, outcome === 'refused' ? 'Refused' : 'Error')
     if (outcome !== 'refused') {
-      assert.ok(payload.error.message)
-      assert.ok(payload.error.next)
+      assert.ok(payload.data.message)
+      assert.ok(payload.data.next)
     }
     assert.equal(fx.read('source.ts'), 'export const old = 1')
   }

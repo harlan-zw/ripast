@@ -17,7 +17,7 @@ import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, pars
 import { addOrMergeImport, appendStatement, computeSpecifier, isImportEmpty, listImports, parseProgram, pruneUnusedImports, renderImport, rewriteImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
+import { findTsconfig, isVuePath, resolveVerificationOptions, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, mergeFileChanges, rgFiles } from './util.ts'
 import { createVerification } from './verification.ts'
@@ -27,7 +27,7 @@ export interface MoveOptions {
   cwd?: string
   /** Configured project used for moves and verification. */
   tsconfig?: string
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
   vue?: boolean
   profile?: ProfileSink
 }
@@ -42,7 +42,7 @@ export interface MoveResult {
 export async function runMove(symbol: string, fromPath: string, toPath: string, opts: MoveOptions = {}): Promise<MoveResult> {
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
-  const verifyMode = resolveVerifyMode(opts.verify)
+  const verifyMode = resolveVerificationOptions(opts)
   const vueEnabled = opts.vue ?? true
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
 

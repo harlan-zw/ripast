@@ -13,7 +13,7 @@ import { loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
+import { findTsconfig, isVuePath, projectScriptFiles, resolveVerificationOptions, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
 import { createVerification } from './verification.ts'
@@ -23,7 +23,7 @@ export interface ReplaceOptions {
   profile?: ProfileSink
   cwd?: string
   glob?: string | string[]
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
   targetScope?: string
   /** Import specifier for the validated target, including framework aliases. */
   targetImport?: string
@@ -46,7 +46,7 @@ interface ReplacementTarget {
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
-  const verifyMode = resolveVerifyMode(opts.verify === undefined || opts.verify === true ? 'project' : opts.verify)
+  const verifyMode = resolveVerificationOptions(opts, 'project')
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
     : timed(profile, 'target discovery', () => rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path)))

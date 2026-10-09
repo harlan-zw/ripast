@@ -15,7 +15,7 @@ it.each(['rename', 'move', 'rename-file'])('allows pure TypeScript %s when an un
     'consumer.ts': 'import { target } from \'./source\'\nconsole.log(target)',
   })
   try {
-    const options = { cwd: fx.dir, verify: false }
+    const options = { cwd: fx.dir, verifyMode: 'none' as const }
     const result = operation === 'rename'
       ? await runRename('target', 'next', options)
       : operation === 'move'
@@ -35,7 +35,7 @@ it.each(['nuxt', 'vue-project'])('keeps required %s adapter failures visible', a
     ...(kind === 'nuxt' ? { 'nuxt.config.ts': 'export default {}' } : { 'Unchanged.vue': '<template>{{ 1 }}</template>' }),
   })
   try {
-    await expect(runRename('target', 'next', { cwd: fx.dir, verify: 'project' })).rejects.toThrow('Broken installed Vue adapter')
+    await expect(runRename('target', 'next', { cwd: fx.dir, verifyMode: 'project' })).rejects.toThrow('Broken installed Vue adapter')
   }
   finally {
     fx.cleanup()

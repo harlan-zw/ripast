@@ -19,7 +19,7 @@ it('renames TypeScript imports when the Vue adapter is explicitly disabled', asy
     'consumer.ts': 'import { value } from "./source.ts"\nexport const result = value + 1\n',
   })
   try {
-    const result = await runRenameFile('source.ts', 'renamed.ts', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runRenameFile('source.ts', 'renamed.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })
     writeChanges(result.changes)
     renameSync(result.fileMove.from, result.fileMove.to)
     const consumer = await import(pathToFileURL(join(fx.dir, 'consumer.ts')).href)

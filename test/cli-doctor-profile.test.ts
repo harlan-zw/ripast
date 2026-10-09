@@ -27,7 +27,7 @@ describe('doctor exit status', () => {
       if (profile === 'auto' || profile === 'agent')
         expect(result.stdout).toMatch(/^# profile: agent/)
       if (profile === 'json')
-        expect(JSON.parse(result.stdout).results[0].check).toBe('stale-import')
+        expect(JSON.parse(result.stdout).data.results[0].check).toBe('stale-import')
     }
     finally { fx.cleanup() }
   })
@@ -53,7 +53,7 @@ describe('doctor exit status', () => {
       if (profile === 'auto' || profile === 'agent')
         expect(result.stdout).toMatch(/^# profile: agent/)
       if (profile === 'json')
-        expect(JSON.parse(result.stdout).results).toEqual([])
+        expect(JSON.parse(result.stdout).data.results).toEqual([])
     }
     finally { fx.cleanup() }
   })

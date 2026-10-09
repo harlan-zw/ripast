@@ -64,7 +64,7 @@ it('rename crosses package boundaries in a pnpm-workspace monorepo', async () =>
     const r = await runRename('log', 'writeLog', {
       cwd: fx.dir,
       tsconfig: 'packages/app/tsconfig.json',
-      verify: false,
+      verifyMode: 'none' as const,
       allowMultiple: true,
     })
     writeChanges(r.changes)
@@ -81,7 +81,7 @@ it('move relocates a symbol across packages in a pnpm-workspace monorepo', async
     const r = await runMove('log', 'packages/core/src/log.ts', 'packages/core/src/logger.ts', {
       cwd: fx.dir,
       tsconfig: 'packages/app/tsconfig.json',
-      verify: false,
+      verifyMode: 'none' as const,
     })
     writeChanges(r.changes)
     assert.match(fx.read('packages/core/src/logger.ts'), /export function log/)

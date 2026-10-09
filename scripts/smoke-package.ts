@@ -18,26 +18,30 @@ try {
   writeFileSync(join(cwd, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","module":"NodeNext","types":["node"],"strict":true,"skipLibCheck":true,"noEmit":true},"include":["*.ts"]}')
   writeFileSync(join(cwd, 'source.ts'), 'export const target = 1\n')
   writeFileSync(join(cwd, 'component.vue'), '<template>{{ target }}</template>\n')
-  writeFileSync(join(cwd, 'consumer.ts'), `import { runRename } from 'ripide-api'
+  writeFileSync(join(cwd, 'consumer.ts'), `import { runRename, scan } from 'ripide-api'
 import { parseSourceFile } from 'ripide-api/adapter'
+import { formatHits } from 'ripide/presentation'
 import vueAdapter from 'ripide-vue'
-const result = await runRename('target', 'next', { cwd: process.cwd(), vue: false, verify: false })
+const result = await runRename('target', 'next', { cwd: process.cwd(), vue: false, verifyMode: 'none' })
 if (!result.changes.some(change => change.after.includes('export const next')))
   throw new Error('SDK rename did not produce the expected edit')
 parseSourceFile('source.ts', 'export const target = 1')
-console.log(JSON.stringify({ changes: result.changes.length, vueMatch: vueAdapter.hasFilesContaining(process.cwd(), 'target') }))
+const rendered = formatHits(scan('target', { cwd: process.cwd(), glob: ['source.ts'] }), false)
+console.log(JSON.stringify({ changes: result.changes.length, rendered, vueMatch: vueAdapter.hasFilesContaining(process.cwd(), 'target') }))
 `)
   run([join(cwd, 'node_modules/@typescript/typescript6/bin/tsc6'), '--project', 'tsconfig.json'])
   const cli = join(cwd, 'node_modules/ripide/bin/ripide.mjs')
   const isolated = { ...process.env, PATH: cwd }
-  const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-vue', '--no-verify', '--profile', 'full', '--json'], isolated))
-  assert.ok(renamed.changes.some((change: { after: string }) => change.after.includes('export const next')))
+  const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-vue', '--verify-mode', 'none', '--profile', 'full', '--json'], isolated))
+  assert.ok(renamed.data.changes.some((change: { after: string }) => change.after.includes('export const next')))
   assert.equal(readFileSync(join(cwd, 'source.ts'), 'utf8'), 'export const target = 1\n')
-  const named = JSON.parse(run([process.env.npm_execpath!, 'exec', '--offline', '--', 'ripide', 'rename', 'target', 'next', '--no-vue', '--no-verify', '--profile', 'full', '--json']))
-  assert.ok(named.changes.some((change: { after: string }) => change.after.includes('export const next')))
+  const named = JSON.parse(run([process.env.npm_execpath!, 'exec', '--offline', '--', 'ripide', 'rename', 'target', 'next', '--no-vue', '--verify-mode', 'none', '--profile', 'full', '--json']))
+  assert.ok(named.data.changes.some((change: { after: string }) => change.after.includes('export const next')))
   const sdk = JSON.parse(run(['--experimental-strip-types', 'consumer.ts']))
   assert.ok(sdk.changes > 0)
   assert.equal(sdk.vueMatch, true)
+  assert.match(sdk.rendered, /source\.ts:1:14\s+identifier-binding\s+export const target = 1/)
+  assert.match(sdk.rendered, /1 hits across 1 files/)
   process.stdout.write('Packed CLI and SDK passed installation, typecheck, and rename checks.\n')
 }
 finally { rmSync(cwd, { recursive: true, force: true }) }

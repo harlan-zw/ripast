@@ -9,7 +9,7 @@ it.each(['scan', 'tree', 'graph', 'unused', 'delete', 'replace', 'rename-file'])
     'consumer.ts': 'import { target } from \'./source\'\nconsole.log(target)',
   })
   const events: ProfileEvent[] = []
-  const options = { cwd: fx.dir, verify: false, profile: (event: ProfileEvent) => events.push(event) }
+  const options = { cwd: fx.dir, verifyMode: 'none' as const, profile: (event: ProfileEvent) => events.push(event) }
   try {
     if (operation === 'scan') {
       expect(scan('target', options).length).toBeGreaterThan(0)

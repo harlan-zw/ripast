@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { formatAgentDoctorReport, formatAgentHits, formatAgentInventory, outputPath, selectOutput } from 'ripide-api'
 import { it } from 'vitest'
+import { formatAgentDoctorReport, formatAgentHits, formatAgentInventory, outputPath, selectOutput } from '../packages/cli/src/presentation/index.ts'
 
 it('agent inventory includes ordinary names and discloses omissions', () => {
   const components = Array.from({ length: 5 }, (_, i) => ({ id: `c${i}`, name: `Card${i}`, file: `/project/Card${i}.vue`, rel: `Card${i}.vue`, aliases: [], source: 'filesystem' as const, scope: 'global' as const, shadowed: false, kind: 'sfc' as const, registeredName: null }))

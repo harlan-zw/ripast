@@ -4,7 +4,7 @@ import { describe, it } from 'vitest'
 import { runCssClassRename, runCssClassScan, runMove, runRename, runRenameFile, scan, writeChanges } from '../packages/core/src/index.ts'
 import { assertSolidDiagnostics, makeSolidFixture, renderSolidFixture, solidModuleValue, solidSyntax } from './solid-helpers.ts'
 
-const options = { vue: false, verify: 'project' as const }
+const options = { vue: false, verifyMode: 'project' as const }
 
 describe('solid TSX refactors', () => {
   it('renames components while preserving consumer aliases and control flow', async () => {

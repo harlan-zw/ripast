@@ -38,12 +38,12 @@ function evaluate(source: string, require: (specifier: string) => unknown, globa
 it('refreshes generated provider aliases between move operations', async () => {
   const fx = fixture()
   try {
-    const first = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verify: false })
+    const first = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verifyMode: 'none' as const })
     const destination = evaluate(first.changes.find(change => change.rel === 'lib/format.ts')!.after, () => assert.fail('unexpected import'))
     assert.equal(evaluate(first.changes.find(change => change.rel === 'app/pages/consumer.ts')!.after, () => destination).result, 8)
 
     fx.configure('app/active', 'lib')
-    const second = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verify: false })
+    const second = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verifyMode: 'none' as const })
     assert.equal(second.changes.find(change => change.rel === 'app/pages/consumer.ts'), undefined)
     const active = evaluate(readFileSync(join(fx.cwd, 'app/active/format.ts'), 'utf8'), () => assert.fail('unexpected import'))
     assert.equal(evaluate(readFileSync(join(fx.cwd, 'app/pages/consumer.ts'), 'utf8'), () => assert.fail('unexpected import'), active).result, 70)
@@ -56,7 +56,7 @@ it('refreshes consumer import aliases between move operations', async () => {
   try {
     for (const destination of ['lib', 'other']) {
       fx.configure('app/utils', destination)
-      const result = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verify: false })
+      const result = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: fx.cwd, verifyMode: 'none' as const })
       const provider = evaluate(result.changes.find(change => change.rel === 'lib/format.ts')!.after, () => assert.fail('unexpected import'))
       const consumer = result.changes.find(change => change.rel === 'app/pages/consumer.ts')!
       const value = evaluate(consumer.after, (specifier) => {

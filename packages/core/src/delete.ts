@@ -14,7 +14,7 @@ import { listTopLevelDeclarations, parseSource, removeDeclaration } from './decl
 import { listImports, pruneUnusedImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { findTsconfig, isVuePath, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
 import { createVerification } from './verification.ts'
@@ -23,7 +23,7 @@ import { findRegressions, findVueRegressions } from './verify.ts'
 export interface DeleteOptions {
   profile?: ProfileSink
   cwd?: string
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
 }
 
 export interface DeleteReference {
@@ -42,7 +42,7 @@ export interface DeleteResult {
 export async function runDelete(symbol: string, fromPath: string, opts: DeleteOptions = {}): Promise<DeleteResult> {
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
-  const verifyMode = resolveVerifyMode(opts.verify)
+  const verifyMode = resolveVerificationOptions(opts)
   const fromAbs = resolve(cwd, fromPath)
   // Escaped identifiers and namespace use need not contain the symbol's text.
   const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, listAll: true }))

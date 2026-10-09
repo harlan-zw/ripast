@@ -80,7 +80,7 @@ const benches: BenchCase[] = [
     name: 'rename no verify',
     profile: true,
     fn: async (fixture, profile) => {
-      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verify: false, vue: false, profile })
+      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verifyMode: 'none' as const, vue: false, profile })
       assertCount('rename no verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 1)
     },
   },
@@ -89,7 +89,7 @@ const benches: BenchCase[] = [
     runs: Math.max(3, Math.min(RUNS, 5)),
     profile: true,
     fn: async (fixture, profile) => {
-      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verify: true, vue: false, profile })
+      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verifyMode: 'touched' as const, vue: false, profile })
       assertCount('rename verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 1)
       assertCount('rename verify regressions', result.regressions.length, 0)
     },
@@ -98,7 +98,7 @@ const benches: BenchCase[] = [
     name: 'move no verify',
     profile: true,
     fn: async (fixture, profile) => {
-      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verify: false, vue: false, profile })
+      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verifyMode: 'none' as const, vue: false, profile })
       assertCount('move no verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 2)
     },
   },
@@ -107,7 +107,7 @@ const benches: BenchCase[] = [
     runs: Math.max(3, Math.min(RUNS, 5)),
     profile: true,
     fn: async (fixture, profile) => {
-      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verify: true, vue: false, profile })
+      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verifyMode: 'touched' as const, vue: false, profile })
       assertCount('move verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 2)
       assertCount('move verify regressions', result.regressions.length, 0)
     },

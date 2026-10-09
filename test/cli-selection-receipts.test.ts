@@ -16,8 +16,9 @@ it('full JSON filters diagnostics by relative file while keeping absolute diagno
     const result = run(fixture.dir, ['rename', 'value', 'taken', '--no-vue', '--apply', '--json', '--file', 'source.ts'])
     assert.equal(result.status, 1, result.stderr)
     const payload = JSON.parse(result.stdout)
-    assert.ok(payload.regressions.length > 0)
-    assert.ok(payload.regressions.every((diagnostic: { file: string }) => diagnostic.file === resolve(fixture.dir, 'source.ts')))
+    assert.equal(payload._tag, 'Refused')
+    assert.ok(payload.data.regressions.length > 0)
+    assert.ok(payload.data.regressions.every((diagnostic: { file: string }) => diagnostic.file === resolve(fixture.dir, 'source.ts')))
     assert.equal(fixture.read('source.ts'), source)
   }
   finally { fixture.cleanup() }

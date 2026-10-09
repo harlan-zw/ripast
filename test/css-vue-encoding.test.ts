@@ -48,7 +48,7 @@ describe.each(['"', '\''])('vue class attribute encoding with %s quotes', (quote
       ], { cwd: fx.dir, encoding: 'utf8' })
       expect(result.error).toBeUndefined()
       expect(result.status).toBe(0)
-      expect(JSON.parse(result.stdout).changes.map((change: { path: string }) => change.path)).toEqual(['Page.vue'])
+      expect(JSON.parse(result.stdout).data.changes.map((change: { path: string }) => change.path)).toEqual(['Page.vue'])
       expect(classValue(fx.read('Page.vue'))).toBe(`flex ${replacement} hover:${replacement}`)
     }
     finally { fx.cleanup() }

@@ -3,7 +3,6 @@ import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rea
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { createPatch } from 'diff'
 import { parseSync } from 'oxc-parser'
 import picomatch from 'picomatch'
 import { searchFiles } from './file-search.ts'
@@ -275,52 +274,6 @@ export function writeChanges(changes: FileChange[]): void {
   }
   for (const { directory } of staged)
     rmSync(directory, { recursive: true, force: true })
-}
-
-export function printDiffs(changes: FileChange[], out: NodeJS.WritableStream = process.stdout): void {
-  for (const c of changes) {
-    const patch = createPatch(c.rel, c.before, c.after, '', '', { context: 2 })
-    out.write(patch)
-  }
-}
-
-export interface ChangeSummary {
-  files: number
-  linesAdded: number
-  linesRemoved: number
-}
-
-export function summarize(changes: FileChange[]): ChangeSummary {
-  let added = 0
-  let removed = 0
-  for (const c of changes) {
-    const diff = diffLineCounts(c.before, c.after)
-    added += diff.added
-    removed += diff.removed
-  }
-  return { files: changes.length, linesAdded: added, linesRemoved: removed }
-}
-
-function diffLineCounts(before: string, after: string): { added: number, removed: number } {
-  const beforeLines = before.split('\n')
-  const afterLines = after.split('\n')
-  const beforeBag = new Map<string, number>()
-  for (const l of beforeLines) beforeBag.set(l, (beforeBag.get(l) ?? 0) + 1)
-  const afterBag = new Map<string, number>()
-  for (const l of afterLines) afterBag.set(l, (afterBag.get(l) ?? 0) + 1)
-  let removed = 0
-  for (const [l, n] of beforeBag.entries()) {
-    const a = afterBag.get(l) ?? 0
-    if (n > a)
-      removed += n - a
-  }
-  let added = 0
-  for (const [l, n] of afterBag.entries()) {
-    const b = beforeBag.get(l) ?? 0
-    if (n > b)
-      added += n - b
-  }
-  return { added, removed }
 }
 
 export function posToLineCol(source: string, pos: number): { line: number, col: number } {

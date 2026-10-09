@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { compactVerification, runCssClassRename, runDelete, runMove, runRename, runRenameFile, runReplace, runVueTemplateUnwrap, runVueTemplateWrap } from '../packages/core/src/index.ts'
+import { compactVerification } from '../packages/cli/src/presentation/index.ts'
+import { runCssClassRename, runDelete, runMove, runRename, runRenameFile, runReplace, runVueTemplateUnwrap, runVueTemplateWrap } from '../packages/core/src/index.ts'
 import { makeFixture } from './helpers.ts'
 
 const files = {
@@ -37,11 +38,11 @@ it.each([
 })
 
 it.each([
-  { command: 'rename', run: (cwd: string) => runRename('answer', 'value', { cwd, verify: false, vue: false }) },
-  { command: 'move', run: (cwd: string) => runMove('answer', 'source.ts', 'lib/value.ts', { cwd, verify: false, vue: false }) },
-  { command: 'delete', run: (cwd: string) => runDelete('replacement', 'replacement.ts', { cwd, verify: false }) },
-  { command: 'replace', run: (cwd: string) => runReplace('answer', 'replacement', { cwd, verify: false }) },
-  { command: 'rename-file', run: (cwd: string) => runRenameFile('source.ts', 'lib/value.ts', { cwd, verify: false, vue: false }) },
+  { command: 'rename', run: (cwd: string) => runRename('answer', 'value', { cwd, verifyMode: 'none' as const, vue: false }) },
+  { command: 'move', run: (cwd: string) => runMove('answer', 'source.ts', 'lib/value.ts', { cwd, verifyMode: 'none' as const, vue: false }) },
+  { command: 'delete', run: (cwd: string) => runDelete('replacement', 'replacement.ts', { cwd, verifyMode: 'none' as const }) },
+  { command: 'replace', run: (cwd: string) => runReplace('answer', 'replacement', { cwd, verifyMode: 'none' as const }) },
+  { command: 'rename-file', run: (cwd: string) => runRenameFile('source.ts', 'lib/value.ts', { cwd, verifyMode: 'none' as const, vue: false }) },
 ])('$command records disabled diagnostics', async ({ run }) => {
   const fixture = makeFixture(files)
   try {
