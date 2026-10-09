@@ -4,19 +4,19 @@ import type { TemplateExpression } from './vue-template.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+export { diagnosticRegressions } from './diagnostic-matching.ts'
 // Adapter SDK entry. ripide-<framework> packages import from here.
 export { isInsideAutoImportScope } from './nuxt.ts'
 export { scan } from './scan.ts'
-export type { ScanHit, ScanOptions } from './scan.ts'
 
 export type ScanFn = typeof import('./scan.ts').scan
+export type { ScanHit, ScanOptions } from './scan.ts'
 export { offsetOfPosition } from './ts-server.ts'
 export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 export type { TextEdit } from './util.ts'
 export type { FileChange } from './util.ts'
 export type { Regression } from './verify.ts'
 export { extractTemplateExpressions, hyphenateVueName, parseVueTemplateAst, rewriteTemplateReferences } from './vue-template.ts'
-export type { TemplateExpression } from './vue-template.ts'
 
 export type FrameworkName = 'vue' | 'nuxt' | 'svelte'
 
@@ -266,3 +266,5 @@ export function detectFrameworks(cwd: string): FrameworkName[] {
 export function resetAdapterCache(): void {
   cache.clear()
 }
+
+export type { TemplateExpression } from './vue-template.ts'
