@@ -2,8 +2,8 @@
 
 <h1>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./branding/logo-dark.svg">
-    <img src="./branding/logo-light.svg" alt="RipIDE" width="432" height="112">
+    <source media="(prefers-color-scheme: dark)" srcset="./branding/logo-dark.svg?v=ripide">
+    <img src="./branding/logo-light.svg?v=ripide" alt="RipIDE" width="432" height="112">
   </picture>
 </h1>
 
