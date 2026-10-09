@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { runReplace, writeChanges } from '@ripast/core'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([
@@ -17,7 +18,7 @@ it.each([
     'consumer.ts': `import { old } from './old.ts'\n${consumer}\n`,
   })
   try {
-    const result = await runReplace('old', 'next', { cwd: fx.dir })
+    const result = await runReplace('old', 'next', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const value = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'consumer.ts'], {
@@ -25,7 +26,7 @@ it.each([
       encoding: 'utf8',
     })
     assert.deepEqual(JSON.parse(value), ['target', 'local'])
-    assert.deepEqual((await runReplace('old', 'next', { cwd: fx.dir })).changes, [])
+    assert.deepEqual((await runReplace('old', 'next', { ...{ cwd: fx.dir }, engine: vueServices() })).changes, [])
   }
   finally {
     fx.cleanup()
@@ -44,7 +45,7 @@ console.log(JSON.stringify(call(() => "local")))
 `,
   })
   try {
-    const result = await runReplace('old', 'next', { cwd: fx.dir })
+    const result = await runReplace('old', 'next', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const value = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'consumer.ts'], {

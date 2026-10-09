@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveNativeTsc, runRenameFile, writeChanges } from '@ripast/core'
 import { expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each(['touched', 'project'] as const)('verifies an aliased rename into a new directory with %s scope', async (verify) => {
@@ -23,7 +24,7 @@ it.each(['touched', 'project'] as const)('verifies an aliased rename into a new 
   })
   try {
     expect(spawnSync(resolveNativeTsc(), ['--noEmit', '-p', join(fx.dir, 'tsconfig.json')], { encoding: 'utf8' }).status).toBe(0)
-    const result = await runRenameFile('src/Counter.ts', 'src/components/Count.ts', { cwd: fx.dir, vue: false, verify })
+    const result = await runRenameFile('src/Counter.ts', 'src/components/Count.ts', { ...{ cwd: fx.dir, verify }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     expect(result.changes.map(change => change.after)).toEqual([
       'import { count } from \'@/components/Count\'\nexport const result: number = count\n',
@@ -54,7 +55,7 @@ it.each(['touched', 'project'] as const)('keeps unresolved dependencies in the m
     'src/main.ts': 'import { count } from \'@/Counter\'\nexport const result = count\n',
   })
   try {
-    const result = await runRenameFile('src/Counter.ts', 'src/components/Count.ts', { cwd: fx.dir, vue: false, verify })
+    const result = await runRenameFile('src/Counter.ts', 'src/components/Count.ts', { ...{ cwd: fx.dir, verify }, engine: vueServices() })
     expect(result.regressions.map(({ file, code, message }) => ({ file, code, message }))).toEqual([{
       file: join(fx.dir, 'src/components/Count.ts'),
       code: 2307,
@@ -80,7 +81,7 @@ it.each(['touched', 'project'] as const)('reports a package import that loses it
   })
   try {
     expect(spawnSync(resolveNativeTsc(), ['--noEmit', '-p', join(fx.dir, 'tsconfig.json')], { encoding: 'utf8' }).status).toBe(0)
-    const result = await runRenameFile('src/features/Counter.ts', 'src/components/Count.ts', { cwd: fx.dir, vue: false, verify })
+    const result = await runRenameFile('src/features/Counter.ts', 'src/components/Count.ts', { ...{ cwd: fx.dir, verify }, engine: vueServices() })
     expect(result.regressions.map(({ file, code, message }) => ({ file, code, message }))).toEqual([{
       file: join(fx.dir, 'src/components/Count.ts'),
       code: 2307,
@@ -104,7 +105,7 @@ it.each(['touched', 'project'] as const)('verifies an aliased rename into an exi
   })
   try {
     mkdirSync(join(fx.dir, 'src/components'))
-    const result = await runRenameFile('src/Counter.ts', 'src/components/Count.ts', { cwd: fx.dir, vue: false, verify })
+    const result = await runRenameFile('src/Counter.ts', 'src/components/Count.ts', { ...{ cwd: fx.dir, verify }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     expect(result.changes.map(change => change.after)).toEqual(['export { count } from \'@/components/Count\'\n'])
     expect(existsSync(join(fx.dir, 'src/components/Count.ts'))).toBe(false)

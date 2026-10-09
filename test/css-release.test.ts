@@ -1,6 +1,7 @@
 import { rewriteClassString, runCssClassRename, runCssClassScan } from '@ripast/core'
 import { parse } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const rename = new Map([['old-token', 'new-token']])
@@ -27,8 +28,8 @@ describe('class migration release regressions', () => {
       'Page.vue': `<template><div data-class="old-token"><template v-if="ok"><span /></template><p class="old-token" /><p v-bind:class="active ? 'old-token' : ''" /></div></template>`,
     }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([{ token: 'old-token', count: 2, files: ['Page.vue'] }])
-      const result = await runCssClassRename(rename, { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([{ token: 'old-token', count: 2, files: ['Page.vue'] }])
+      const result = await runCssClassRename(rename, { ...{ cwd: fx.dir }, engine: vueServices() })
       const props = templateProps(result.changes[0].after)
       expect(props.find(p => p.name === 'data-class').value.content).toBe('old-token')
       expect(props.find(p => p.name === 'class').value.content).toBe('new-token')
@@ -42,8 +43,8 @@ describe('class migration release regressions', () => {
       'Page.vue': `<template><!-- <div class="old-token" /> --><p data-class="old-token" title='class="old-token"' /></template>`,
     }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([])
-      expect((await runCssClassRename(rename, { cwd: fx.dir })).changes).toEqual([])
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([])
+      expect((await runCssClassRename(rename, { ...{ cwd: fx.dir }, engine: vueServices() })).changes).toEqual([])
     }
     finally { fx.cleanup() }
   })
@@ -53,7 +54,7 @@ describe('class migration release regressions', () => {
       'classes.ts': String.raw`export const cls = 'old-token content-[\'hello\']'`,
     }, false)
     try {
-      const result = await runCssClassRename(rename, { cwd: fx.dir })
+      const result = await runCssClassRename(rename, { ...{ cwd: fx.dir }, engine: vueServices() })
       const output = await import(`data:text/javascript,${encodeURIComponent(result.changes[0].after)}`)
       expect(output.cls).toBe('new-token content-[\'hello\']')
     }
@@ -65,8 +66,8 @@ describe('class migration release regressions', () => {
       'Page.vue': `<script setup>const example = '<style>.example { @apply old-token; }</style>'</script><template><div /></template>`,
     }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([])
-      expect((await runCssClassRename(rename, { cwd: fx.dir })).changes).toEqual([])
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([])
+      expect((await runCssClassRename(rename, { ...{ cwd: fx.dir }, engine: vueServices() })).changes).toEqual([])
     }
     finally { fx.cleanup() }
   })
@@ -74,8 +75,8 @@ describe('class migration release regressions', () => {
   it('migrates arbitrary values containing quotes as complete class tokens', async () => {
     const fx = makeFixture({ 'Page.vue': `<template><div class="before:content-['hello']" /></template>` }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([{ token: 'content-[\'hello\']', count: 1, files: ['Page.vue'] }])
-      const result = await runCssClassRename(new Map([['content-[\'hello\']', 'content-[\'goodbye\']']]), { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([{ token: 'content-[\'hello\']', count: 1, files: ['Page.vue'] }])
+      const result = await runCssClassRename(new Map([['content-[\'hello\']', 'content-[\'goodbye\']']]), { ...{ cwd: fx.dir }, engine: vueServices() })
       expect(templateProps(result.changes[0].after)[0].value.content).toBe('before:content-[\'goodbye\']')
     }
     finally { fx.cleanup() }

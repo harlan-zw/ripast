@@ -1,3 +1,4 @@
+import type { EngineServices } from './engine.ts'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { parseFile, posToLineCol, rgFiles } from './util.ts'
@@ -34,20 +35,21 @@ export interface DoctorIndexFile {
 }
 
 export interface DoctorIndex {
+  engine?: EngineServices
   files: DoctorIndexFile[]
 }
 
-export function buildDoctorIndex(opts: { cwd?: string, glob?: string | string[] } = {}): DoctorIndex {
+export function buildDoctorIndex(opts: { engine?: EngineServices, cwd?: string, glob?: string | string[] } = {}): DoctorIndex {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+  const files = rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true })
   const out: DoctorIndexFile[] = []
   for (const abs of files) {
-    const file = parseFile(abs, cwd)
+    const file = parseFile(abs, cwd, opts.engine)
     if (!file.program)
       continue
     out.push(extractFileIndex(file.rel, file.program, file.fullSource, file.scriptStart))
   }
-  return { files: out }
+  return { files: out, engine: opts.engine }
 }
 
 function extractFileIndex(rel: string, program: any, fullSource: string, scriptStart: number): DoctorIndexFile {

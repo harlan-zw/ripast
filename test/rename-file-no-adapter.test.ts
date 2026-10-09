@@ -38,8 +38,8 @@ function makeFx(files: Record<string, string>) {
 }
 
 describe('rename-file without a framework adapter', () => {
-  it.each(['deck/tsconfig.json', 'deck/.nuxt/tsconfig.app.json'])('rewrites consumers from the selected %s', async (tsconfig) => {
-    const prefix = tsconfig.includes('.nuxt') ? '../' : ''
+  it.each(['deck/tsconfig.json', 'deck/config/tsconfig.app.json'])('rewrites consumers from the selected %s', async (tsconfig) => {
+    const prefix = tsconfig.includes('/config/') ? '../' : ''
     const fx = makeFixture({
       [tsconfig]: JSON.stringify({
         compilerOptions: { allowJs: true, noEmit: true, module: 'ESNext', moduleResolution: 'bundler' },
@@ -56,7 +56,6 @@ describe('rename-file without a framework adapter', () => {
       const imported = program.body.find((statement: any) => statement.type === 'ImportDeclaration')
       assert.equal(imported?.source.value, '../legacy/data/aggregate.mjs')
       assert.deepEqual(result.regressions, [])
-      assert.ok(!result.changes.some(change => change.rel.includes('.nuxt/')), 'generated configs must stay unchanged')
     }
     finally { fx.cleanup() }
   })
@@ -72,7 +71,7 @@ describe('rename-file without a framework adapter', () => {
       'deck/consumer.ts': 'import { amount } from \'../data/aggregate.mjs\'\nexport const total = amount + 1\n',
     }, false)
     try {
-      const options = { cwd: fx.dir, tsconfig, vue: false }
+      const options = { cwd: fx.dir, tsconfig }
       const result = operation === 'rename'
         ? await runRename('amount', 'totalAmount', options)
         : await runMove('amount', 'data/aggregate.mjs', 'data/target.mjs', options)
@@ -108,7 +107,7 @@ describe('rename-file without a framework adapter', () => {
     try {
       await assert.rejects(
         runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verify: 'none' }),
-        /requires the Vue adapter/,
+        /Required extension missing/,
       )
     }
     finally { fx.cleanup() }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { it } from 'vitest'
 import { formatAgentScanHits } from '../packages/core/src/css-class-scan.ts'
 import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, formatAgentDeclarationTree, formatDeclarationTree, formatScanGraph, formatUnusedDeclarations, scan } from '../packages/core/src/scan.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it('scan classifies identifier kinds', () => {
@@ -11,7 +12,7 @@ it('scan classifies identifier kinds', () => {
     'src/c.ts': 'const o = { target: 1 }\nconsole.log(o.target)\n',
   }, false)
   try {
-    const hits = scan('target', { cwd: fx.dir })
+    const hits = scan('target', { ...{ cwd: fx.dir }, engine: vueServices() })
     const byKind = groupByKind(hits)
     assert.equal(byKind['identifier-binding'] ?? 0, 1, 'one binding in a.ts')
     assert.equal(byKind['import-specifier'] ?? 0, 1, 'one import in b.ts')
@@ -27,7 +28,7 @@ it('scan --kind filters results', () => {
     'src/a.ts': 'export function target() {}\nimport { other } from \'./x.ts\'\ntarget()\n',
   }, false)
   try {
-    const only = scan('target', { cwd: fx.dir, kinds: ['identifier-reference'] })
+    const only = scan('target', { ...{ cwd: fx.dir, kinds: ['identifier-reference'] }, engine: vueServices() })
     assert.equal(only.length, 1)
     assert.equal(only[0].kind, 'identifier-reference')
   }
@@ -40,7 +41,7 @@ it('scan finds Vue SFC script-block AND template-block occurrences', () => {
     'src/utils.ts': 'export function target() { return 1 }\n',
   }, false)
   try {
-    const hits = scan('target', { cwd: fx.dir })
+    const hits = scan('target', { ...{ cwd: fx.dir }, engine: vueServices() })
     const vueHits = hits.filter(h => h.file.endsWith('.vue'))
     assert.ok(vueHits.some(h => h.kind === 'import-specifier'), 'import in script')
     assert.ok(vueHits.some(h => h.kind === 'identifier-reference' && h.line >= 2), 'call in script')
@@ -54,11 +55,11 @@ it('scan finds Vue template directive expressions (v-if, v-for, :prop)', () => {
     'src/comp.vue': `<template>\n  <div v-if="visible">{{ count }}</div>\n  <span :title="label">x</span>\n  <ul><li v-for="item in items">{{ item }}</li></ul>\n</template>\n<script setup lang="ts">\nconst visible = true\nconst count = 1\nconst label = 'hi'\nconst items = [1,2,3]\n</script>\n`,
   }, false)
   try {
-    const visibleHits = scan('visible', { cwd: fx.dir }).filter(h => h.file.endsWith('.vue'))
+    const visibleHits = scan('visible', { ...{ cwd: fx.dir }, engine: vueServices() }).filter(h => h.file.endsWith('.vue'))
     assert.ok(visibleHits.some(h => h.line === 2), 'v-if expression captured')
-    const labelHits = scan('label', { cwd: fx.dir }).filter(h => h.file.endsWith('.vue'))
+    const labelHits = scan('label', { ...{ cwd: fx.dir }, engine: vueServices() }).filter(h => h.file.endsWith('.vue'))
     assert.ok(labelHits.some(h => h.line === 3), 'v-bind expression captured')
-    const itemsHits = scan('items', { cwd: fx.dir }).filter(h => h.file.endsWith('.vue'))
+    const itemsHits = scan('items', { ...{ cwd: fx.dir }, engine: vueServices() }).filter(h => h.file.endsWith('.vue'))
     assert.ok(itemsHits.some(h => h.line === 4), 'v-for expression captured')
   }
   finally { fx.cleanup() }
@@ -70,7 +71,7 @@ it('scan dedupes ImportSpecifier imported/local pair for unaliased imports', () 
     'src/b.ts': 'import { foo } from \'./a.ts\'\nfoo()\n',
   }, false)
   try {
-    const hits = scan('foo', { cwd: fx.dir })
+    const hits = scan('foo', { ...{ cwd: fx.dir }, engine: vueServices() })
     const importHits = hits.filter(h => h.kind === 'import-specifier')
     assert.equal(importHits.length, 1, 'unaliased import counts once, not twice')
   }
@@ -85,7 +86,7 @@ it('buildScanGraph links hit files through relative imports and re-exports', () 
     'src/unrelated.ts': 'import { target } from \'./a.ts\'\n',
   }, false)
   try {
-    const graph = buildScanGraph('target', { cwd: fx.dir })
+    const graph = buildScanGraph('target', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.deepEqual(graph.nodes.map(n => n.file), [
       'src/a.ts',
       'src/b.ts',
@@ -107,7 +108,7 @@ it('formatScanGraph emits mermaid and dot formats', () => {
     'src/b.ts': 'import { target } from \'./a.ts\'\ntarget()\n',
   }, false)
   try {
-    const graph = buildScanGraph('target', { cwd: fx.dir })
+    const graph = buildScanGraph('target', { ...{ cwd: fx.dir }, engine: vueServices() })
     const mermaid = formatScanGraph(graph, 'mermaid')
     assert.match(mermaid, /^flowchart LR/)
     assert.match(mermaid, /src\/b\.ts/)
@@ -135,7 +136,7 @@ it('buildDeclarationTree reports top-level exported and local declarations', () 
     'src/dep.ts': 'export const dep = 1\n',
   }, false)
   try {
-    const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts' })
+    const tree = buildDeclarationTree({ ...{ cwd: fx.dir, glob: '*.ts' }, engine: vueServices() })
     const a = tree.files.find(f => f.file === 'src/a.ts')
     assert.ok(a)
     assert.deepEqual(a!.imports, ['./dep.ts'])
@@ -158,10 +159,10 @@ it('buildDeclarationTree filters exported and local declarations', () => {
     'src/a.ts': 'const localValue = 1\nexport const exportedValue = 2\n',
   }, false)
   try {
-    const exported = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    const exported = buildDeclarationTree({ ...{ cwd: fx.dir, glob: '*.ts', exports: 'exported' }, engine: vueServices() })
     assert.deepEqual(exported.files.flatMap(f => f.declarations.map(d => d.name)), ['exportedValue'])
 
-    const local = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts', exports: 'local' })
+    const local = buildDeclarationTree({ ...{ cwd: fx.dir, glob: '*.ts', exports: 'local' }, engine: vueServices() })
     assert.deepEqual(local.files.flatMap(f => f.declarations.map(d => d.name)), ['localValue'])
   }
   finally { fx.cleanup() }
@@ -172,7 +173,7 @@ it('formatDeclarationTree emits text and json output', () => {
     'src/a.ts': 'export class Service {}\n',
   }, false)
   try {
-    const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts' })
+    const tree = buildDeclarationTree({ ...{ cwd: fx.dir, glob: '*.ts' }, engine: vueServices() })
     const text = formatDeclarationTree(tree, false)
     assert.match(text, /src\/a\.ts/)
     assert.match(text, /export class\s+Service/)
@@ -189,7 +190,7 @@ it('formatAgentDeclarationTree emits compact exported and local summaries', () =
     'src/dep.ts': 'export const dep = 1\n',
   }, false)
   try {
-    const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts' })
+    const tree = buildDeclarationTree({ ...{ cwd: fx.dir, glob: '*.ts' }, engine: vueServices() })
     const exported = formatAgentDeclarationTree(tree, 'exported')
     assert.match(exported, /exports: function run/)
     assert.match(exported, /locals: 2/)
@@ -213,7 +214,7 @@ it('buildDeclarationTree includes function signatures for declarations and funct
     ].join('\n'),
   }, false)
   try {
-    const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    const tree = buildDeclarationTree({ ...{ cwd: fx.dir, glob: '*.ts', exports: 'exported' }, engine: vueServices() })
     assert.deepEqual(
       tree.files.flatMap(f => f.declarations.map(d => d.signature)),
       [
@@ -238,7 +239,7 @@ it('buildDeclarationTree truncates long signatures in compact summaries', () => 
     'src/a.ts': 'export function many(a: string, b: number, c: boolean, d: Date, e: Error): void {}\n',
   }, false)
   try {
-    const tree = buildDeclarationTree({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    const tree = buildDeclarationTree({ ...{ cwd: fx.dir, glob: '*.ts', exports: 'exported' }, engine: vueServices() })
     assert.equal(tree.files[0].declarations[0].signature, 'many(a: string, b: number, c: boolean, d: Date, ...1 more): void')
   }
   finally { fx.cleanup() }
@@ -255,7 +256,7 @@ it('buildUnusedDeclarations reports unreferenced top-level local declarations by
     'src/b.ts': 'import { publicApi } from \'./a.ts\'\npublicApi()\n',
   }, false)
   try {
-    const unused = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts' })
+    const unused = await buildUnusedDeclarations({ ...{ cwd: fx.dir, glob: '*.ts' }, engine: vueServices() })
     assert.deepEqual(unused.files.map(f => f.file), ['src/a.ts'])
     assert.deepEqual(unused.files[0].declarations.map(d => d.name), ['unusedLocal'])
 
@@ -277,10 +278,10 @@ it('buildUnusedDeclarations supports exported and all filters', async () => {
     'src/b.ts': 'import { usedExport } from \'./a.ts\'\nconsole.log(usedExport)\n',
   }, false)
   try {
-    const exported = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    const exported = await buildUnusedDeclarations({ ...{ cwd: fx.dir, glob: '*.ts', exports: 'exported' }, engine: vueServices() })
     assert.deepEqual(exported.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedExport'])
 
-    const all = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'all' })
+    const all = await buildUnusedDeclarations({ ...{ cwd: fx.dir, glob: '*.ts', exports: 'all' }, engine: vueServices() })
     assert.deepEqual(all.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedLocal', 'unusedExport'])
 
     const json = JSON.parse(formatUnusedDeclarations(exported, true))
@@ -294,7 +295,7 @@ it('buildUnusedDeclarations does not treat same-file named export specifiers as 
     'src/a.ts': 'type PublicType = string\nexport { PublicType }\n',
   }, false)
   try {
-    const unused = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts', exports: 'exported' })
+    const unused = await buildUnusedDeclarations({ ...{ cwd: fx.dir, glob: '*.ts', exports: 'exported' }, engine: vueServices() })
     assert.deepEqual(unused.files.flatMap(f => f.declarations.map(d => d.name)), ['PublicType'])
   }
   finally { fx.cleanup() }
@@ -314,7 +315,7 @@ it.each(['"accessed"', '`accessed`'])('buildUnusedDeclarations keeps exported na
     ].join('\n'),
   })
   try {
-    const unused = await buildUnusedDeclarations({ cwd: fx.dir, exports: 'exported' })
+    const unused = await buildUnusedDeclarations({ ...{ cwd: fx.dir, exports: 'exported' }, engine: vueServices() })
     assert.deepEqual(unused.files.flatMap(file => file.declarations.map(declaration => declaration.name)), ['unused'])
   }
   finally { fx.cleanup() }
@@ -330,7 +331,7 @@ it.each([
     'source.ts': `export const used = 1\n${declaration}\nconsole.log(value)\n`,
   })
   try {
-    const unused = await buildUnusedDeclarations({ cwd: fx.dir, exports: 'exported' })
+    const unused = await buildUnusedDeclarations({ ...{ cwd: fx.dir, exports: 'exported' }, engine: vueServices() })
     assert.deepEqual(unused.files, [])
   }
   finally { fx.cleanup() }
@@ -343,7 +344,7 @@ it('buildUnusedDeclarations handles JavaScript files when a tsconfig exists', as
     'src/b.ts': 'import { usedJs } from \'./a.mjs\'\nusedJs()\n',
   }, false)
   try {
-    const unused = await buildUnusedDeclarations({ cwd: fx.dir, glob: ['*.ts', '*.mjs'], exports: 'all' })
+    const unused = await buildUnusedDeclarations({ ...{ cwd: fx.dir, glob: ['*.ts', '*.mjs'], exports: 'all' }, engine: vueServices() })
     assert.deepEqual(unused.files.flatMap(f => f.declarations.map(d => d.name)), ['unusedJs'])
   }
   finally { fx.cleanup() }
@@ -360,7 +361,7 @@ it('buildUnusedDeclarations treats type references and shorthand properties as r
     ].join('\n'),
   }, false)
   try {
-    const unused = await buildUnusedDeclarations({ cwd: fx.dir, glob: '*.ts' })
+    const unused = await buildUnusedDeclarations({ ...{ cwd: fx.dir, glob: '*.ts' }, engine: vueServices() })
     assert.deepEqual(unused.files, [])
   }
   finally { fx.cleanup() }

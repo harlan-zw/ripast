@@ -6,6 +6,7 @@ import { it } from 'vitest'
 import { runMove } from '../packages/core/src/move.ts'
 import { runRename } from '../packages/core/src/rename.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 
 function makeMonorepo(): { dir: string, read: (rel: string) => string, cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'ripast-monorepo-'))
@@ -61,12 +62,12 @@ function makeMonorepo(): { dir: string, read: (rel: string) => string, cleanup: 
 it('rename crosses package boundaries in a pnpm-workspace monorepo', async () => {
   const fx = makeMonorepo()
   try {
-    const r = await runRename('log', 'writeLog', {
+    const r = await runRename('log', 'writeLog', { ...{
       cwd: fx.dir,
       tsconfig: 'packages/app/tsconfig.json',
       verify: false,
       allowMultiple: true,
-    })
+    }, engine: vueServices() })
     writeChanges(r.changes)
     assert.match(fx.read('packages/core/src/log.ts'), /export function writeLog/)
     assert.match(fx.read('packages/app/src/main.ts'), /import \{ writeLog \}/)
@@ -78,11 +79,11 @@ it('rename crosses package boundaries in a pnpm-workspace monorepo', async () =>
 it('move relocates a symbol across packages in a pnpm-workspace monorepo', async () => {
   const fx = makeMonorepo()
   try {
-    const r = await runMove('log', 'packages/core/src/log.ts', 'packages/core/src/logger.ts', {
+    const r = await runMove('log', 'packages/core/src/log.ts', 'packages/core/src/logger.ts', { ...{
       cwd: fx.dir,
       tsconfig: 'packages/app/tsconfig.json',
       verify: false,
-    })
+    }, engine: vueServices() })
     writeChanges(r.changes)
     assert.match(fx.read('packages/core/src/logger.ts'), /export function log/)
     assert.match(fx.read('packages/app/src/main.ts'), /logger/, 'consumer import rewritten to new path')

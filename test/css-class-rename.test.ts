@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
 import { rewriteClassString, rewriteToken, runCssClassRename } from '../packages/core/src/css-class-rename.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 function map(pairs: Record<string, string>): Map<string, string> {
@@ -80,7 +81,7 @@ describe('runCssClassRename', () => {
       'src/a.ts': `export const cls = 'bg-gray-500 text-white'\nexport const other = 'unrelated'\n`,
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes('bg-neutral-500'))
       assert.ok(!r.changes[0].after.includes('bg-gray-500'))
@@ -95,7 +96,7 @@ describe('runCssClassRename', () => {
       'src/a.ts': 'export const cls = `bg-gray-500 ${cond}`\n',
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes('bg-neutral-500'))
     }
@@ -107,7 +108,7 @@ describe('runCssClassRename', () => {
       'src/c.vue': `<template><div class="bg-gray-500 hover:bg-gray-500">x</div></template>\n`,
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes('bg-neutral-500 hover:bg-neutral-500'))
     }
@@ -119,7 +120,7 @@ describe('runCssClassRename', () => {
       'src/c.vue': `<template><div :class="active ? 'bg-gray-500' : 'text-white'">x</div></template>\n`,
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes(`'bg-neutral-500'`))
     }
@@ -131,7 +132,7 @@ describe('runCssClassRename', () => {
       'src/c.vue': `<script setup lang="ts">\nconst cls = 'bg-gray-500'\n</script>\n<template><div :class="cls" /></template>\n`,
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes(`const cls = 'bg-neutral-500'`))
     }
@@ -143,7 +144,7 @@ describe('runCssClassRename', () => {
       'src/c.vue': `<style>\n.btn { @apply bg-gray-500 text-white; }\n</style>\n`,
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes('@apply bg-neutral-500 text-white'))
     }
@@ -155,7 +156,7 @@ describe('runCssClassRename', () => {
       'src/x.css': `.btn { @apply hover:bg-gray-500; }\n`,
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes('@apply hover:bg-neutral-500'))
     }
@@ -167,7 +168,7 @@ describe('runCssClassRename', () => {
       'src/a.ts': `export const cls = 'bg-gray-5000'\n`,
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 0)
     }
     finally { fx.cleanup() }
@@ -178,7 +179,7 @@ describe('runCssClassRename', () => {
       'src/a.ts': `export const msg = 'please pass bg-gray-500 carefully'\nexport const cls = 'bg-gray-500'\n`,
     }, false)
     try {
-      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { cwd: fx.dir })
+      const r = await runCssClassRename(map({ 'bg-gray-500': 'bg-neutral-500' }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes('bg-gray-500 carefully'))
       assert.ok(r.changes[0].after.includes(`const cls = 'bg-neutral-500'`))
@@ -195,7 +196,7 @@ describe('runCssClassRename', () => {
         'bg-gray-500': 'bg-neutral-500',
         'text-gray-900': 'text-fg',
         'border-gray-200': 'border-muted',
-      }), { cwd: fx.dir })
+      }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       const after = r.changes[0].after
       assert.ok(after.includes('bg-neutral-500'))
@@ -217,7 +218,7 @@ describe('runCssClassRename', () => {
       const r = await runCssClassRename(map({
         'bg-gray-500': 'bg-neutral-500',
         'text-gray-900': 'text-fg',
-      }), { cwd: fx.dir })
+      }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 2)
       const rels = r.changes.map(c => c.rel).sort()
       assert.deepEqual(rels, ['src/a.ts', 'src/b.ts'])
@@ -233,7 +234,7 @@ describe('runCssClassRename', () => {
       const r = await runCssClassRename(map({
         'bg-gray-500': 'bg-neutral-500',
         'bg-neutral-500': 'bg-surface',
-      }), { cwd: fx.dir })
+      }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes(`'bg-neutral-500 bg-surface'`))
     }
@@ -248,7 +249,7 @@ describe('runCssClassRename', () => {
       const r = await runCssClassRename(map({
         'bg-gray-500': 'bg-neutral-500',
         'text-gray-900': 'text-fg',
-      }), { cwd: fx.dir })
+      }), { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(r.changes.length, 1)
       assert.ok(r.changes[0].after.includes('hover:bg-neutral-500 dark:md:text-fg'))
     }

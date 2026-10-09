@@ -1,5 +1,6 @@
 import type { DoctorAdapter, DoctorFinding, FrameworkName } from './adapter.ts'
 import type { DoctorIndex, DoctorIndexFile } from './doctor-index.ts'
+import type { EngineServices } from './engine.ts'
 import type { DeclarationTree, DeclarationTreeFile, ScanOptions } from './scan.ts'
 import type { FileChange } from './util.ts'
 import { spawnSync } from 'node:child_process'
@@ -7,7 +8,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
-import { detectFrameworks, loadAdapter } from './adapter.ts'
 import { buildDoctorIndex } from './doctor-index.ts'
 import { buildDeclarationTree } from './scan.ts'
 import { parseFile } from './util.ts'
@@ -82,17 +82,17 @@ export function getChangedFiles(opts: ChangedFilesOptions = {}): string[] {
   return [...out]
 }
 
-const RESOLVE_EXTS = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '/index.ts', '/index.tsx', '/index.js']
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '/index.ts', '/index.tsx', '/index.js']
 
-function resolveRelative(fromFile: string, specifier: string, cwd: string): string | null {
+function resolveRelative(fromFile: string, specifier: string, cwd: string, engine?: EngineServices): string | null {
   if (!specifier.startsWith('.'))
     return null
   const base = resolve(dirname(resolve(cwd, fromFile)), specifier)
-  return tryExts(base)
+  return tryExts(base, engine)
 }
 
-function tryExts(base: string): string | null {
-  for (const ext of RESOLVE_EXTS) {
+function tryExts(base: string, engine?: EngineServices): string | null {
+  for (const ext of [...RESOLVE_EXTS, ...engine?.suffixes ?? []]) {
     const candidate = base + ext
     if (!existsSync(candidate))
       continue
@@ -113,23 +113,18 @@ function tryExts(base: string): string | null {
 type AliasMap = Map<string, string[]>
 
 function stripJsonComments(src: string): string {
-  // Tolerant strip of // and /* */ comments and trailing commas. .nuxt/tsconfig
-  // is clean JSON; user tsconfigs may be JSONC.
+  // Tolerant strip of // and /* */ comments and trailing commas. user configs can be JSONC.
   return src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
     .replace(/,(\s*[}\]])/g, '$1')
 }
 
-function loadAliasMap(cwd: string): AliasMap {
+function loadAliasMap(cwd: string, engine?: EngineServices): AliasMap {
   const map: AliasMap = new Map()
   const candidates = [
     'tsconfig.json',
-    '.nuxt/tsconfig.json',
-    '.nuxt/tsconfig.app.json',
-    '.nuxt/tsconfig.server.json',
-    '.nuxt/tsconfig.shared.json',
-    '.nuxt/tsconfig.node.json',
+    ...engine?.extensions.flatMap(extension => extension.configPaths ?? []) ?? [],
   ]
   for (const rel of candidates) {
     const abs = resolve(cwd, rel)
@@ -170,7 +165,7 @@ function loadAliasMap(cwd: string): AliasMap {
   return map
 }
 
-function resolveAlias(specifier: string, aliases: AliasMap): string | null {
+function resolveAlias(specifier: string, aliases: AliasMap, engine?: EngineServices): string | null {
   for (const [glob, targets] of aliases) {
     if (glob.includes('*')) {
       const prefix = glob.slice(0, glob.indexOf('*'))
@@ -180,14 +175,14 @@ function resolveAlias(specifier: string, aliases: AliasMap): string | null {
       const captured = specifier.slice(prefix.length, specifier.length - suffix.length)
       for (const target of targets) {
         const base = target.replace('*', captured)
-        const file = tryExts(base)
+        const file = tryExts(base, engine)
         if (file)
           return file
       }
     }
     else if (specifier === glob) {
       for (const target of targets) {
-        const file = tryExts(target)
+        const file = tryExts(target, engine)
         if (file)
           return file
       }
@@ -203,7 +198,7 @@ function findDanglingReexports(index: DoctorIndex, cwd: string): DoctorFinding[]
     for (const re of file.namedReexports) {
       if (!re.source.startsWith('.'))
         continue
-      if (resolveRelative(file.file, re.source, cwd))
+      if (resolveRelative(file.file, re.source, cwd, index.engine))
         continue
       const key = `${file.file}::${re.source}::${re.line}`
       if (seen.has(key))
@@ -367,11 +362,11 @@ function collectPackageJsonEntries(cwd: string): Set<string> {
         continue
       const abs = resolve(cwd, dir, c)
       out.add(relative(cwd, abs))
-      // Source counterpart of dist artifact: ./dist/foo.mjs → ./src/foo.ts, .tsx, .vue, /index.ts.
+      // Source counterpart of dist artifact: ./dist/foo.mjs → ./src/foo.ts, .tsx, source suffixes, /index.ts.
       const distMatch = c.match(/^\.\/dist\/(.+?)\.(?:mjs|cjs|js|d\.[mc]?ts)$/)
       if (distMatch) {
         const stem = distMatch[1]!
-        for (const srcCandidate of [`./src/${stem}.ts`, `./src/${stem}.tsx`, `./src/${stem}.vue`, `./src/${stem}/index.ts`, `./src/${stem}/index.tsx`]) {
+        for (const srcCandidate of [`./src/${stem}.ts`, `./src/${stem}.tsx`, `./src/${stem}/index.ts`, `./src/${stem}/index.tsx`]) {
           const srcAbs = resolve(cwd, dir, srcCandidate)
           if (existsSync(srcAbs))
             out.add(relative(cwd, srcAbs))
@@ -395,12 +390,12 @@ function collectPackageJsonEntries(cwd: string): Set<string> {
   return out
 }
 
-function findOrphanFiles(tree: DeclarationTree, cwd: string, entries: Set<string>): DoctorFinding[] {
+function findOrphanFiles(tree: DeclarationTree, cwd: string, entries: Set<string>, engine?: EngineServices): DoctorFinding[] {
   const inbound = new Set<string>()
-  const aliases = loadAliasMap(cwd)
+  const aliases = loadAliasMap(cwd, engine)
   for (const file of tree.files) {
     for (const spec of [...file.imports, ...file.reexports]) {
-      const resolved = resolveRelative(file.file, spec, cwd) ?? resolveAlias(spec, aliases)
+      const resolved = resolveRelative(file.file, spec, cwd, engine) ?? resolveAlias(spec, aliases, engine)
       if (resolved)
         inbound.add(relative(cwd, resolved))
     }
@@ -436,7 +431,7 @@ function findStaleReexports(index: DoctorIndex, cwd: string): DoctorFinding[] {
         continue
       if (!re.source.startsWith('.'))
         continue
-      const resolved = resolveRelative(file.file, re.source, cwd)
+      const resolved = resolveRelative(file.file, re.source, cwd, index.engine)
       if (!resolved)
         continue
       const targetRel = relative(cwd, resolved)
@@ -478,7 +473,7 @@ function buildTransitiveExports(index: DoctorIndex, cwd: string) {
       if (re.exported !== '*' && re.exported !== '<namespace>')
         out.add(re.exported)
       if (re.imported === '*') {
-        const resolved = resolveRelative(rel, re.source, cwd)
+        const resolved = resolveRelative(rel, re.source, cwd, index.engine)
         if (!resolved)
           continue
         const inner = get(relative(cwd, resolved), stack)
@@ -507,7 +502,7 @@ function findStaleImports(index: DoctorIndex, cwd: string): DoctorFinding[] {
         continue
       if (!imp.source.startsWith('.'))
         continue
-      const resolved = resolveRelative(file.file, imp.source, cwd)
+      const resolved = resolveRelative(file.file, imp.source, cwd, index.engine)
       if (!resolved)
         continue
       const targetRel = relative(cwd, resolved)
@@ -545,7 +540,7 @@ function findCircularDeps(index: DoctorIndex, cwd: string): DoctorFinding[] {
     for (const spec of specs) {
       if (!spec.startsWith('.'))
         continue
-      const resolved = resolveRelative(file.file, spec, cwd)
+      const resolved = resolveRelative(file.file, spec, cwd, index.engine)
       if (!resolved)
         continue
       const targetRel = relative(cwd, resolved)
@@ -614,9 +609,9 @@ function findCircularDeps(index: DoctorIndex, cwd: string): DoctorFinding[] {
   return out
 }
 
-function findOrphanTests(tree: DeclarationTree, _cwd: string): DoctorFinding[] {
+function findOrphanTests(tree: DeclarationTree, _cwd: string, engine?: EngineServices): DoctorFinding[] {
   const all = new Set(tree.files.map(f => f.file))
-  const SUBJECT_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
+  const SUBJECT_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', ...engine?.suffixes ?? []]
   const TEST_RE = /^(.+?)\.(?:test|spec)\.([cm]?[jt]sx?)$/
   const out: DoctorFinding[] = []
   for (const file of tree.files) {
@@ -638,7 +633,7 @@ function findOrphanTests(tree: DeclarationTree, _cwd: string): DoctorFinding[] {
     out.push({
       check: 'orphan-test',
       file: file.file,
-      message: `test file has no sibling source (looked for ${stem}.{ts,tsx,vue,...})`,
+      message: `test file has no sibling source (looked for ${stem}.{configured source suffixes})`,
       detail: { stem },
     })
   }
@@ -659,7 +654,7 @@ function findInconsistentImportPaths(index: DoctorIndex, cwd: string): DoctorFin
       if (seen.has(key))
         continue
       seen.add(key)
-      const resolved = resolveRelative(file.file, imp.source, cwd)
+      const resolved = resolveRelative(file.file, imp.source, cwd, index.engine)
       if (!resolved)
         continue
       const target = relative(cwd, resolved)
@@ -715,18 +710,7 @@ type ImportFlavour = 'alias' | 'relative' | 'relative-ext'
 async function loadDoctorAdapters(cwd: string, opts: DoctorOptions): Promise<DoctorAdapter[]> {
   if (opts.noAdapters)
     return []
-  const names = opts.frameworks ?? detectFrameworks(cwd)
-  const adapters: DoctorAdapter[] = []
-  const seen = new Set<DoctorAdapter>()
-  for (const name of names) {
-    const adapter = await loadAdapter(name)
-    if (!adapter?.doctor)
-      continue
-    if (seen.has(adapter.doctor))
-      continue
-    seen.add(adapter.doctor)
-    adapters.push(adapter.doctor)
-  }
+  const adapters = opts.engine?.extensions.flatMap(extension => extension.semantic?.doctor ? [extension.semantic.doctor] : []) ?? []
   return adapters
 }
 
@@ -735,7 +719,7 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
   const checks = new Set<DoctorCheck>(opts.checks ?? ['dangling-reexport', 'stale-reexport', 'stale-import', 'duplicate-export', 'orphan-file', 'orphan-test', 'inconsistent-import-path', 'circular-dep'])
   const tree = buildDeclarationTree({ cwd, glob: opts.glob, exports: 'all' })
   const needsIndex = checks.has('dangling-reexport') || checks.has('stale-reexport') || checks.has('stale-import') || checks.has('inconsistent-import-path') || checks.has('circular-dep')
-  const index = needsIndex ? buildDoctorIndex({ cwd, glob: opts.glob }) : null
+  const index = needsIndex ? buildDoctorIndex({ cwd, engine: opts.engine, glob: opts.glob }) : null
   const adapters = await loadDoctorAdapters(cwd, opts)
   const entries = new Set((opts.entry ?? []).map(file => relative(cwd, resolve(cwd, file))))
   for (const adapter of adapters) {
@@ -752,14 +736,14 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
   if (checks.has('duplicate-export'))
     findings.push(...findDuplicateExports(tree))
   if (checks.has('orphan-file'))
-    findings.push(...findOrphanFiles(tree, cwd, entries))
+    findings.push(...findOrphanFiles(tree, cwd, entries, opts.engine))
   if (checks.has('orphan-test'))
-    findings.push(...findOrphanTests(tree, cwd))
+    findings.push(...findOrphanTests(tree, cwd, opts.engine))
   if (checks.has('inconsistent-import-path') && index)
     findings.push(...findInconsistentImportPaths(index, cwd))
   if (checks.has('circular-dep') && index)
     findings.push(...findCircularDeps(index, cwd))
-  const adapterIndex = index ?? (adapters.some(a => a.extraFindings) ? buildDoctorIndex({ cwd, glob: opts.glob }) : null)
+  const adapterIndex = index ?? (adapters.some(a => a.extraFindings) ? buildDoctorIndex({ cwd, engine: opts.engine, glob: opts.glob }) : null)
   for (const adapter of adapters)
     findings.push(...adapter.extraFindings?.(cwd, adapterIndex ? { index: adapterIndex } : undefined) ?? [])
   const ignores = buildIgnoreIndex(cwd, findings)
@@ -1104,7 +1088,7 @@ function rewriteImportSpecifier(source: string, oldSpec: string, newSpec: string
   return source.replace(re, (_m, prefix, quote) => `${prefix}${quote}${newSpec}${quote}`)
 }
 
-const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs|vue)$/
+const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
 
 function relativeSpecifier(fromRel: string, targetRel: string, keepExt: boolean): string {
   const fromDir = dirname(fromRel)

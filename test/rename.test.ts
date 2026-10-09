@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { it } from 'vitest'
 import { runRename } from '../packages/core/src/rename.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it('rename updates declaration + cross-file imports + call sites', async () => {
@@ -10,7 +11,7 @@ it('rename updates declaration + cross-file imports + call sites', async () => {
     'b.ts': 'import { oldFn } from \'./a.ts\'\nexport const r = oldFn(2)\n',
   })
   try {
-    const result = await runRename('oldFn', 'newFn', { cwd: fx.dir })
+    const result = await runRename('oldFn', 'newFn', { ...{ cwd: fx.dir }, engine: vueServices() })
     writeChanges(result.changes)
     assert.match(fx.read('a.ts'), /newFn/)
     assert.doesNotMatch(fx.read('a.ts'), /oldFn/)
@@ -27,7 +28,7 @@ it('rename does not touch unrelated same-named identifiers in property position'
     'b.ts': 'import { target } from \'./a.ts\'\nconst o = { target: 2 }\nexport const r = target() + o.target\n',
   })
   try {
-    const result = await runRename('target', 'renamed', { cwd: fx.dir })
+    const result = await runRename('target', 'renamed', { ...{ cwd: fx.dir }, engine: vueServices() })
     writeChanges(result.changes)
     const b = fx.read('b.ts')
     assert.match(b, /import \{ renamed \} from '\.\/a\.ts'/)
@@ -43,7 +44,7 @@ it('rename preserves aliased imports correctly', async () => {
     'b.ts': 'import { foo as bar } from \'./a.ts\'\nbar()\n',
   })
   try {
-    const result = await runRename('foo', 'foo2', { cwd: fx.dir })
+    const result = await runRename('foo', 'foo2', { ...{ cwd: fx.dir }, engine: vueServices() })
     writeChanges(result.changes)
     const b = fx.read('b.ts')
     assert.match(b, /import \{ foo2 as bar \} from '\.\/a\.ts'/)
@@ -60,7 +61,7 @@ it('warns when the renamed symbol is still imported by a file it did not rewrite
     'consumer.ts': 'import { oldFn } from \'my-pkg\'\nexport const r = oldFn()\n',
   })
   try {
-    const result = await runRename('oldFn', 'newFn', { cwd: fx.dir })
+    const result = await runRename('oldFn', 'newFn', { ...{ cwd: fx.dir }, engine: vueServices() })
     writeChanges(result.changes)
     assert.equal(result.warnings.length, 1, 'one stale-consumer warning')
     assert.match(result.warnings[0]!, /oldFn/)
@@ -75,7 +76,7 @@ it('emits no stale-consumer warning when every import site is rewritten', async 
     'b.ts': 'import { oldFn } from \'./a.ts\'\nexport const r = oldFn()\n',
   })
   try {
-    const result = await runRename('oldFn', 'newFn', { cwd: fx.dir })
+    const result = await runRename('oldFn', 'newFn', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.deepEqual(result.warnings, [])
   }
   finally { fx.cleanup() }
@@ -86,7 +87,7 @@ it('rename finds a local variable inside a function', async () => {
     'a.ts': 'export function count(closes: number) { const markedCloses = closes; const hits = [markedCloses]; return hits.length + closes }\n',
   })
   try {
-    const result = await runRename('hits', 'markedHits', { cwd: fx.dir, verify: true, vue: false })
+    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir, verify: true }, engine: vueServices() })
     writeChanges(result.changes)
     assert.equal(result.regressions.length, 0)
     assert.match(fx.read('a.ts'), /const markedHits = \[markedCloses\]; return markedHits.length \+ closes/)
@@ -99,8 +100,8 @@ it('rename refuses ambiguous local declarations unless all is requested', async 
     'a.ts': 'export function a() { const hits = 1; return hits }\nexport function b() { const hits = 2; return hits }\n',
   })
   try {
-    await assert.rejects(runRename('hits', 'markedHits', { cwd: fx.dir, vue: false }), /multiple declarations/)
-    const result = await runRename('hits', 'markedHits', { cwd: fx.dir, allowMultiple: true, vue: false })
+    await assert.rejects(runRename('hits', 'markedHits', { ...{ cwd: fx.dir }, engine: vueServices() }), /multiple declarations/)
+    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir, allowMultiple: true }, engine: vueServices() })
     writeChanges(result.changes)
     assert.equal(result.regressions.length, 0)
     assert.match(fx.read('a.ts'), /function a\(\) \{ const markedHits = 1; return markedHits \}/)
@@ -114,7 +115,7 @@ it('rename keeps local shadows when a top-level declaration exists', async () =>
     'a.ts': 'export const hits = 1; export function count() { const hits = 2; return hits }\nexport const value = hits\n',
   })
   try {
-    const result = await runRename('hits', 'markedHits', { cwd: fx.dir, vue: false })
+    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir }, engine: vueServices() })
     writeChanges(result.changes)
     assert.equal(result.regressions.length, 0)
     assert.match(fx.read('a.ts'), /export const markedHits = 1/)
@@ -134,7 +135,7 @@ it.each([
     [path]: source,
   })
   try {
-    const result = await runRename('hits', 'markedHits', { cwd: fx.dir, verify: true })
+    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir, verify: true }, engine: vueServices() })
     assert.equal(result.regressions.length, 0)
     assert.deepEqual(result.changes.map(change => change.rel), ['composables/a.ts'])
     writeChanges(result.changes)
@@ -149,7 +150,7 @@ it('rename all applies each edit once for repeated declarations of one local var
     'a.ts': 'export function count() { var hits = 1; var hits = 2; return hits }\n',
   })
   try {
-    const result = await runRename('hits', 'markedHits', { cwd: fx.dir, allowMultiple: true, vue: false })
+    const result = await runRename('hits', 'markedHits', { ...{ cwd: fx.dir, allowMultiple: true }, engine: vueServices() })
     writeChanges(result.changes)
     assert.equal(result.regressions.length, 0)
     assert.equal(fx.read('a.ts'), 'export function count() { var markedHits = 1; var markedHits = 2; return markedHits }\n')

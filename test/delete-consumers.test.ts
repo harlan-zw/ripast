@@ -4,6 +4,7 @@ import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
 import { runDelete, writeChanges } from '../packages/core/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([
@@ -20,7 +21,7 @@ it.each([
     'tsconfig.json': JSON.stringify({ compilerOptions: { allowJs, module: 'ESNext', moduleResolution: 'bundler', allowImportingTsExtensions: true, noEmit: true }, files: ['source.ts'] }),
   })
   try {
-    await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false }), /still has.*reference[\s\S]*consumer\./)
+    await assert.rejects(runDelete('helper', 'source.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }), /still has.*reference[\s\S]*consumer\./)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/source.ts`).href)})).helper())`], { encoding: 'utf8' })
     assert.equal(output.trim(), '42')
   }
@@ -38,7 +39,7 @@ it.each([
     'tsconfig.json': JSON.stringify({ files: ['source.ts'] }),
   })
   try {
-    const result = await runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false })
+    const result = await runDelete('helper', 'source.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `const source = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/source.ts`).href)}); const consumer = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/consumer.ts`).href)}); console.log(JSON.stringify([source.helper, source.other, consumer.result]))`], { encoding: 'utf8' })
     assert.equal(output.trim(), '[null,3,7]')

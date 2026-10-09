@@ -1,6 +1,7 @@
 import { runCssClassRename, runCssClassScan } from '@ripast/core'
 import { parse } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('arbitrary class values', () => {
@@ -8,8 +9,8 @@ describe('arbitrary class values', () => {
     const token = 'content-[\']\']'
     const fx = makeFixture({ 'Page.vue': `<template><div class="before:${token}" /></template>` }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([{ token, count: 1, files: ['Page.vue'] }])
-      const result = await runCssClassRename(new Map([[token, 'new-token']]), { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([{ token, count: 1, files: ['Page.vue'] }])
+      const result = await runCssClassRename(new Map([[token, 'new-token']]), { ...{ cwd: fx.dir }, engine: vueServices() })
       const { descriptor, errors } = parse(result.changes[0].after)
       expect(errors).toEqual([])
       const element = descriptor.template!.ast!.children[0] as any
@@ -28,8 +29,8 @@ describe('arbitrary class values', () => {
   ])('scans the complete value and agrees with rename for %s', async (token) => {
     const fx = makeFixture({ 'classes.js': `export const cls = String.raw\`hover:${token} flex\`` }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir, pattern: [token] })).toEqual([{ token, count: 1, files: ['classes.js'] }])
-      const result = await runCssClassRename(new Map([[token, 'new-token']]), { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir, pattern: [token] }, engine: vueServices() })).toEqual([{ token, count: 1, files: ['classes.js'] }])
+      const result = await runCssClassRename(new Map([[token, 'new-token']]), { ...{ cwd: fx.dir }, engine: vueServices() })
       const output = await import(`data:text/javascript,${encodeURIComponent(result.changes[0].after)}`)
       expect(output.cls).toBe('hover:new-token flex')
     }
@@ -39,7 +40,7 @@ describe('arbitrary class values', () => {
   it.each(['content-[broken', 'content-[\'broken]', 'content-[x]]', 'content-[x]junk'])('rejects malformed values: %s', (token) => {
     const fx = makeFixture({ 'classes.js': `export const cls = ${JSON.stringify(token)}` }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([])
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([])
     }
     finally { fx.cleanup() }
   })

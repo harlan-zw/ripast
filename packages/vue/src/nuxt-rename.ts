@@ -1,13 +1,14 @@
 import type { AutoImportRenamePlan, FrameworkAdapter, TextEdit } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { applyTextEdits, rgFiles } from '@ripast/core/adapter'
+import { applyTextEdits } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
 import { compileScript, compileTemplate, parse, registerTS } from '@vue/compiler-sfc'
 import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { inspectScript, inspectSetup } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath } from './nuxt-paths.ts'
 import { nuxtRenameVerificationChanges } from './nuxt-rename-verification.ts'
+import { rgVueFiles } from './source.ts'
 
 interface Reference {
   name: string
@@ -25,7 +26,7 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
   const providers = new Set(sites.map(site => site.filePath))
   const bindings = new Map<string, ReturnType<typeof loadNuxtBindingNames>[]>()
   let runtimeBinding: boolean | undefined
-  for (const path of rgFiles('', { cwd, listAll: true })) {
+  for (const path of rgVueFiles('', { cwd, listAll: true })) {
     if (providers.has(path) || isGeneratedNuxtPath(cwd, path))
       continue
     const before = readFileSync(path, 'utf8')

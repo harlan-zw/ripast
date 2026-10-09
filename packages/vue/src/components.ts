@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { hyphenateVueName, rgFiles } from '@ripast/core/adapter'
 import { loadNuxtPathAliases } from './nuxt-paths.ts'
+import { rgVueFiles } from './source.ts'
+import { hyphenateVueName } from './vue-template.ts'
 
 export type ComponentKind = 'sfc' | 'define-component'
 
@@ -237,7 +238,7 @@ function filesystemOnly(cwd: string, glob: string[]): VueComponent[] {
 }
 
 function discoverVueFiles(cwd: string, glob: string[]): string[] {
-  return rgFiles('', { cwd, glob, listAll: true }).filter(f => f.endsWith('.vue'))
+  return rgVueFiles('', { cwd, glob, listAll: true }).filter(f => f.endsWith('.vue'))
 }
 
 function isUnderComponentsDir(cwd: string, file: string): boolean {

@@ -2,11 +2,11 @@ import type { FileChange, ScanFn } from '@ripast/core/adapter'
 import type { PathAlias } from './nuxt-paths.ts'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { rgFiles } from '@ripast/core/adapter'
 import { parse } from '@vue/compiler-sfc'
 import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
+import { rgVueFiles } from './source.ts'
 
 export interface ExplicitImportContext {
   cwd: string
@@ -28,7 +28,7 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
   const out: FileChange[] = []
   const byContext = new Map<string, Map<string, string>>()
   const aliasesByContext = new Map<string, PathAlias[]>()
-  for (const filePath of rgFiles('', { cwd, listAll: true })) {
+  for (const filePath of rgVueFiles('', { cwd, listAll: true })) {
     if (isGeneratedNuxtPath(cwd, filePath))
       continue
     if (filePath === fromAbs || filePath === toAbs)

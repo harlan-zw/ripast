@@ -211,12 +211,12 @@ importers:
 
   packages/core:
     dependencies:
-      '@vue/compiler-sfc':
-        specifier: ^3.5.43
-        version: 3.5.43
       diff:
         specifier: ^9.0.0
         version: 9.0.0
+      hookable:
+        specifier: ^6.1.2
+        version: 6.1.2
       html-entities:
         specifier: ^2.6.0
         version: 2.6.0
@@ -262,6 +262,15 @@ importers:
       '@vue/language-service':
         specifier: ^3.3.12
         version: 3.3.12(@typescript/typescript6@6.0.2)
+      html-entities:
+        specifier: ^2.6.0
+        version: 2.6.0
+      oxc-parser:
+        specifier: ^0.153.0
+        version: 0.153.0
+      oxc-walker:
+        specifier: ^1.1.1
+        version: 1.1.1(oxc-parser@0.153.0)(rolldown@1.2.12)
       picomatch:
         specifier: ^4.0.7
         version: 4.0.7
@@ -2581,6 +2590,9 @@ packages:
   hasown@2.0.3:
     resolution: {integrity: sha512-ej4AhfhfL2Q2zpMmLo7U1Uv9+PyhIZpgQLGT1F9miIGmiCJIoCgSmczFdrc97mWT4kVY72KA+WnnhJ5pghSvSg==}
     engines: {node: '>= 0.4'}
+
+  hookable@6.1.2:
+    resolution: {integrity: sha512-+abwxtiEA52GCVIsQqut3S/uKTbUwYIp4Pe/vv+6py5XiXBCqMZHg6pA6Y5qhgLSEys0/cYuPbO0z1QFj5ZCmg==}
 
   hookified@1.15.1:
     resolution: {integrity: sha512-MvG/clsADq1GPM2KGo2nyfaWVyn9naPiXrqIe4jYjXNZQt238kWyOGrsyc/DmRAQ+Re6yeo6yX/yoNCG5KAEVg==}
@@ -5664,6 +5676,8 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  hookable@6.1.2: {}
+
   hookified@1.15.1: {}
 
   hookified@2.2.0: {}
@@ -6315,6 +6329,11 @@ snapshots:
       '@oxc-project/types': 0.148.0
       oxc-parser: 0.153.0
       rolldown: 1.0.0
+
+  oxc-walker@1.1.1(oxc-parser@0.153.0)(rolldown@1.2.12):
+    optionalDependencies:
+      oxc-parser: 0.153.0
+      rolldown: 1.2.12
 
   p-event@6.0.1:
     dependencies:

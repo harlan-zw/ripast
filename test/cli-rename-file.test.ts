@@ -5,17 +5,17 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { runRenameFile } from '@ripast/core'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it.skipIf(process.platform === 'win32')('rename-file SDK refuses a dangling target symlink', async () => {
   const fixture = makeFixture({ 'source.ts': 'export const value = 42\n' })
   try {
     symlinkSync('missing.ts', resolve(fixture.dir, 'target.ts'))
-    await assert.rejects(runRenameFile('source.ts', 'target.ts', {
+    await assert.rejects(runRenameFile('source.ts', 'target.ts', { ...{
       cwd: fixture.dir,
-      vue: false,
       verify: false,
-    }), /target "target\.ts" already exists/)
+    }, engine: vueServices() }), /target "target\.ts" already exists/)
     assert.equal(readlinkSync(resolve(fixture.dir, 'target.ts')), 'missing.ts')
     assert.equal(fixture.read('source.ts'), 'export const value = 42\n')
   }

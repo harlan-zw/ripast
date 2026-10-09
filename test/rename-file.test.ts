@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { describe, it } from 'vitest'
 import { runRenameFile } from '../packages/core/src/rename-file.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 
 const VUE_TSCONFIG = JSON.stringify({
   compilerOptions: {
@@ -43,7 +44,7 @@ describe('rename-file', () => {
       'src/Comp.vue': `<script setup lang="ts">\nimport { helper } from './utils.ts'\nconst v = helper()\n</script>\n<template>{{ v }}</template>\n`,
     })
     try {
-      const r = await runRenameFile('src/utils.ts', 'src/lib/helpers.ts', { cwd: fx.dir })
+      const r = await runRenameFile('src/utils.ts', 'src/lib/helpers.ts', { ...{ cwd: fx.dir }, engine: vueServices() })
       writeChanges(r.changes)
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
       renameSync(r.fileMove.from, r.fileMove.to)
@@ -64,7 +65,7 @@ describe('rename-file', () => {
       'src/main.ts': 'import { foo } from \'./utils.ts\'\nexport const r = foo()\n',
     })
     try {
-      const r = await runRenameFile('src/utils.ts', 'src/lib/helpers', { cwd: fx.dir })
+      const r = await runRenameFile('src/utils.ts', 'src/lib/helpers', { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.match(r.fileMove.to, /helpers\.ts$/, 'inferred .ts extension')
       writeChanges(r.changes)
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
@@ -83,7 +84,7 @@ describe('rename-file', () => {
     })
     try {
       await assert.rejects(
-        async () => runRenameFile('src/a.ts', 'src/b.ts', { cwd: fx.dir }),
+        async () => runRenameFile('src/a.ts', 'src/b.ts', { ...{ cwd: fx.dir }, engine: vueServices() }),
         /target "src\/b\.ts" already exists/,
       )
     }
@@ -96,7 +97,7 @@ describe('rename-file', () => {
     })
     try {
       await assert.rejects(
-        async () => runRenameFile('src/missing.ts', 'src/b.ts', { cwd: fx.dir }),
+        async () => runRenameFile('src/missing.ts', 'src/b.ts', { ...{ cwd: fx.dir }, engine: vueServices() }),
         /source "src\/missing\.ts" does not exist/,
       )
     }
@@ -109,7 +110,7 @@ describe('rename-file', () => {
       'src/main.ts': 'import { ONE } from \'./util.ts\'\nexport const r: number = ONE\n',
     })
     try {
-      const r = await runRenameFile('src/util.ts', 'src/lib/util.ts', { cwd: fx.dir })
+      const r = await runRenameFile('src/util.ts', 'src/lib/util.ts', { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.deepEqual(r.regressions, [], 'no regressions on a clean rename')
     }
     finally { fx.cleanup() }
@@ -122,13 +123,13 @@ describe('rename-file', () => {
       'src/main.ts': 'import { ONE } from \'./util.ts\'\nexport const r = ONE\n',
     })
     try {
-      const r = await runRenameFile('src/util.ts', 'src/lib/util.ts', {
+      const r = await runRenameFile('src/util.ts', 'src/lib/util.ts', { ...{
         cwd: fx.dir,
         // override the adapter via the public API isn't trivial — instead, simulate the broken
         // self-rewrite by writing a deliberately wrong selfChange via a fake adapter would require deeper mocking.
         // This test exercises the verify path by simulating a pathological rename: we expect verify to be CLEAN
         // because fix #1 ensures self-imports are rewritten correctly. Sanity check the happy path.
-      })
+      }, engine: vueServices() })
       assert.deepEqual(r.regressions, [], 'happy path stays clean once self-imports are rewritten')
       assert.ok(r.selfChange, 'selfChange present, proving fix #1 rewrites the moved file\'s imports')
     }
@@ -141,7 +142,7 @@ describe('rename-file', () => {
       'src/main.ts': 'import { ONE } from \'./util.ts\'\nexport const r = ONE\n',
     })
     try {
-      const r = await runRenameFile('src/util.ts', 'src/lib/util.ts', { cwd: fx.dir, verify: false })
+      const r = await runRenameFile('src/util.ts', 'src/lib/util.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
       assert.deepEqual(r.regressions, [], 'no regressions returned in verify-off mode')
     }
     finally { fx.cleanup() }
@@ -154,7 +155,7 @@ describe('rename-file', () => {
       'src/main.ts': 'import { useFoo } from \'./composables/useFoo.ts\'\nexport const r = useFoo()\n',
     })
     try {
-      const r = await runRenameFile('src/composables/useFoo.ts', 'src/internal/composables/useFoo.ts', { cwd: fx.dir })
+      const r = await runRenameFile('src/composables/useFoo.ts', 'src/internal/composables/useFoo.ts', { ...{ cwd: fx.dir }, engine: vueServices() })
       assert.ok(r.selfChange, 'selfChange present for depth change')
       writeChanges(r.changes)
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
@@ -204,7 +205,7 @@ describe('rename-file', () => {
     write('apps/site/server/foo.ts', 'import { logger } from \'~/shared/server/logger\'\nexport const r = logger.warn(\'x\')\n')
     write('apps/pro/server/foo.ts', 'import { logger } from \'~/shared/server/logger\'\nexport const r = logger.warn(\'x\')\n')
     try {
-      const r = await runRenameFile('shared/server/logger.ts', 'layers/core/server/utils/logger.ts', { cwd: dir, verify: false })
+      const r = await runRenameFile('shared/server/logger.ts', 'layers/core/server/utils/logger.ts', { ...{ cwd: dir, verify: false }, engine: vueServices() })
       writeChanges(r.changes)
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
       renameSync(r.fileMove.from, r.fileMove.to)
@@ -233,7 +234,7 @@ describe('rename-file', () => {
 `,
     })
     try {
-      const r = await runRenameFile('components/Button.vue', 'components/BaseButton.vue', { cwd: fx.dir, verify: 'none' })
+      const r = await runRenameFile('components/Button.vue', 'components/BaseButton.vue', { ...{ cwd: fx.dir, verify: 'none' }, engine: vueServices() })
       writeChanges(r.changes)
       renameSync(r.fileMove.from, r.fileMove.to)
 

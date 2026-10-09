@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import process from 'node:process'
 import { it, vi } from 'vitest'
 import { runMove, runRename, writeChanges } from '../packages/core/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it('preserves executable permissions when applying a change', () => {
@@ -93,7 +94,7 @@ it('preserves destructured siblings when moving another variable from their stat
     'main.ts': 'import { moved, kept } from "./source.ts"\nconsole.log(moved + kept)\n',
   })
   try {
-    const result = await runMove('moved', 'source.ts', 'target.ts', { cwd: fx.dir, vue: false, verify: false })
+    const result = await runMove('moved', 'source.ts', 'target.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
     writeChanges(result.changes)
     assert.equal(execFileSync(process.execPath, [join(fx.dir, 'main.ts')], { encoding: 'utf8' }).trim(), '3')
   }
@@ -103,7 +104,7 @@ it('preserves destructured siblings when moving another variable from their stat
 it('rejects moving an export into its own file', async () => {
   const fx = makeFixture({ 'source.ts': 'export const moved = 1\n' })
   try {
-    await assert.rejects(runMove('moved', 'source.ts', './source.ts', { cwd: fx.dir, vue: false, verify: false }))
+    await assert.rejects(runMove('moved', 'source.ts', './source.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }))
     assert.equal(fx.read('source.ts'), 'export const moved = 1\n')
   }
   finally { fx.cleanup() }
@@ -115,7 +116,7 @@ it('renames dollar-prefixed bindings and their shorthand properties', async () =
     'main.ts': 'import { $old } from "./source.ts"\nconsole.log(JSON.stringify({ $old }))\n',
   })
   try {
-    writeChanges((await runRename('$old', '$new', { cwd: fx.dir, vue: false, verify: false })).changes)
+    writeChanges((await runRename('$old', '$new', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
     assert.equal(execFileSync(process.execPath, [join(fx.dir, 'main.ts')], { encoding: 'utf8' }).trim(), '{"$new":3}')
   }
   finally { fx.cleanup() }
@@ -128,7 +129,7 @@ it('preserves named re-export aliases when moving their declaration', async () =
     'main.ts': 'import { publicName, kept } from "./barrel.ts"\nconsole.log(publicName + kept)\n',
   })
   try {
-    writeChanges((await runMove('moved', 'source.ts', 'target.ts', { cwd: fx.dir, vue: false, verify: false })).changes)
+    writeChanges((await runMove('moved', 'source.ts', 'target.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
     assert.equal(execFileSync(process.execPath, [join(fx.dir, 'main.ts')], { encoding: 'utf8' }).trim(), '3')
   }
   finally { fx.cleanup() }
@@ -140,7 +141,7 @@ it.each(['old', '$old'])('reports multiline stale imports of %s', async (name) =
     'consumer.ts': `import {\n  ${name},\n} from "unresolved-package"\nconsole.log(${name})\n`,
   })
   try {
-    const result = await runRename(name, 'updated', { cwd: fx.dir, vue: false, verify: false })
+    const result = await runRename(name, 'updated', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
     assert.equal(result.warnings.length, 1)
     assert.match(result.warnings[0], /consumer\.ts/)
   }
@@ -152,7 +153,7 @@ it.each(['target.ts', 'lib/target.ts'])('verifies a new %s file when its parent 
   const consumer = 'import { value } from "./source.ts"; export const result = value\n'
   const fx = makeFixture({ 'source.ts': source, 'consumer.ts': consumer, 'lib/keep.ts': 'export {}\n' })
   try {
-    const result = await runMove('value', 'source.ts', target, { cwd: fx.dir, vue: false })
+    const result = await runMove('value', 'source.ts', target, { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     assert.equal(existsSync(join(fx.dir, target)), false)
     assert.equal(fx.read('source.ts'), source)

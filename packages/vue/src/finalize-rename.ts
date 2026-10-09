@@ -1,14 +1,12 @@
 import type { FileChange } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { basename, relative } from 'node:path'
-import {
-  hyphenateVueName,
-  isInsideAutoImportScope,
-  rgFiles,
-  scan,
-} from '@ripast/core/adapter'
+import { scan } from '@ripast/core/adapter'
 import { addNuxtExplicitImports, extractTopLevelExportNames } from './nuxt-imports.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
+import { isInsideAutoImportScope } from './nuxt.ts'
+import { rgVueFiles } from './source.ts'
+import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
 const TS_LIKE_RE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
 
@@ -19,7 +17,7 @@ export async function finalizeVueFileRename(
   existingChanges: FileChange[],
   autoImportScopes: Set<string>,
 ): Promise<{ changes: FileChange[], warnings: string[] }> {
-  const changes: FileChange[] = []
+  const changes: FileChange[] = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, existingChanges)
   const warnings: string[] = []
 
   if (oldAbs.endsWith('.vue') && newAbs.endsWith('.vue')) {
@@ -110,7 +108,7 @@ function rewriteResolveComponentSites(
   newAbs: string,
   warnings: string[],
 ): FileChange[] {
-  const candidates = new Set(rgFiles('resolveComponent', { cwd }))
+  const candidates = new Set(rgVueFiles('resolveComponent', { cwd }))
   if (!candidates.size)
     return []
   const byPath = new Map(changes.map(change => [change.path, change]))
@@ -156,7 +154,7 @@ function addExplicitComponentImports(
   const tokens = new Set([oldName, newName, hyphenateVueName(oldName), hyphenateVueName(newName)])
   const candidates = new Set<string>()
   for (const token of tokens) {
-    for (const path of rgFiles(token, { cwd, glob: '*.vue' }))
+    for (const path of rgVueFiles(token, { cwd, glob: '*.vue' }))
       candidates.add(path)
   }
   if (!candidates.size)
@@ -199,8 +197,8 @@ function rewriteIsAttributeSites(
   const oldKebab = hyphenateVueName(oldName)
   const newKebab = hyphenateVueName(newName)
   const candidates = new Set([
-    ...rgFiles(oldName, { cwd, glob: '*.vue' }),
-    ...rgFiles(oldKebab, { cwd, glob: '*.vue' }),
+    ...rgVueFiles(oldName, { cwd, glob: '*.vue' }),
+    ...rgVueFiles(oldKebab, { cwd, glob: '*.vue' }),
   ])
   if (!candidates.size)
     return []
@@ -265,4 +263,33 @@ function insertVueComponentImport(source: string, name: string, specifier: strin
   if (source.slice(insertAt, insertAt + 1) === '\n')
     return `${source.slice(0, insertAt)}${importLine}${source.slice(insertAt)}`
   return `${source.slice(0, insertAt)}${importLine}\n${source.slice(insertAt)}`
+}
+
+function applyComponentTemplateRenameFallback(cwd: string, oldAbs: string, newAbs: string, changes: FileChange[]): FileChange[] {
+  if (!oldAbs.endsWith('.vue') || !newAbs.endsWith('.vue'))
+    return []
+  const oldName = basename(oldAbs, '.vue')
+  const newName = basename(newAbs, '.vue')
+  if (oldName === newName)
+    return []
+  const byPath = new Map(changes.map(change => [change.path, change]))
+  const candidates = new Set([
+    ...rgVueFiles(oldName, { cwd, glob: '*.vue' }),
+    ...rgVueFiles(hyphenateVueName(oldName), { cwd, glob: '*.vue' }),
+  ])
+  const out: FileChange[] = []
+  for (const path of candidates) {
+    const before = byPath.get(path)?.before ?? readFileSync(path, 'utf8')
+    const baseAfter = byPath.get(path)?.after ?? before
+    const after = rewriteTemplateReferences(baseAfter, oldName, newName)
+    if (after === baseAfter)
+      continue
+    out.push({
+      path,
+      rel: relative(cwd, path),
+      before,
+      after,
+    })
+  }
+  return out
 }

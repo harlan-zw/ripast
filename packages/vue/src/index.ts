@@ -1,7 +1,8 @@
-import type { FileChange, FrameworkAdapter } from '@ripast/core/adapter'
+import type { Extension } from '@ripast/core'
+import type { FileChange, FrameworkAdapter, scan } from '@ripast/core/adapter'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { extractTemplateExpressions, rgFiles, scan } from '@ripast/core/adapter'
+import { createEngine } from '@ripast/core'
 import ts from '@typescript/typescript6'
 import {
   applyVueFileRenameEdits,
@@ -13,6 +14,7 @@ import {
 import { parseComponent, parseComponentSource } from './component-parse.ts'
 import { findComponentUsage, findComponentUsages } from './component-usages.ts'
 import { listComponents } from './components.ts'
+import { rewriteVueCssClassTokens, visitVueCssClassTokens } from './css-class-source.ts'
 import { doctor } from './doctor.ts'
 import { finalizeVueFileRename } from './finalize-rename.ts'
 import { loadNuxtProviderPaths, nuxtConsumerContext } from './nuxt-bindings.ts'
@@ -21,6 +23,8 @@ import { inspectNuxtAutoImportConsumers, validateNuxtAutoImportRename } from './
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
 import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, loadNuxtPathAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
 import { planNuxtAutoImportRename } from './nuxt-rename.ts'
+import { inspectAuthoredSource, parseAuthoredSource, rgVueFiles } from './source.ts'
+import { extractTemplateExpressions } from './vue-template.ts'
 
 export { parseComponent, parseComponentSource } from './component-parse.ts'
 export type { ParsedComponentShape, PropSig } from './component-parse.ts'
@@ -35,7 +39,6 @@ const adapter: FrameworkAdapter = {
   applyRename: applyVueRename,
   applyImportRewrite: applyVueImportRewrite,
   regressions: vueRegressions,
-  extractTemplateExpressions,
   async applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs) {
     const changes = await applyVueFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
     return rewriteUnportableAliasSpecifiers(cwd, changes, newAbs)
@@ -57,7 +60,7 @@ const adapter: FrameworkAdapter = {
     const consistent = aliases.filter(alias => aliases.every(other => other.pattern !== alias.pattern || JSON.stringify(other.targets) === JSON.stringify(alias.targets)))
     return aliasResolvesToTarget(consistent, specifier, target)
   },
-  addExplicitImports: ctx => addNuxtExplicitImports({ ...ctx, scan }),
+  addExplicitImports: ctx => addNuxtExplicitImports({ ...ctx, scan: scanWithVue }),
   async finalizeFileRename(cwd, oldAbs, newAbs, existingChanges) {
     const scopes = isNuxtProject(cwd) ? nuxtAutoImportScopes(cwd) : new Set<string>()
     return finalizeVueFileRename(cwd, oldAbs, newAbs, existingChanges, scopes)
@@ -71,7 +74,32 @@ void parseComponent
 void parseComponentSource
 void findComponentUsage
 
-export default adapter
+export function createVueExtension(): Extension {
+  return {
+    css: { visit: visitVueCssClassTokens, rewrite: rewriteVueCssClassTokens },
+    configPaths: ['.nuxt/tsconfig.json', '.nuxt/tsconfig.app.json', '.nuxt/tsconfig.server.json', '.nuxt/tsconfig.shared.json', '.nuxt/tsconfig.node.json'],
+    name: 'vue',
+    suffixes: ['.vue'],
+    parse: parseAuthoredSource,
+    inspect: inspectAuthoredSource,
+    expressions: extractTemplateExpressions,
+    semantic: { ...adapter },
+    operations: ['rename', 'move', 'delete', 'renameFile', 'replace'],
+    supports(request, cwd) {
+      return request.operation !== 'replace' || !scanWithVue(request.from, { cwd, glob: '*.vue' }).length
+    },
+  }
+}
+
+function scanWithVue(pattern: string, opts: Parameters<typeof scan>[1] = {}) {
+  return createEngine({ extensions: [createVueExtension()] }).scan(pattern, opts)
+}
+
+export { isInsideAutoImportScope } from './nuxt.ts'
+export { runVueTemplateUnwrap, runVueTemplateWrap } from './vue-template-wrap.ts'
+export type { VueTemplateWrapOptions, VueTemplateWrapResult } from './vue-template-wrap.ts'
+export { extractTemplateExpressions, hyphenateVueName, parseVueTemplateAst, rewriteTemplateReferences } from './vue-template.ts'
+export default createVueExtension
 
 const DEFAULT_NUXT_AUTO_IMPORT_DIRS = [
   'composables',
@@ -101,7 +129,7 @@ function isNuxtProject(cwd: string): boolean {
 
 function nuxtAutoImportScopes(cwd: string): Set<string> {
   const scopes = new Set<string>()
-  const contexts = new Set([cwd, ...rgFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
+  const contexts = new Set([cwd, ...rgVueFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
   for (const context of contexts) {
     const configPath = ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mjs', 'nuxt.config.mts']
       .map(name => join(context, name))

@@ -1,18 +1,19 @@
 import type { RenameMap } from './css-class-token.ts'
+import type { EngineServices } from './engine.ts'
 import { readFileSync } from 'node:fs'
 import process from 'node:process'
-import { parse as parseSfc } from '@vue/compiler-sfc'
 import { decode } from 'html-entities'
-import { parseSync } from 'oxc-parser'
 import { completeClassBounds, rewriteClassString, visitClassTokens } from './css-class-token.ts'
 import { applyTextEdits, parseFile, rgFiles, rgFilesMany } from './util.ts'
 
 export interface CssClassSourceOptions {
+  engine?: EngineServices
   cwd?: string
   glob?: string | string[]
 }
 
 export interface CssClassSourceFile {
+  engine?: EngineServices
   abs: string
   rel: string
   source: string
@@ -22,28 +23,31 @@ export interface CssClassSourceFile {
 const CSS_EXTS = ['.css', '.scss', '.sass', '.less', '.postcss', '.pcss']
 const CODE_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 
-function defaultCssClassGlobs(): string[] {
-  return [...CODE_EXTS, '.vue', ...CSS_EXTS].map(e => `*${e}`)
+function defaultCssClassGlobs(engine?: EngineServices): string[] {
+  return [...CODE_EXTS, ...engine?.suffixes ?? [], ...CSS_EXTS].map(e => `*${e}`)
 }
 
 export function readCssClassSourceFiles(opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
   const cwd = opts.cwd ?? process.cwd()
-  const glob = opts.glob ?? defaultCssClassGlobs()
-  return readSourceFiles(rgFiles('', { cwd, glob, fixedStrings: false, listAll: true }), cwd)
+  const glob = opts.glob ?? defaultCssClassGlobs(opts.engine)
+  return readSourceFiles(rgFiles('', { cwd, glob, fixedStrings: false, listAll: true }), cwd, opts.engine)
 }
 
 export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
   if (!map.size)
     return []
   const cwd = opts.cwd ?? process.cwd()
-  const glob = opts.glob ?? defaultCssClassGlobs()
+  const glob = opts.glob ?? defaultCssClassGlobs(opts.engine)
   // Escapes and static expressions can split a class key across source text.
-  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&', '+', '`'], { cwd, glob }), cwd)
+  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&', '+', '`'], { cwd, glob }), cwd, opts.engine)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {
-  if (isVue(file.abs)) {
-    visitVue(file, text => visitClassTokens(text, visit))
+  if (file.engine?.owns(file.abs)) {
+    const extension = file.engine.extensions.find(extension => extension.suffixes.some(suffix => file.abs.endsWith(suffix)))!
+    if (!extension.css)
+      throw new Error(`Extension ${extension.name} cannot scan CSS classes`)
+    extension.css.visit(file, visit)
   }
   else if (isCss(file.abs)) {
     visitCss(file.source, visit, cssSyntax(file.abs))
@@ -54,22 +58,22 @@ export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare
 }
 
 export function rewriteCssClassTokensInFile(file: CssClassSourceFile, map: RenameMap): string {
-  if (isVue(file.abs))
-    return rewriteVue(file, map)
+  if (file.engine?.owns(file.abs))
+    return file.engine.extensions.find(extension => extension.suffixes.some(suffix => file.abs.endsWith(suffix)))!.css?.rewrite(file, map) ?? (() => { throw new Error('Extension cannot rename CSS classes') })()
   if (isCss(file.abs))
     return rewriteCss(file.source, map, cssSyntax(file.abs))
   return rewriteScript(file, map)
 }
 
-function readSourceFiles(files: string[], cwd: string): CssClassSourceFile[] {
+function readSourceFiles(files: string[], cwd: string, engine?: EngineServices): CssClassSourceFile[] {
   const out: CssClassSourceFile[] = []
   for (const abs of files) {
-    if (!isCssClassSourcePath(abs))
+    if (!isCssClassSourcePath(abs, engine))
       continue
     const source = safeRead(abs)
     if (source == null)
       continue
-    out.push({ abs, rel: abs.slice(cwd.length + 1), source, cwd })
+    out.push({ abs, rel: abs.slice(cwd.length + 1), source, cwd, engine })
   }
   return out
 }
@@ -87,12 +91,8 @@ function isCss(path: string): boolean {
   return CSS_EXTS.some(ext => path.endsWith(ext))
 }
 
-function isVue(path: string): boolean {
-  return path.endsWith('.vue')
-}
-
-function isCssClassSourcePath(path: string): boolean {
-  return isVue(path) || isCss(path) || CODE_EXTS.some(ext => path.endsWith(ext))
+function isCssClassSourcePath(path: string, engine?: EngineServices): boolean {
+  return engine?.owns(path) || isCss(path) || CODE_EXTS.some(ext => path.endsWith(ext))
 }
 
 function visitScript(file: CssClassSourceFile, visit: (text: string) => void): void {
@@ -113,7 +113,7 @@ function classText(value: string): { value: string, bounds: { start: number, end
   return { value, bounds: { start: 0, end: value.length } }
 }
 
-function visitProgramClassStrings(program: any, visit: (text: string) => void): void {
+export function visitProgramClassStrings(program: any, visit: (text: string) => void): void {
   visitProgramClassStringSites(program, (site) => {
     visit(site.value.slice(site.bounds.start, site.bounds.end))
   })
@@ -121,14 +121,6 @@ function visitProgramClassStrings(program: any, visit: (text: string) => void): 
 
 function visitProgramClassStringSites(program: any, visit: (site: ScriptStringSite) => void): void {
   walkProgram(program, false, false, visit)
-}
-
-function visitVue(file: CssClassSourceFile, visit: (text: string) => void): void {
-  const parsed = parseFile(file.abs, file.cwd)
-  if (parsed.program)
-    visitProgramClassStrings(parsed.program, visit)
-  visitVueTemplateClassAttrs(file.source, visit)
-  visitVueStyleBlocks(file.source, (body, lang) => visitCss(body, text => visitClassTokens(text, visit), cssSyntax(lang)))
 }
 
 const CLASS_CALLEE_RE = /^(?:cva|cn|clsx|classNames|classnames|twJoin|twMerge)$/
@@ -373,63 +365,17 @@ function nodeName(node: any): string | null {
   return null
 }
 
-const CLASS_EXPRESSION_PREFIX = 'cn('
-
-function parseClassExpression(expression: string): { source: string, program: any | null } {
-  const source = `${CLASS_EXPRESSION_PREFIX}${expression})`
-  const { program, errors } = parseSync('ripast-class-expression.ts', source)
-  return { source, program: errors.length ? null : program }
-}
-
-function visitVueClassAttributes(source: string, visit: (value: string, start: number, end: number, dynamic: boolean) => void): void {
-  const ast = parseSfc(source).descriptor.template?.ast
-  function walk(node: any): void {
-    for (const prop of node.props ?? []) {
-      if (prop.type === 6 && prop.name === 'class' && prop.value) {
-        const { start, end, source: raw } = prop.value.loc
-        const quoted = raw.startsWith('"') || raw.startsWith('\'')
-        visit(prop.value.content, start.offset + Number(quoted), end.offset - Number(quoted), false)
-      }
-      else if (prop.type === 7 && prop.name === 'bind' && prop.arg?.isStatic && prop.arg.content === 'class' && prop.exp) {
-        const { start, end } = prop.exp.loc
-        visit(prop.exp.content, start.offset, end.offset, true)
-      }
-    }
-    for (const child of node.children ?? []) walk(child)
-  }
-  if (ast)
-    walk(ast)
-}
-
-function visitVueTemplateClassAttrs(source: string, visit: (text: string) => void): void {
-  visitVueClassAttributes(source, (value, _start, _end, dynamic) => {
-    if (!dynamic) {
-      visit(value)
-    }
-    else {
-      const { program } = parseClassExpression(value)
-      if (program)
-        visitProgramClassStrings(program, visit)
-    }
-  })
-}
-
-function visitVueStyleBlocks(source: string, visit: (body: string, lang: string) => void): void {
-  for (const style of parseSfc(source).descriptor.styles)
-    visit(style.content, style.lang ?? 'css')
-}
-
 interface CssSyntax {
   lineComments: boolean
   indented: boolean
 }
 
-function cssSyntax(path: string): CssSyntax {
+export function cssSyntax(path: string): CssSyntax {
   const lang = path.split('.').at(-1)
   return { lineComments: lang === 'scss' || lang === 'sass' || lang === 'less', indented: lang === 'sass' }
 }
 
-function visitCss(source: string, onToken: (bare: string) => void, syntax: CssSyntax): void {
+export function visitCss(source: string, onToken: (bare: string) => void, syntax: CssSyntax): void {
   visitCssApplyRanges(source, syntax, (start, end) => visitClassTokens(source.slice(start, end), onToken))
 }
 
@@ -529,7 +475,7 @@ function cssImportantEnd(source: string, start: number, syntax: CssSyntax): numb
   return undefined
 }
 
-function mapIncludesAny(input: string, map: RenameMap): boolean {
+export function mapIncludesAny(input: string, map: RenameMap): boolean {
   for (const key of map.keys()) {
     if (input.includes(key))
       return true
@@ -544,7 +490,7 @@ function rewriteScript(file: CssClassSourceFile, map: RenameMap): string {
   return rewriteStringsInProgram(file.source, parsed.program, map, 0)
 }
 
-function rewriteStringsInProgram(source: string, program: any, map: RenameMap, offset: number): string {
+export function rewriteStringsInProgram(source: string, program: any, map: RenameMap, offset: number): string {
   const edits: { start: number, end: number, replacement: string }[] = []
   visitProgramClassStringSites(program, (site) => {
     const { node } = site
@@ -595,39 +541,7 @@ function templateContentRange(source: string, node: any, offset: number): { star
   return null
 }
 
-function rewriteVue(file: CssClassSourceFile, map: RenameMap): string {
-  let out = file.source
-  const parsed = parseFile(file.abs, file.cwd)
-  if (parsed.program)
-    out = rewriteScriptWithin(out, parsed.scriptStart, parsed.scriptEnd, parsed.scriptSource, parsed.program, map)
-  out = rewriteVueTemplateClassAttrs(out, map)
-  out = rewriteVueStyleBlocks(out, map)
-  return out
-}
-
-function rewriteScriptWithin(full: string, start: number, end: number, scriptSource: string, program: any, map: RenameMap): string {
-  const rewritten = rewriteStringsInProgram(scriptSource, program, map, 0)
-  if (rewritten === scriptSource)
-    return full
-  return full.slice(0, start) + rewritten + full.slice(end)
-}
-
-function rewriteVueTemplateClassAttrs(source: string, map: RenameMap): string {
-  const edits: { start: number, end: number, replacement: string }[] = []
-  visitVueClassAttributes(source, (value, start, end, dynamic) => {
-    if (!dynamic && !mapIncludesAny(value, map))
-      return
-    const replacement = dynamic ? rewriteDynamicClassExpr(value, map) : rewriteClassString(value, map)
-    if (replacement !== value) {
-      const quote = source[start - 1]
-      const encoded = encodeAttributeValue(replacement, dynamic ? quote : undefined)
-      edits.push({ start, end, replacement: !dynamic && quote !== '"' && quote !== '\'' ? `"${encoded}"` : encoded })
-    }
-  })
-  return applyTextEdits(source, edits)
-}
-
-function encodeAttributeValue(value: string, quote?: string): string {
+export function encodeAttributeValue(value: string, quote?: string): string {
   let encoded = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   if (quote !== '\'')
     encoded = encoded.replace(/"/g, '&quot;')
@@ -641,26 +555,7 @@ function encodeStringLiteral(value: string, quote: string): string {
   return quote === '\'' ? `'${encoded.slice(1, -1).replace(/'/g, '\\\'')}'` : encoded
 }
 
-function rewriteDynamicClassExpr(expr: string, map: RenameMap): string {
-  const { source, program } = parseClassExpression(expr)
-  if (!program)
-    return expr
-  return rewriteStringsInProgram(source, program, map, 0).slice(CLASS_EXPRESSION_PREFIX.length, -1)
-}
-
-function rewriteVueStyleBlocks(source: string, map: RenameMap): string {
-  const edits: { start: number, end: number, replacement: string }[] = []
-  for (const style of parseSfc(source).descriptor.styles) {
-    if (!mapIncludesAny(style.content, map))
-      continue
-    const replacement = rewriteCss(style.content, map, cssSyntax(style.lang ?? 'css'))
-    if (replacement !== style.content)
-      edits.push({ start: style.loc.start.offset, end: style.loc.end.offset, replacement })
-  }
-  return applyTextEdits(source, edits)
-}
-
-function rewriteCss(source: string, map: RenameMap, syntax: CssSyntax): string {
+export function rewriteCss(source: string, map: RenameMap, syntax: CssSyntax): string {
   const edits: { start: number, end: number, replacement: string }[] = []
   visitCssApplyRanges(source, syntax, (start, end) => {
     const value = source.slice(start, end)

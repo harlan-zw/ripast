@@ -99,7 +99,7 @@ it.each([
 ])('agent output reports verification for $args', ({ args, message, status }) => {
   const fixture = makeFixture({
     'source.ts': 'export const answer = 42\nexport const taken = 7\n',
-    'View.vue': '<template><div class="font-semibold"></div></template>\n',
+    ...args[0] === 'css-class-rename' ? { 'View.vue': '<template><div class="font-semibold"></div></template>\n' } : {},
   })
   try {
     const result = spawnSync(process.execPath, [

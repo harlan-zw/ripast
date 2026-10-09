@@ -4,6 +4,7 @@ import { runMove } from '../packages/core/src/move.ts'
 import { runRename } from '../packages/core/src/rename.ts'
 import { scan } from '../packages/core/src/scan.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('rename patterns', () => {
@@ -13,7 +14,7 @@ describe('rename patterns', () => {
       'b.ts': 'import type { Foo } from \'./a.ts\'\nexport const v: Foo = { x: 1 }\n',
     })
     try {
-      writeChanges((await runRename('Foo', 'Bar', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runRename('Foo', 'Bar', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('a.ts'), /export type Bar/)
       assert.match(fx.read('b.ts'), /import type \{ Bar \}/)
       assert.match(fx.read('b.ts'), /: Bar =/)
@@ -27,7 +28,7 @@ describe('rename patterns', () => {
       'b.ts': 'import { type Foo } from \'./a.ts\'\nexport const v: Foo = 1\n',
     })
     try {
-      writeChanges((await runRename('Foo', 'Bar', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runRename('Foo', 'Bar', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('b.ts'), /import \{ type Bar \}/)
       assert.match(fx.read('b.ts'), /: Bar =/)
     }
@@ -41,7 +42,7 @@ describe('rename patterns', () => {
       'b.ts': 'import { foo } from \'./index.ts\'\nfoo()\n',
     })
     try {
-      writeChanges((await runRename('foo', 'bar', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runRename('foo', 'bar', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('a.ts'), /export function bar/)
       assert.match(fx.read('b.ts'), /import \{ bar \}/)
       assert.match(fx.read('b.ts'), /bar\(\)/)
@@ -57,7 +58,7 @@ describe('rename patterns', () => {
       'c.ts': '',
     })
     try {
-      writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runMove('helper', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('c.ts'), /export function helper/)
       assert.match(fx.read('b.ts'), /['"]\.\/c\.ts['"]/)
     }
@@ -71,7 +72,7 @@ describe('rename patterns', () => {
       'b.ts': 'import { foo } from \'./index.ts\'\nfoo()\n',
     })
     try {
-      writeChanges((await runRename('foo', 'bar', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runRename('foo', 'bar', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('a.ts'), /export function bar/)
       assert.match(fx.read('index.ts'), /export \{ bar \}/)
       assert.match(fx.read('b.ts'), /import \{ bar \}/)
@@ -86,7 +87,7 @@ describe('rename patterns', () => {
       'App.tsx': 'import { Widget } from \'./Widget.tsx\'\nexport const App = () => <Widget />\n',
     })
     try {
-      writeChanges((await runRename('Widget', 'Panel', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runRename('Widget', 'Panel', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('Widget.tsx'), /export function Panel/)
       assert.match(fx.read('App.tsx'), /import \{ Panel \}/)
       assert.match(fx.read('App.tsx'), /<Panel \/>/)
@@ -100,7 +101,7 @@ describe('rename patterns', () => {
       'b.ts': 'import { foo } from \'./a.ts\'\nexport function outer() { const foo = 2; return foo }\nexport const r = foo()\n',
     })
     try {
-      writeChanges((await runRename('foo', 'bar', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runRename('foo', 'bar', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       const b = fx.read('b.ts')
       assert.match(b, /import \{ bar \} from '\.\/a\.ts'/)
       assert.match(b, /bar\(\)/, 'top-level call renamed')
@@ -115,7 +116,7 @@ describe('rename patterns', () => {
       'b.ts': 'import { foo as local } from \'./a.ts\'\nexport const r = local.n\n',
     })
     try {
-      writeChanges((await runRename('foo', 'bar', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runRename('foo', 'bar', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('a.ts'), /export const bar/)
       assert.match(fx.read('b.ts'), /import \{ bar as local \}/)
       assert.match(fx.read('b.ts'), /local\.n/)
@@ -129,7 +130,7 @@ describe('rename patterns', () => {
       'b.ts': 'import * as ns from \'./a.ts\'\nns.foo(); ns.bar()\n',
     })
     try {
-      writeChanges((await runRename('foo', 'foo2', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runRename('foo', 'foo2', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('a.ts'), /export function foo2/)
       assert.match(fx.read('b.ts'), /ns\.foo2\(\)/, 'member access on namespace is renamed (same symbol)')
       assert.match(fx.read('b.ts'), /ns\.bar\(\)/, 'unrelated namespace member untouched')
@@ -142,7 +143,7 @@ describe('rename patterns', () => {
       'a.ts': 'export const KEY = \'k\'\nexport const o = { [KEY]: 1 }\n',
     }, false)
     try {
-      const hits = scan('KEY', { cwd: fx.dir })
+      const hits = scan('KEY', { ...{ cwd: fx.dir }, engine: vueServices() })
       const byKind = groupByKind(hits)
       assert.ok((byKind['identifier-reference'] ?? 0) >= 1, 'computed key is a reference')
       assert.equal(byKind.property ?? 0, 0, 'not classified as property')
@@ -159,7 +160,7 @@ describe('move patterns', () => {
       'c.ts': '',
     })
     try {
-      writeChanges((await runMove('val', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runMove('val', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('c.ts'), /export const val = 42/)
       assert.match(fx.read('b.ts'), /['"]\.\/c\.ts['"]/)
     }
@@ -173,7 +174,7 @@ describe('move patterns', () => {
       'c.ts': '',
     })
     try {
-      const result = await runMove('a', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })
+      const result = await runMove('a', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
       writeChanges(result.changes)
       assert.match(fx.read('c.ts'), /export const a = 1/)
       assert.match(fx.read('a.ts'), /export const b = 2/)
@@ -192,7 +193,7 @@ describe('move patterns', () => {
     })
     try {
       await assert.rejects(
-        async () => runMove('foo', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false }),
+        async () => runMove('foo', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }),
         /local non-exported symbol\(s\) \[helper\]/,
       )
     }
@@ -205,7 +206,7 @@ describe('move patterns', () => {
       'c.ts': '',
     })
     try {
-      const result = await runMove('foo', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })
+      const result = await runMove('foo', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
       writeChanges(result.changes)
       const c = fx.read('c.ts')
       assert.match(c, /import \{ helper \} from ['"]\.\/a\.ts['"]/, 'exported sibling imported at destination')
@@ -221,7 +222,7 @@ describe('move patterns', () => {
       'c.ts': '',
     })
     try {
-      await assert.doesNotReject(async () => runMove('foo', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false }))
+      await assert.doesNotReject(async () => runMove('foo', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }))
     }
     finally { fx.cleanup() }
   })
@@ -233,7 +234,7 @@ describe('move patterns', () => {
     })
     try {
       await assert.rejects(
-        async () => runMove('foo', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false }),
+        async () => runMove('foo', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() }),
         /no top-level export named "foo"/,
       )
     }
@@ -247,7 +248,7 @@ describe('move patterns', () => {
       'c.ts': '',
     })
     try {
-      writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runMove('helper', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       const b = fx.read('b.ts')
       assert.match(b, /import \{ helper as h \}/)
       assert.match(b, /['"]\.\/c\.ts['"]/)
@@ -263,7 +264,7 @@ describe('move patterns', () => {
       'c.ts': '',
     })
     try {
-      writeChanges((await runMove('Color', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runMove('Color', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       assert.match(fx.read('c.ts'), /export enum Color/)
       assert.match(fx.read('b.ts'), /['"]\.\/c\.ts['"]/)
     }
@@ -277,7 +278,7 @@ describe('move patterns', () => {
       'c.ts': '',
     })
     try {
-      writeChanges((await runMove('Widget', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+      writeChanges((await runMove('Widget', 'a.ts', 'c.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })).changes)
       const c = fx.read('c.ts')
       assert.match(c, /@dec/, 'decorator preserved')
       assert.match(c, /export class Widget/)

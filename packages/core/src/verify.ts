@@ -1,4 +1,4 @@
-import type { FrameworkAdapter } from './adapter.ts'
+import type { EngineServices } from './engine.ts'
 import type { LspDiagnostic, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import { relative } from 'node:path'
@@ -12,16 +12,21 @@ export interface Regression {
   message: string
 }
 
-/** Project verification includes Vue consumers even when only scripts change. */
-export async function findVueRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, loadVueAdapter: () => Promise<FrameworkAdapter | null>): Promise<Regression[]> {
-  if (!changes.length || !rgFiles('', { cwd, glob: '*.vue', listAll: true }).length)
+/** Verify every relevant extension, including unchanged authored consumers. */
+export async function findExtensionRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, engine?: EngineServices): Promise<Regression[]> {
+  if (!changes.length || !engine?.extensions.length)
     return []
-  if (!tsconfigPath)
-    throw new Error('ripast: Vue verification requires a tsconfig. Prepare the project before applying changes.')
-  const adapter = await loadVueAdapter()
-  if (!adapter)
-    throw new Error('ripast: Vue verification requires @ripast/vue. Install the adapter before applying changes.')
-  return adapter.regressions(tsconfigPath, cwd, changes)
+  const regressions: Regression[] = []
+  for (const extension of engine.extensions) {
+    if (!rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
+      continue
+    if (!extension.semantic)
+      throw new Error(`Extension ${extension.name} cannot verify consumers`)
+    if (!tsconfigPath)
+      throw new Error('Extension verification requires a tsconfig. Prepare the project before applying changes.')
+    regressions.push(...await extension.semantic.regressions(tsconfigPath, cwd, changes))
+  }
+  return regressions
 }
 
 /**

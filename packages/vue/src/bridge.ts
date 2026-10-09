@@ -1,10 +1,11 @@
 import type { AutoImportRenamePlan, FileChange, Regression, RenameSite } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { posToLineCol, rewriteTemplateReferences } from '@ripast/core/adapter'
+import { posToLineCol } from '@ripast/core/adapter'
 import { URI } from 'vscode-uri'
 import { createVueService, vueProjectConfigs, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
 import { hasVueFilesContaining, listVueFiles, listVueFilesContaining } from './vue-files.ts'
+import { rewriteTemplateReferences } from './vue-template.ts'
 
 export { hasVueFilesContaining }
 

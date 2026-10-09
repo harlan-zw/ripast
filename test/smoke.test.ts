@@ -4,6 +4,7 @@ import { runMove } from '../packages/core/src/move.ts'
 import { runRename } from '../packages/core/src/rename.ts'
 import { scan } from '../packages/core/src/scan.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const MINI_PROJECT: Record<string, string> = {
@@ -58,7 +59,7 @@ export function formatConfig(cfg: AppConfig): string {
 it('smoke: scan over a realistic multi-file project', async () => {
   const fx = makeFixture(MINI_PROJECT)
   try {
-    const hits = scan('AppConfig', { cwd: fx.dir })
+    const hits = scan('AppConfig', { ...{ cwd: fx.dir }, engine: vueServices() })
     const kinds = new Set(hits.map(h => h.kind))
     assert.ok(hits.length >= 8, `expected several AppConfig refs, got ${hits.length}`)
     assert.ok(kinds.has('identifier-binding'), 'AppConfig has a binding (interface)')
@@ -71,7 +72,7 @@ it('smoke: scan over a realistic multi-file project', async () => {
 it('smoke: rename across the whole project with --verify passes', async () => {
   const fx = makeFixture(MINI_PROJECT)
   try {
-    const r = await runRename('AppConfig', 'AppSettings', { cwd: fx.dir })
+    const r = await runRename('AppConfig', 'AppSettings', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.equal(r.regressions.length, 0, `no regressions expected, got: ${JSON.stringify(r.regressions)}`)
     writeChanges(r.changes)
     for (const f of Object.keys(MINI_PROJECT)) {
@@ -86,7 +87,7 @@ it('smoke: rename across the whole project with --verify passes', async () => {
 it('smoke: move a function with transitive deps with --verify passes', async () => {
   const fx = makeFixture(MINI_PROJECT)
   try {
-    const r = await runMove('validateConfig', 'src/core/config.ts', 'src/core/validate.ts', { cwd: fx.dir })
+    const r = await runMove('validateConfig', 'src/core/config.ts', 'src/core/validate.ts', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.equal(r.regressions.length, 0, `no regressions expected, got: ${JSON.stringify(r.regressions)}`)
     writeChanges(r.changes)
     assert.match(fx.read('src/core/validate.ts'), /export function validateConfig/)

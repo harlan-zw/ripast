@@ -1,3 +1,4 @@
+import type { EngineServices } from './engine.ts'
 import type { ImportInfo } from './imports.ts'
 import type { VerifyMode } from './project.ts'
 import type { SourceSite, TsServer } from './ts-server.ts'
@@ -7,15 +8,15 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
-import { loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
-import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
+import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
-import { findRegressions, findVueRegressions } from './verify.ts'
+import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
+  engine?: EngineServices
   cwd?: string
   glob?: string | string[]
   verify?: boolean | VerifyMode
@@ -39,10 +40,13 @@ interface ReplacementTarget {
 
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
   const cwd = opts.cwd ?? process.cwd()
+  const engine = opts.engine
+  assertSourceSupport(cwd, engine)
+  engine?.assertOperation({ operation: 'replace', from, to }, cwd)
   const verifyMode = resolveVerifyMode(opts.verify === undefined || opts.verify === true ? 'project' : opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+    : rgFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripast replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
@@ -50,7 +54,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   try {
     const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
+    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine) && !target.declarationFiles.includes(path))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     const referenceCache = new Map<string, SourceSite[]>()
@@ -62,9 +66,9 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
     }
     const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path)))
+      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), engine))
     if (verifyMode === 'project')
-      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), () => loadAdapter('vue')))
+      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine))
     return { changes, scanned: candidatePaths.length, regressions }
   }
   finally {
@@ -271,7 +275,7 @@ async function cachedReferences(server: TsServer, cache: Map<string, SourceSite[
 }
 
 function relativeScriptSpecifier(specifier: string): boolean {
-  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|vue|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
+  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
 }
 
 function inferProjectSpecifierStyle(cwd: string): (path: string) => string {

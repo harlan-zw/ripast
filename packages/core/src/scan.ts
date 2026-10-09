@@ -1,3 +1,4 @@
+import type { EngineServices } from './engine.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -7,7 +8,6 @@ import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifi
 import { listImports } from './imports.ts'
 import { startTsServer } from './ts-server.ts'
 import { parseFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
-import { extractTemplateExpressions } from './vue-template.ts'
 
 export interface ScanHit {
   file: string
@@ -18,6 +18,7 @@ export interface ScanHit {
 }
 
 export interface ScanOptions {
+  engine?: EngineServices
   cwd?: string
   glob?: string | string[]
   kinds?: string[]
@@ -73,10 +74,10 @@ export interface UnusedDeclarations {
 
 export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
+  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob })
   const hits: ScanHit[] = []
   for (const f of files) {
-    const file = parseFile(f, cwd)
+    const file = parseFile(f, cwd, opts.engine)
     const seen = new Set<string>()
     if (file.program) {
       walk(file.program as any, {
@@ -96,17 +97,17 @@ export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
       })
     }
     if (file.isSfc)
-      scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen)
+      scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen, opts.engine)
   }
   return hits
 }
 
 export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGraph {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
+  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob })
   const hitsByFile = new Map<string, ScanHit[]>()
   const parsed = files.map((f) => {
-    const file = parseFile(f, cwd)
+    const file = parseFile(f, cwd, opts.engine)
     const seen = new Set<string>()
     const hits: ScanHit[] = []
     if (file.program) {
@@ -127,7 +128,7 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
       })
     }
     if (file.isSfc)
-      scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen)
+      scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen, opts.engine)
     if (hits.length)
       hitsByFile.set(file.path, hits)
     return file
@@ -139,7 +140,7 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
     if (!nodePathSet.has(file.path) || !file.program)
       continue
     for (const specifier of importSpecifiers(file.program as any)) {
-      const target = resolveModuleSpecifier(file.path, specifier)
+      const target = resolveModuleSpecifier(file.path, specifier, opts.engine)
       if (!target || !nodePathSet.has(target))
         continue
       const edge = {
@@ -162,15 +163,15 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
 
 export function buildDeclarationTree(opts: ScanOptions & { exports?: ExportFilter } = {}): DeclarationTree {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+  const files = rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true })
   const exportFilter = opts.exports ?? 'all'
-  return buildDeclarationTreeForPaths(cwd, files, exportFilter)
+  return buildDeclarationTreeForPaths(cwd, files, exportFilter, opts.engine)
 }
 
-function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter: ExportFilter): DeclarationTree {
+function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter: ExportFilter, engine?: EngineServices): DeclarationTree {
   const out: DeclarationTreeFile[] = []
   for (const abs of files) {
-    const file = parseFile(abs, cwd)
+    const file = parseFile(abs, cwd, engine)
     if (!file.program)
       continue
     const declarations = collectTopLevelDeclarations(file.program as any, file.fullSource, file.scriptStart)
@@ -199,12 +200,12 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
 export async function buildUnusedDeclarations(opts: ScanOptions & { exports?: ExportFilter } = {}): Promise<UnusedDeclarations> {
   const cwd = opts.cwd ?? process.cwd()
   const exportFilter = opts.exports ?? 'local'
-  const candidates = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
-    .filter(path => !path.endsWith('.vue'))
+  const sources = rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true })
+  const candidates = sources.filter(path => !opts.engine?.owns(path))
   const tree = buildDeclarationTreeForPaths(cwd, candidates, exportFilter)
   const treeByFile = new Map(tree.files.map(file => [resolve(cwd, file.file), file]))
-  const potentialReferenceNames = buildPotentialReferenceNames(candidates, cwd)
-  const importedNames = buildImportedNames(candidates)
+  const potentialReferenceNames = buildPotentialReferenceNames(sources, cwd, opts.engine)
+  const importedNames = buildImportedNames(sources, cwd, opts.engine)
 
   const unusedByFile = new Map<string, Set<string>>()
   const server = await startTsServer(cwd)
@@ -266,7 +267,7 @@ function addUnusedName(unusedByFile: Map<string, Set<string>>, path: string, nam
 }
 
 /** Names each file exports that some other candidate imports or re-exports from it through a relative specifier. */
-function buildImportedNames(paths: string[]): Map<string, Set<string>> {
+function buildImportedNames(paths: string[], cwd: string, engine?: EngineServices): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>()
   const add = (target: string, name: string): void => {
     const names = out.get(target) ?? new Set<string>()
@@ -275,15 +276,11 @@ function buildImportedNames(paths: string[]): Map<string, Set<string>> {
   }
   for (const path of paths) {
     const source = readFileSync(path, 'utf8')
-    let program: any
-    try {
-      program = parseSync(path, source).program
-    }
-    catch {
+    const program = parseFile(path, cwd, engine).program
+    if (!program)
       continue
-    }
     for (const imp of listImports(source, path, program)) {
-      const target = resolveModuleSpecifier(path, imp.specifier)
+      const target = resolveModuleSpecifier(path, imp.specifier, engine)
       if (!target)
         continue
       for (const n of imp.named) add(target, n.name)
@@ -293,7 +290,7 @@ function buildImportedNames(paths: string[]): Map<string, Set<string>> {
     for (const statement of program.body ?? []) {
       if (statement.type !== 'ExportNamedDeclaration' || !statement.source)
         continue
-      const target = resolveModuleSpecifier(path, statement.source.value)
+      const target = resolveModuleSpecifier(path, statement.source.value, engine)
       if (!target)
         continue
       for (const spec of statement.specifiers ?? []) add(target, spec.local?.name ?? spec.local?.value)
@@ -310,6 +307,7 @@ function scanTemplate(
   kinds: string[] | undefined,
   hits: ScanHit[],
   seen: Set<string>,
+  engine?: EngineServices,
 ): void {
   const source = fullSource || (() => {
     try {
@@ -321,7 +319,7 @@ function scanTemplate(
   })()
   if (!source.includes(pattern) && !/\\[ux]/.test(source))
     return
-  const exprs = extractTemplateExpressions(source)
+  const exprs = engine?.expressions(absPath, source) ?? []
   for (const expr of exprs) {
     if (!expr.code.includes(pattern) && !/\\[ux]/.test(expr.code))
       continue
@@ -540,10 +538,10 @@ interface SourceRange {
   end: number
 }
 
-function buildPotentialReferenceNames(paths: string[], cwd: string): Set<string> {
+function buildPotentialReferenceNames(paths: string[], cwd: string, engine?: EngineServices): Set<string> {
   const out = new Set<string>()
   for (const path of paths) {
-    const file = parseFile(path, cwd)
+    const file = parseFile(path, cwd, engine)
     if (!file.program)
       continue
     const ignored = ignoredTopLevelNameRanges(file.program as any, file.scriptStart)
@@ -793,18 +791,19 @@ function bindingName(node: any): string | undefined {
   return undefined
 }
 
-const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 
-function resolveModuleSpecifier(fromFile: string, specifier: string): string | null {
+function resolveModuleSpecifier(fromFile: string, specifier: string, engine?: EngineServices): string | null {
   if (!specifier.startsWith('.'))
     return null
   const base = resolve(dirname(fromFile), specifier)
-  for (const ext of RESOLVE_EXTS) {
+  const suffixes = [...RESOLVE_EXTS, ...engine?.suffixes ?? []]
+  for (const ext of suffixes) {
     const candidate = `${base}${ext}`
     if (existsSync(candidate))
       return candidate
   }
-  for (const ext of RESOLVE_EXTS.slice(1)) {
+  for (const ext of suffixes.slice(1)) {
     const candidate = join(base, `index${ext}`)
     if (existsSync(candidate))
       return candidate

@@ -1,5 +1,6 @@
 import { buildDoctorFixes, runDoctor } from '@ripast/core'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('doctor: stale-reexport', () => {
@@ -8,7 +9,7 @@ describe('doctor: stale-reexport', () => {
       'a.ts': 'export const Foo = 1',
       'index.ts': 'export { Foo, Bar } from \'./a\'',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-reexport'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-reexport'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(1)
     expect(report.findings[0].check).toBe('stale-reexport')
@@ -21,7 +22,7 @@ describe('doctor: stale-reexport', () => {
       'mid.ts': 'export * from \'./leaf\'',
       'index.ts': 'export { Real, Phantom } from \'./mid\'',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-reexport'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-reexport'] }, engine: vueServices() })
     fx.cleanup()
     const names = report.findings.map(f => f.detail?.name)
     expect(names).toEqual(['Phantom'])
@@ -34,7 +35,7 @@ describe('doctor: stale-import', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': 'import { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     fx.cleanup()
     const names = report.findings.map(f => f.detail?.name)
     expect(names).toEqual(['Bar'])
@@ -46,7 +47,7 @@ describe('doctor: stale-import', () => {
       'index.ts': 'export * from \'./leaf\'',
       'consumer.ts': 'import { Real } from \'./index\'\nconsole.log(Real)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(0)
   })
@@ -58,7 +59,7 @@ describe('doctor: circular-dep', () => {
       'a.ts': 'import { b } from \'./b\'\nexport const a = b',
       'b.ts': 'import { a } from \'./a\'\nexport const b = a',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['circular-dep'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['circular-dep'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings.length).toBeGreaterThanOrEqual(2)
     expect(report.findings[0].check).toBe('circular-dep')
@@ -69,7 +70,7 @@ describe('doctor: circular-dep', () => {
       'a.ts': 'export const a = 1',
       'b.ts': 'import { a } from \'./a\'\nexport const b = a',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['circular-dep'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['circular-dep'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(0)
   })
@@ -82,7 +83,7 @@ describe('doctor: orphan-test', () => {
       'src/foo.test.ts': 'import { foo } from \'./foo\'',
       'src/ghost.test.ts': 'import { ghost } from \'./ghost\'',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['orphan-test'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['orphan-test'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings.map(f => f.file)).toEqual(['src/ghost.test.ts'])
   })
@@ -96,7 +97,7 @@ describe('doctor: inconsistent-import-path', () => {
       'b.ts': 'import { X } from \'./pkg/target\'',
       'c.ts': 'import { X } from \'./pkg/target.ts\'',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['inconsistent-import-path'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['inconsistent-import-path'] }, engine: vueServices() })
     fx.cleanup()
     const minorityFiles = report.findings.map(f => f.file)
     expect(minorityFiles).toEqual(['c.ts'])
@@ -108,7 +109,7 @@ describe('doctor: inconsistent-import-path', () => {
       'a.ts': 'import { X } from \'./pkg/target\'',
       'b.ts': 'import { X } from \'./pkg/target\'',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['inconsistent-import-path'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['inconsistent-import-path'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(0)
   })
@@ -120,7 +121,7 @@ describe('doctor: ignore comments', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': '// ripast-doctor-ignore-file\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(0)
   })
@@ -130,7 +131,7 @@ describe('doctor: ignore comments', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': '// ripast-doctor-ignore-file: duplicate-export\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(1)
   })
@@ -144,7 +145,7 @@ describe('doctor: --fix', () => {
       'b.ts': 'import { X } from \'./pkg/target\'',
       'c.ts': 'import { X } from \'./pkg/target.ts\'',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['inconsistent-import-path'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['inconsistent-import-path'] }, engine: vueServices() })
     const fix = buildDoctorFixes(report, fx.dir)
     expect(fix.changes).toHaveLength(1)
     expect(fix.changes[0].rel).toBe('c.ts')
@@ -158,7 +159,7 @@ describe('doctor: --fix', () => {
       'a.ts': 'export const A = 1',
       'index.ts': 'export * from \'./a\'\nexport * from \'./missing\'\nexport const Local = 1',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['dangling-reexport'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['dangling-reexport'] }, engine: vueServices() })
     const fix = buildDoctorFixes(report, fx.dir)
     fx.cleanup()
     expect(fix.changes).toHaveLength(1)
@@ -172,7 +173,7 @@ describe('doctor: --fix', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': 'import { Bar } from \'./a\'\nconsole.log(Bar)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     const fix = buildDoctorFixes(report, fx.dir)
     fx.cleanup()
     expect(fix.changes).toHaveLength(0)
@@ -188,7 +189,7 @@ describe('doctor: cross-realm-import (vue adapter)', () => {
       'app/composables/useFoo.ts': 'import { db } from \'../../server/utils/db\'\nexport const useFoo = () => db()',
       'server/utils/db.ts': 'export const db = () => 1',
     })
-    const report = await runDoctor({ cwd: fx.dir })
+    const report = await runDoctor({ ...{ cwd: fx.dir }, engine: vueServices() })
     fx.cleanup()
     const cross = report.findings.filter(f => f.check === 'cross-realm-import')
     expect(cross.length).toBeGreaterThanOrEqual(1)
@@ -203,7 +204,7 @@ describe('doctor: cross-realm-import (vue adapter)', () => {
       'app/composables/useFoo.ts': 'import type { Db } from \'../../server/utils/db\'\nexport const useFoo = (): Db => 1 as any',
       'server/utils/db.ts': 'export type Db = number',
     })
-    const report = await runDoctor({ cwd: fx.dir })
+    const report = await runDoctor({ ...{ cwd: fx.dir }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings.filter(f => f.check === 'cross-realm-import')).toHaveLength(0)
   })
@@ -216,7 +217,7 @@ describe('doctor: stale-nuxt-config-ref (vue adapter)', () => {
       'package.json': '{"dependencies":{"nuxt":"^3"}}',
       'layers/real/nuxt.config.ts': 'export default defineNuxtConfig({})',
     })
-    const report = await runDoctor({ cwd: fx.dir })
+    const report = await runDoctor({ ...{ cwd: fx.dir }, engine: vueServices() })
     fx.cleanup()
     const refs = report.findings.filter(f => f.check === 'stale-nuxt-config-ref')
     expect(refs).toHaveLength(1)
@@ -231,14 +232,14 @@ describe('doctor: --changed filter', () => {
       'b.ts': 'import { Foo, Missing } from \'./a\'\nconsole.log(Foo, Missing)',
       'c.ts': 'import { Foo, AlsoMissing } from \'./a\'\nconsole.log(Foo, AlsoMissing)',
     })
-    const full = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const full = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     expect(full.findings).toHaveLength(2)
-    const filtered = await runDoctor({
+    const filtered = await runDoctor({ ...{
       cwd: fx.dir,
       noAdapters: true,
       checks: ['stale-import'],
       changedFiles: ['b.ts'],
-    })
+    }, engine: vueServices() })
     fx.cleanup()
     expect(filtered.findings).toHaveLength(1)
     expect(filtered.findings[0].file).toBe('b.ts')
@@ -251,7 +252,7 @@ describe('doctor: --fix for stale-import', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': 'import { Foo, Bar } from \'./a\'\nconsole.log(Foo)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     const fix = buildDoctorFixes(report, fx.dir)
     fx.cleanup()
     expect(fix.changes).toHaveLength(1)
@@ -264,7 +265,7 @@ describe('doctor: --fix for stale-import', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': 'import { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     const fix = buildDoctorFixes(report, fx.dir)
     fx.cleanup()
     expect(fix.changes).toHaveLength(0)
@@ -277,7 +278,7 @@ describe('doctor: --fix for stale-import', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': 'import { Bar } from \'./a\'\nexport const x = 1',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     const fix = buildDoctorFixes(report, fx.dir)
     fx.cleanup()
     expect(fix.changes).toHaveLength(1)
@@ -293,7 +294,7 @@ describe('doctor: ignore-next-line directive', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': '// ripast-doctor-ignore-next-line\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(0)
   })
@@ -303,7 +304,7 @@ describe('doctor: ignore-next-line directive', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': '// ripast-doctor-ignore-next-line: duplicate-export\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(1)
   })
@@ -313,7 +314,7 @@ describe('doctor: ignore-next-line directive', () => {
       'a.ts': 'export const Foo = 1',
       'b.ts': '// ripast-doctor-ignore-next-line\nconst noise = 1\nimport { Bar } from \'./a\'\nconsole.log(noise, Bar)',
     })
-    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
+    const report = await runDoctor({ ...{ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] }, engine: vueServices() })
     fx.cleanup()
     expect(report.findings).toHaveLength(1)
   })

@@ -1,7 +1,9 @@
+import type { EngineServices } from './engine.ts'
 import process from 'node:process'
 import { readCssClassSourceFiles, visitCssClassTokensInFile } from './css-class-source.ts'
 
 export interface CssClassScanOptions {
+  engine?: EngineServices
   cwd?: string
   glob?: string | string[]
   pattern?: string[]
@@ -32,7 +34,7 @@ export function runCssClassScan(opts: CssClassScanOptions = {}): CssClassScanHit
   const cwd = opts.cwd ?? process.cwd()
   const match = compileGlobs(opts.pattern)
   const counts = new Map<string, { count: number, files: Set<string> }>()
-  for (const file of readCssClassSourceFiles({ cwd, glob: opts.glob })) {
+  for (const file of readCssClassSourceFiles({ cwd, glob: opts.glob, engine: opts.engine })) {
     const seen = new Map<string, number>()
     const onToken = (bare: string): void => {
       if (!match(bare))
@@ -60,7 +62,7 @@ export function runCssClassFileScan(opts: CssClassFileScanOptions = {}): CssClas
   const cwd = opts.cwd ?? process.cwd()
   const match = compileGlobs(opts.pattern)
   const hits: CssClassFileScanHit[] = []
-  for (const file of readCssClassSourceFiles({ cwd, glob: opts.glob })) {
+  for (const file of readCssClassSourceFiles({ cwd, glob: opts.glob, engine: opts.engine })) {
     const seen = new Map<string, number>()
     const onToken = (bare: string): void => {
       if (!match(bare))

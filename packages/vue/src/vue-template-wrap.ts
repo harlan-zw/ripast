@@ -1,8 +1,8 @@
-import type { FileChange } from './util.ts'
+import type { FileChange } from '@ripast/core/adapter'
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { rgFiles } from './util.ts'
+import { rgVueFiles } from './source.ts'
 import { hyphenateVueName, parseTemplateSelector, parseTemplateWrapper, unwrapTemplateElements, wrapTemplateElements } from './vue-template.ts'
 
 export interface VueTemplateWrapOptions {
@@ -33,13 +33,13 @@ function candidateFiles(tag: string, opts: VueTemplateWrapOptions): string[] {
     return [resolveScope(opts.scope, cwd)]
   const glob = opts.glob ?? '*.vue'
   const seen = new Set<string>()
-  for (const path of rgFiles(tag, { cwd, glob })) {
+  for (const path of rgVueFiles(tag, { cwd, glob })) {
     if (path.endsWith('.vue'))
       seen.add(path)
   }
   const kebab = hyphenateVueName(tag)
   if (kebab !== tag) {
-    for (const path of rgFiles(kebab, { cwd, glob })) {
+    for (const path of rgVueFiles(kebab, { cwd, glob })) {
       if (path.endsWith('.vue'))
         seen.add(path)
     }
