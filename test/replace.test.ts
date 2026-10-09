@@ -87,7 +87,7 @@ it('replace CLI dry-run prints a diff without writing', () => {
     const cli = resolve(process.cwd(), 'packages/cli/src/cli.ts')
     const out = execFileSync(
       process.execPath,
-      ['--experimental-strip-types', '--no-warnings', cli, 'replace', 'old', 'better', '--no-verify', '--profile', 'full'],
+      ['--experimental-strip-types', '--no-warnings', cli, 'replace', 'old', 'better', '--verify-mode', 'none', '--profile', 'full'],
       { cwd: fx.dir, encoding: 'utf8' },
     )
     assert.match(out, /1 file, \+2 -2 lines/)

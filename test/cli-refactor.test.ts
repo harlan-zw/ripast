@@ -92,7 +92,7 @@ it.each([
   { args: ['rename', 'answer', 'value', '--no-vue'], message: 'typescript diagnostics: touched,', status: 0 },
   { args: ['rename', 'answer', 'taken', '--no-vue'], message: 'new errors', status: 1 },
   { args: ['rename', 'answer', 'value', '--no-vue', '--verify-mode', 'none'], message: 'verification: skipped (disabled)', status: 0 },
-  { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue'], message: 'typescript diagnostics: touched,', status: 0 },
+  { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue'], message: 'typescript diagnostics: project,', status: 0 },
   { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue', '--verify-mode', 'none'], message: 'verification: skipped (disabled)', status: 0 },
   { args: ['css-class-rename', 'font-semibold', 'font-medium'], message: 'verification: skipped (not-applicable)', status: 0 },
 ])('agent output reports verification for $args', ({ args, message, status }) => {

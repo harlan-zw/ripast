@@ -14,6 +14,27 @@ import {
   buildDoctorFixes,
   buildScanGraph,
   buildUnusedDeclarations,
+  getChangedFiles,
+  getDoctorCheckNames,
+  resolveVerifyMode,
+  runCssClassFileScan,
+  runCssClassRename,
+  runCssClassScan,
+  runDelete,
+  runDoctor,
+  runMove,
+  runRename,
+  runRenameFile,
+  runReplace,
+  runVueTemplateUnwrap,
+  runVueTemplateWrap,
+  scan,
+  writeChanges,
+} from 'ripide-api'
+import { agent, isAgent } from 'std-env'
+import { defineStrictCommand as defineCommand } from './command.ts'
+import { jsonResult, mutationTag } from './json.ts'
+import {
   compactVerification,
   formatAgentDeclarationTree,
   formatAgentDoctorReport,
@@ -32,31 +53,14 @@ import {
   formatScanHits,
   formatUnusedDeclarations,
   formatVerification,
-  getChangedFiles,
-  getDoctorCheckNames,
   outputPath,
   printDiffs,
-  resolveVerifyMode,
-  runCssClassFileScan,
-  runCssClassRename,
-  runCssClassScan,
-  runDelete,
-  runDoctor,
-  runMove,
-  runRename,
-  runRenameFile,
-  runReplace,
-  runVueTemplateUnwrap,
-  runVueTemplateWrap,
-  scan,
   selectDoctorFindings,
   selectOutput,
   summarize,
-  writeChanges,
-} from 'ripide-api'
-import { agent, isAgent } from 'std-env'
-import { defineStrictCommand as defineCommand } from './command.ts'
-import { jsonResult, mutationTag } from './json.ts'
+} from './presentation/index.ts'
+
+export type { JsonResult, JsonTag } from './json.ts'
 
 const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
 
@@ -1147,7 +1151,7 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
     ? {
         ...selected,
         async run(context: Parameters<NonNullable<typeof selected.run>>[0]) {
-          context.args.command = name
+          ;(context.args as OutputArgs).command = name
           const start = performance.now()
           try {
             const destinations = name === 'rename-file'
