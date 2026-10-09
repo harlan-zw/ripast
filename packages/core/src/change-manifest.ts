@@ -1,6 +1,6 @@
 import type { FileChange } from './util.ts'
-import { createHash } from 'node:crypto'
 import { sep } from 'node:path'
+import { structuredPatch } from 'diff'
 
 export interface FileMoveSnapshot {
   from: string
@@ -9,29 +9,29 @@ export interface FileMoveSnapshot {
   after: string
 }
 
-export type ChangeManifestEntry
-  = | { _tag: 'Edit', path: string, beforeVersion: string, afterVersion: string }
-    | { _tag: 'Move', from: string, to: string, beforeVersion: string, afterVersion: string }
+/** [path, lines] or [path, before lines, after lines]. Lines are inclusive and one-based. */
+export type ChangeManifestEntry = [path: string, lines: string] | [path: string, before: string, after: string]
+export interface ChangeManifest {
+  changes: ChangeManifestEntry[]
+  moves?: [from: string, to: string][]
+}
 
-/** SHA-256 content versions let callers invalidate file views without receiving full source. */
-export function buildChangeManifest(changes: Pick<FileChange, 'rel' | 'before' | 'after'>[], move?: FileMoveSnapshot): ChangeManifestEntry[] {
-  const version = (source: string) => createHash('sha256').update(source).digest('hex')
+/** Commas separate ranges. A trailing + marks an empty gap after that line. */
+export function buildChangeManifest(changes: Pick<FileChange, 'rel' | 'before' | 'after'>[], move?: FileMoveSnapshot): ChangeManifest {
   const path = (relativePath: string) => relativePath.split(sep).join('/')
-  const entries: ChangeManifestEntry[] = changes.map(change => ({
-    _tag: 'Edit',
-    path: path(change.rel),
-    beforeVersion: version(change.before),
-    afterVersion: version(change.after),
-  }))
-  if (move) {
-    entries.push({
-      _tag: 'Move',
-      from: path(move.from),
-      to: path(move.to),
-      beforeVersion: version(move.before),
-      afterVersion: version(move.after),
-    })
-  }
-  const key = (entry: ChangeManifestEntry) => entry._tag === 'Edit' ? entry.path : entry.to
-  return entries.sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0)
+  const range = (start: number, count: number) => count === 0 ? `${start - 1}+` : count === 1 ? `${start}` : `${start}-${start + count - 1}`
+  const snapshots = move && move.before !== move.after
+    ? [...changes, { rel: move.to, before: move.before, after: move.after }]
+    : changes
+  const entries: ChangeManifestEntry[] = snapshots.flatMap((change) => {
+    const hunks = structuredPatch('', '', change.before, change.after, '', '', { context: 0 }).hunks
+    if (!hunks.length)
+      return []
+    const before = hunks.map(h => range(h.oldStart, h.oldLines)).join(',')
+    const after = hunks.map(h => range(h.newStart, h.newLines)).join(',')
+    const entry: ChangeManifestEntry = before === after ? [path(change.rel), before] : [path(change.rel), before, after]
+    return [entry]
+  })
+  entries.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)
+  return { changes: entries, ...(move ? { moves: [[path(move.from), path(move.to)] as [string, string]] } : {}) }
 }

@@ -271,17 +271,22 @@ ripide unused --exports all --json
 <summary><b>🤖 Drive from an AI agent</b></summary>
 
 `--json` emits machine-readable output. `--profile agent` returns compact summaries and is selected automatically in detected agent environments.
-For mutating commands, agent JSON includes relative paths and SHA-256 content versions instead of full source files.
-File moves include both paths. Agents can use this manifest to refresh cached file views.
+For mutating commands, agent JSON returns `[path, lines]` tuples instead of full source files.
+If line ranges shift, tuples include both ranges: `[path, beforeLines, afterLines]`.
+Lines are one-based and inclusive. `"3,10-12"` identifies separate ranges; `"3+"` marks a gap after line 3.
+File moves appear separately as `moves: [[from, to]]`.
+Results include `mode` and `verification`. Empty warnings and regressions are omitted.
+After applying, earlier file reads are outdated. Read changed ranges only when you need current code.
+If an editing tool requires a fresh read, follow that requirement.
 Use `--profile full --json` for complete before/after content.
 If verification finds new type errors, the command refuses `--apply` and exits with a non-zero status.
 
 ```bash
-ripide rename useStore useAppStore --apply --json
+ripide rename useStore useAppStore --apply --profile agent --json
 # {
-#   "applied": true, "dryRun": false, "blockedByRegression": false,
-#   "scanned": 47, "summary": "12 files, +23 -23 lines",
-#   "changes": [...], "regressions": []
+#   "mode": "applied",
+#   "changes": [["src/store.ts", "12"], ["src/app.ts", "1,8"]],
+#   "verification": "passed"
 # }
 ```
 

@@ -42,6 +42,8 @@ describe.each(['"', '\''])('vue class attribute encoding with %s quotes', (quote
         'old-token',
         replacement,
         '--apply',
+        '--profile',
+        'full',
         '--json',
       ], { cwd: fx.dir, encoding: 'utf8' })
       expect(result.error).toBeUndefined()

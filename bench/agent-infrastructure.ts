@@ -46,7 +46,7 @@ try {
   const output = (profile: string) => execFileSync(process.execPath, [cli, 'css-class-rename', 'font-semibold', 'font-medium', '--json', '--profile', profile], { cwd, encoding: 'utf8' })
   const full = output('full')
   const agent = output('agent')
-  assert.equal(JSON.parse(full).summary.files, JSON.parse(agent).summary.files)
+  assert.equal(JSON.parse(full).summary.files, JSON.parse(agent).changes.length)
   const fullBytes = Buffer.byteLength(full)
   const agentBytes = Buffer.byteLength(agent)
   process.stdout.write(`${JSON.stringify({

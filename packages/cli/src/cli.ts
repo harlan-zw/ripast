@@ -348,6 +348,18 @@ interface MutatingResult {
   warnings?: string[]
 }
 
+function compactMutationResult(r: MutatingResult, apply: boolean, verify: boolean, manifest = buildChangeManifest(r.changes)) {
+  const blocked = verify && apply && r.regressions.length > 0
+  const checked = verify && !!(r.changes.length || manifest.moves?.length || r.regressions.length)
+  return {
+    mode: blocked ? 'blocked' : apply ? 'applied' : 'dry-run',
+    ...manifest,
+    verification: checked ? (r.regressions.length ? 'failed' : 'passed') : 'skipped',
+    ...(r.regressions.length ? { regressions: r.regressions } : {}),
+    ...(r.warnings?.length ? { warnings: r.warnings } : {}),
+  }
+}
+
 function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, json: boolean = false, agentProfile: boolean = false): void {
   const s = summarize(r.changes)
   const warnings = r.warnings ?? []
@@ -356,17 +368,19 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
     const wrote = apply && !blockedByRegression
     if (wrote)
       writeChanges(r.changes)
-    const payload = {
-      applied: wrote,
-      dryRun: !apply,
-      blockedByRegression,
-      scanned: r.scanned,
-      summary: s,
-      changes: agentProfile ? buildChangeManifest(r.changes) : r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
-      verification: verify && r.changes.length ? { _tag: 'Checked', newDiagnostics: r.regressions.length } : { _tag: 'Skipped' },
-      regressions: r.regressions,
-      warnings,
-    }
+    const payload = agentProfile
+      ? compactMutationResult(r, apply, verify)
+      : {
+          applied: wrote,
+          dryRun: !apply,
+          blockedByRegression,
+          scanned: r.scanned,
+          summary: s,
+          changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
+          verification: verify && r.changes.length ? { _tag: 'Checked', newDiagnostics: r.regressions.length } : { _tag: 'Skipped' },
+          regressions: r.regressions,
+          warnings,
+        }
     process.stdout.write(`${JSON.stringify(payload)}\n`)
     if (blockedByRegression)
       process.exit(1)
@@ -459,13 +473,12 @@ const renameFileCmd = defineCommand({
     const blockedByRegression = verify && apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
 
-    const moveSource = json && agentProfile ? r.selfChange?.before ?? readFileSync(r.fileMove.from, 'utf8') : undefined
-    const manifest = moveSource !== undefined
+    const manifest = agentProfile
       ? buildChangeManifest(r.changes, {
           from: relative(process.cwd(), r.fileMove.from),
           to: relative(process.cwd(), r.fileMove.to),
-          before: moveSource,
-          after: r.selfChange?.after ?? moveSource,
+          before: r.selfChange?.before ?? '',
+          after: r.selfChange?.after ?? '',
         })
       : undefined
 
@@ -487,18 +500,21 @@ const renameFileCmd = defineCommand({
     }
 
     if (json) {
-      process.stdout.write(`${JSON.stringify({
-        applied: wrote,
-        dryRun: !apply,
-        blockedByRegression,
-        scanned: r.scanned,
-        summary: s,
-        ...(agentProfile ? {} : { fileMove: r.fileMove, selfChange: r.selfChange }),
-        changes: manifest ?? r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
-        verification: verify ? { _tag: 'Checked', newDiagnostics: r.regressions.length } : { _tag: 'Skipped' },
-        regressions: r.regressions,
-        warnings: r.warnings,
-      })}\n`)
+      process.stdout.write(`${JSON.stringify(agentProfile
+        ? compactMutationResult(r, apply, verify, manifest)
+        : {
+            applied: wrote,
+            dryRun: !apply,
+            blockedByRegression,
+            scanned: r.scanned,
+            summary: s,
+            fileMove: r.fileMove,
+            selfChange: r.selfChange,
+            changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
+            verification: verify ? { _tag: 'Checked', newDiagnostics: r.regressions.length } : { _tag: 'Skipped' },
+            regressions: r.regressions,
+            warnings: r.warnings,
+          })}\n`)
       if (blockedByRegression)
         process.exit(1)
       return
@@ -830,19 +846,24 @@ const doctorCmd = defineCommand({
     if (args.fix) {
       const fix = buildDoctorFixes(report, process.cwd())
       if (args.json) {
-        process.stdout.write(`${JSON.stringify({
-          findings: report.findings,
-          filesScanned: report.filesScanned,
-          fix: {
-            applied: !!args.apply,
-            files: fix.changes.length,
-            fixed: fix.fixed,
-            skipped: fix.skipped.length,
-          },
-          changes: args.apply ? undefined : fix.changes.map(c => ({ path: c.rel, before: c.before, after: c.after })),
-        })}\n`)
         if (args.apply && fix.changes.length)
           writeChanges(fix.changes)
+        process.stdout.write(`${JSON.stringify(resolveProfile(args.profile).agentProfile
+          ? {
+              ...compactMutationResult({ changes: fix.changes, regressions: [], scanned: report.filesScanned }, !!args.apply, false),
+              ...(fix.skipped.length ? { findings: fix.skipped } : {}),
+            }
+          : {
+              findings: report.findings,
+              filesScanned: report.filesScanned,
+              fix: {
+                applied: !!args.apply,
+                files: fix.changes.length,
+                fixed: fix.fixed,
+                skipped: fix.skipped.length,
+              },
+              changes: args.apply ? undefined : fix.changes.map(c => ({ path: c.rel, before: c.before, after: c.after })),
+            })}\n`)
         if (fix.skipped.length)
           process.exit(1)
         return

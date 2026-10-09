@@ -1,5 +1,5 @@
 export { buildChangeManifest } from './change-manifest.ts'
-export type { ChangeManifestEntry, FileMoveSnapshot } from './change-manifest.ts'
+export type { ChangeManifest, ChangeManifestEntry, FileMoveSnapshot } from './change-manifest.ts'
 export { buildComponentDetail, buildComponentInventory, formatAgentInventory, formatDetail, formatInventory } from './components.ts'
 export type { ComponentDetail, ComponentInventory, ComponentsListOptions, DuplicateGroup } from './components.ts'
 export { rewriteClassString, rewriteToken, runCssClassRename } from './css-class-rename.ts'

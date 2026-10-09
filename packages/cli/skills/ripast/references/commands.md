@@ -24,7 +24,11 @@ Quote `--glob` patterns. CSS transforms affect strings, Vue classes, and CSS `@a
 Use a file glob when the task limits files. A Vue glob also includes script strings in Vue files.
 Use `--no-vue` only when there are no Vue consumers or Nuxt auto-imports.
 Template commands accept `--scope <file>` and `--root-only`.
-Mutation `--profile agent --json` returns changed paths and content versions. Refresh cached views for those paths.
+Mutation agent JSON returns `mode`, `verification`, and `changes: [[path, lines]]`.
+When ranges shift, entries use `[path, beforeLines, afterLines]`. Moves use `moves: [[from, to]]`.
+Lines are one-based and inclusive. Commas separate ranges; `3+` marks a gap after line 3.
+After apply, earlier file reads are outdated. Read changed ranges only when current code is needed.
+Follow any editing tool requirement for a fresh read. Do not reread every changed file just to confirm success.
 Use `--profile full --json` when you need complete before/after source.
 
 

@@ -8,7 +8,7 @@ import { makeFixture } from './helpers.ts'
 const cli = resolve('packages/cli/src/cli.ts')
 
 function run(cwd: string, args: string[]) {
-  return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args, '--json'], {
+  return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args, '--profile', 'full', '--json'], {
     cwd,
     encoding: 'utf8',
   })
