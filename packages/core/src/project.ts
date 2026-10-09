@@ -53,7 +53,7 @@ export function assertSourceSupport(cwd: string, engine?: EngineServices): void 
     if (nonCode.has(suffix) || /^(?:\.ts|\.tsx|\.js|\.jsx|\.mts|\.cts|\.mjs|\.cjs)$/.test(suffix) || engine?.owns(path))
       continue
     const source = readFileSync(path, 'utf8')
-    if (/^\s*(?:import\s+|export\s+|<script(?:\s|>)|<template(?:\s|>))/m.test(source))
+    if (/^\s*(?:import\s+|export\s+(?:default\b|(?:declare\s+)?(?:const|let|var|function|class|interface|type|enum|namespace|async)\b|\{|\*)|<script(?:\s|>)|<template(?:\s|>))/m.test(source))
       throw new Error(`Required extension missing for authored source ${path}`)
   }
 }

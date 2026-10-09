@@ -204,11 +204,12 @@ describe('nuxt auto-imports', () => {
   it('warns when renaming a component that is referenced via resolveComponent() string', async () => {
     const fx = makeNuxtFixture()
     try {
-      fx.write('pages/dynamic.vue', `<script setup lang="ts">\nconst Comp = resolveComponent('MyButton')\n</script>\n<template><component :is="Comp" /></template>\n`)
+      fx.write('pages/dynamic.vue', `<script setup lang="ts">\nconst Comp = resolveComponent('MyButton')\n</script>\n<template><MyButton /><component :is="Comp" /></template>\n`)
       const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
       assert.ok(result.warnings.some(w => /resolveComponent\(\) in 1 file/.test(w) && /pages\/dynamic\.vue/.test(w)))
       applyRenameFile(result)
       assert.match(fx.read('pages/dynamic.vue'), /resolveComponent\('PrimaryButton'\)/)
+      assert.match(fx.read('pages/dynamic.vue'), /<PrimaryButton \/>/)
     }
     finally { fx.cleanup() }
   })

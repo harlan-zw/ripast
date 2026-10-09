@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -19,6 +19,41 @@ const extension = {
   suffixes: ['.custom'],
   parse: ({ path, source }: { path: string, source: string, cwd: string }) => ({ _tag: 'Script' as const, source: source.slice(7), start: 7, filename: `${path}.ts` }),
 }
+it('ignores shell exports in configuration dotfiles without omitting authored source', async () => {
+  const cwd = fixture()
+  rmSync(join(cwd, 'view.custom'))
+  writeFileSync(join(cwd, '.envrc'), 'export FOO=bar\n')
+  writeFileSync(join(cwd, 'source.ts'), 'export const shared = 1\n')
+  const engine = createEngine()
+  const result = await engine.rename('shared', 'next', { cwd, verify: false })
+  engine.commit(result)
+  expect(readFileSync(join(cwd, 'source.ts'), 'utf8')).toContain('export const next')
+  writeFileSync(join(cwd, 'view.unknown'), 'export const consumer = 1\n')
+  await expect(engine.rename('next', 'third', { cwd, verify: false })).rejects.toThrow(/Required extension missing/)
+})
+
+it.each([false, true])('checks semantic plans once unless hooks change them, modified=%s', async (modified) => {
+  const cwd = fixture()
+  rmSync(join(cwd, 'view.custom'))
+  writeFileSync(join(cwd, 'tsconfig.json'), '{"compilerOptions":{"noEmit":true},"include":["*.ts"]}')
+  writeFileSync(join(cwd, 'source.ts'), 'export const shared = 1\n')
+  writeFileSync(join(cwd, 'view.vue'), '<script setup lang="ts">import { shared } from "./source"\n</script><template>{{ shared }}</template>')
+  const vue = createVueExtension()
+  let checks = 0
+  const engine = createEngine({ extensions: [{ ...vue, semantic: { ...vue.semantic!, async regressions(_config, _cwd, _changes, record) {
+    checks++
+    record?.({ files: 1, newErrors: 0 })
+    return []
+  } }, setup(hooks) {
+    if (modified)
+      hooks.hook('verify:before', ({ changes }) => { changes[0]!.after += '\n' })
+  } }] })
+  const result = await engine.rename('shared', 'next', { cwd, verify: 'project' })
+  expect(checks).toBe(modified ? 2 : 1)
+  expect(result.verification).toMatchObject({ _tag: 'Checked', checks: expect.arrayContaining([{ checker: 'vue', scope: 'project', files: 1, newErrors: 0 }]) })
+  engine.commit(result)
+  expect(readFileSync(join(cwd, 'view.vue'), 'utf8')).toContain('{{ next }}')
+})
 it('discovers a third suffix with authored positions and isolated registrations', () => {
   const cwd = fixture()
   const custom = createEngine({ extensions: [extension] })
@@ -220,6 +255,23 @@ it('commits a file rename and its consumer edits through one write boundary', as
   expect(readFileSync(join(cwd, 'moved.ts'), 'utf8')).toBe('export const shared = 1\n')
   expect(readFileSync(join(cwd, 'consumer.ts'), 'utf8')).toContain('./moved.ts')
   expect(() => readFileSync(join(cwd, 'source.ts'), 'utf8')).toThrow()
+})
+
+it.each(['hard-link', 'dangling-link'] as const)('refuses a %s target created after planning', async (kind) => {
+  const cwd = fixture()
+  rmSync(join(cwd, 'view.custom'))
+  writeFileSync(join(cwd, 'tsconfig.json'), '{"compilerOptions":{"noEmit":true},"include":["*.ts"]}')
+  const source = join(cwd, 'Source.ts')
+  const target = join(cwd, 'target.ts')
+  writeFileSync(source, 'export const value = 1\n')
+  const engine = createEngine()
+  const result = await engine.renameFile('Source.ts', 'target.ts', { cwd, verify: false })
+  if (kind === 'hard-link')
+    linkSync(source, target)
+  else
+    symlinkSync(join(cwd, 'missing.ts'), target)
+  expect(() => engine.commit(result)).toThrow(/target already exists/)
+  expect(readFileSync(source, 'utf8')).toBe('export const value = 1\n')
 })
 
 it('checks a hook-added file rename diagnostic before writing', async () => {

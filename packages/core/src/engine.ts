@@ -162,11 +162,13 @@ export function createEngine(options: EngineOptions = {}) {
     validateChanges(result.changes)
     await hooks.callHook('verify:before', context)
     validateChanges(result.changes)
+    const planChanged = JSON.stringify(result.changes) !== originalPlan || extensions.some(extension => extension.planRename)
+    const previousVerification = 'verification' in result ? result.verification as Verification : undefined
     const verification = createVerification(resolveVerifyMode(opts.verify), !!result.changes.length || isFileRenameResult(result))
     if (resolveVerifyMode(opts.verify) !== 'none') {
       // Hook-added plans share the same verification boundary as native plans.
       const scripts = result.changes.filter(change => !services.owns(change.path))
-      if (scripts.length && (JSON.stringify(result.changes) !== originalPlan || extensions.some(extension => extension.planRename))) {
+      if (scripts.length && planChanged) {
         const server = await startTsServer(cwd, { tsconfig: tsconfig ?? undefined })
         try {
           if (isFileRenameResult(result)) {
@@ -183,6 +185,9 @@ export function createEngine(options: EngineOptions = {}) {
           result.regressions.push(...await extension.verify(context))
         }
         else if (extension.semantic && result.changes.length) {
+          const checker = extension.semantic.name
+          if (!planChanged && previousVerification?._tag === 'Checked' && previousVerification.checks.some(check => check.checker === checker))
+            continue
           const config = tsconfig
           if (!config && rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
             throw new Error(`Extension ${extension.name} verification requires a tsconfig`)

@@ -24,7 +24,7 @@ export async function finalizeVueFileRename(
     const oldName = basename(oldAbs, '.vue')
     const newName = basename(newAbs, '.vue')
 
-    const resolveCompEdits = rewriteResolveComponentSites(cwd, oldName, newName, existingChanges, oldAbs, newAbs, warnings)
+    const resolveCompEdits = rewriteResolveComponentSites(cwd, oldName, newName, mergeView(existingChanges, changes), oldAbs, newAbs, warnings)
     mergeIntoChanges(changes, resolveCompEdits)
 
     if (oldName !== newName) {

@@ -4,7 +4,7 @@ import fs, { mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
-import { runDoctor, runMove, runRename, runRenameFile, writeChanges } from 'ripide-api'
+import { createEngine, runDoctor, runMove, runRename, runRenameFile, writeChanges } from 'ripide-api'
 import { createVueExtension } from 'ripide-vue'
 import { it, vi } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
@@ -107,18 +107,18 @@ it('keeps Nuxt app component scopes separate with native paths', async () => {
   finally { fx.cleanup() }
 })
 
-it.each([false, true])('plans a case-only file rename with vue=%s', async (useVue) => {
+it.each([false, true])('commits a case-only file rename with vue=%s', async (useVue) => {
   const fx = makeFixture({
     'Source.ts': 'export const value = 42\n',
     'main.ts': 'import { value } from "./Source.ts"; console.log(value)\n',
   })
   try {
-    const result = await runRenameFile('Source.ts', 'source.ts', { ...{ cwd: fx.dir, vue: useVue, verify: false }, engine: vueServices() })
+    const engine = createEngine({ extensions: useVue ? [createVueExtension()] : [] })
+    const result = await engine.renameFile('Source.ts', 'source.ts', { cwd: fx.dir, verify: false })
     const change = result.changes.find(c => c.path === join(fx.dir, 'main.ts'))
     assert.ok(change)
     assert.match(change.after, /from ['"]\.\/source\.ts['"]/)
-    renameSync(result.fileMove.from, result.fileMove.to)
-    writeChanges(result.changes)
+    engine.commit(result)
     assert.equal(execFileSync(process.execPath, [join(fx.dir, 'main.ts')], { encoding: 'utf8' }).trim(), '42')
   }
   finally { fx.cleanup() }
@@ -127,17 +127,23 @@ it.each([false, true])('plans a case-only file rename with vue=%s', async (useVu
 it('accepts the source entry under another casing on a case-insensitive filesystem', async () => {
   const fx = makeFixture({ 'Source.ts': 'export const value = 42\n' })
   const lstat = fs.lstatSync
+  const exists = fs.existsSync
   const source = join(fx.dir, 'Source.ts')
   const target = join(fx.dir, 'source.ts')
   const lstatSpy = vi.spyOn(fs, 'lstatSync').mockImplementation(((path: fs.PathLike, options: any) => lstat(path === target ? source : path, options)) as typeof lstat)
+  const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation(path => exists(path === target && exists(source) ? source : path))
   syncBuiltinESMExports()
   try {
-    const result = await runRenameFile('Source.ts', 'source.ts', { ...{ cwd: fx.dir, verify: false }, engine: vueServices() })
+    const engine = createEngine({ extensions: [createVueExtension()] })
+    const result = await engine.renameFile('Source.ts', 'source.ts', { cwd: fx.dir, verify: false })
     assert.deepEqual(result.fileMove, { from: source, to: target })
     assert.equal(fx.read('Source.ts'), 'export const value = 42\n')
+    engine.commit(result)
+    assert.equal(fx.read('source.ts'), 'export const value = 42\n')
   }
   finally {
     lstatSpy.mockRestore()
+    existsSpy.mockRestore()
     syncBuiltinESMExports()
     fx.cleanup()
   }

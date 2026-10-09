@@ -1,9 +1,9 @@
 import type { EngineServices } from './engine.ts'
 import type { RenameFileResult } from './rename-file.ts'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { createPatch } from 'diff'
 import { parseSync } from 'oxc-parser'
@@ -311,13 +311,24 @@ export function posToLineCol(source: string, pos: number): { line: number, col: 
   return { line, col }
 }
 
+/** Accept another casing of the source entry, but never a separate hard link. */
+export function isCaseOnlyFileRename(from: string, to: string): boolean {
+  if (from === to || dirname(from) !== dirname(to) || basename(from).toLowerCase() !== basename(to).toLowerCase())
+    return false
+  const source = lstatSync(from)
+  const target = lstatSync(to, { throwIfNoEntry: false })
+  return source.isFile() && target?.isFile() === true
+    && source.dev === target.dev && source.ino === target.ino
+    && !readdirSync(dirname(to)).includes(basename(to))
+}
+
 /** One transaction boundary for a planned file move and all consumer changes. */
 export function writeFileRename(result: RenameFileResult, expectedSource = readFileSync(result.fileMove.from, 'utf8')): void {
   if (result.regressions.length)
     throw new Error('Verification failed; file rename was refused')
   if (readFileSync(result.fileMove.from, 'utf8') !== expectedSource)
     throw new Error('Source changed since planning; file rename was refused')
-  if (existsSync(result.fileMove.to))
+  if (lstatSync(result.fileMove.to, { throwIfNoEntry: false }) && !isCaseOnlyFileRename(result.fileMove.from, result.fileMove.to))
     throw new Error('File rename target already exists')
   const self = result.selfChange ? [{ path: result.fileMove.to, rel: result.fileMove.to, ...result.selfChange }] : []
   // Validate consumers before moving. writeChanges repeats validation before committing.

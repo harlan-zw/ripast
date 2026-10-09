@@ -5,6 +5,15 @@ import { join } from 'node:path'
 import { rgFiles } from 'ripide-api/adapter'
 import { it } from 'vitest'
 import { createCliEngine } from '../packages/cli/src/engine.ts'
+import { makeFixture } from './helpers.ts'
+
+it('refuses authored Vue consumers when Vue support is disabled', async () => {
+  const fx = makeFixture({ 'view.vue': '<template><div /></template>' })
+  try {
+    await assert.rejects(createCliEngine(fx.dir, false), /Required extension missing for \.vue/)
+  }
+  finally { fx.cleanup() }
+})
 
 it('returns every discovered file when filenames exceed the process output buffer', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'ripide-discovery-'))

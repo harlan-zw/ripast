@@ -4,13 +4,13 @@ import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
-import { basename, dirname, extname, relative, resolve } from 'node:path'
+import { existsSync, lstatSync, readFileSync } from 'node:fs'
+import { dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { computeSpecifier } from './imports.ts'
 import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { mergeFileChanges } from './util.ts'
+import { isCaseOnlyFileRename, mergeFileChanges } from './util.ts'
 import { createVerification } from './verification.ts'
 import { findExtensionRegressions, findRegressions } from './verify.ts'
 
@@ -58,14 +58,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     throw new Error(`ripide rename-file: source "${oldPath}" is a symbolic link. Rename its target file instead.`)
   // Inspect the entry itself: existsSync follows symlinks and misses dangling targets.
   const target = lstatSync(newAbs, { throwIfNoEntry: false })
-  const source = lstatSync(oldAbs)
-  const caseOnlyRename = oldAbs !== newAbs
-    && dirname(oldAbs) === dirname(newAbs)
-    && basename(oldAbs).toLowerCase() === basename(newAbs).toLowerCase()
-    && target?.isFile()
-    && source.dev === target.dev && source.ino === target.ino
-    && !readdirSync(dirname(newAbs)).includes(basename(newAbs))
-  if (target && !caseOnlyRename)
+  if (target && !isCaseOnlyFileRename(oldAbs, newAbs))
     throw new Error(`ripide rename-file: target "${newPath}" already exists`)
 
   const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)

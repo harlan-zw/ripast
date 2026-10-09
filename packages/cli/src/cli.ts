@@ -87,7 +87,7 @@ function splitGlobs(value: string): string[] {
 const applyArg = { type: 'boolean' as const, default: false, description: 'Write changes. Default prints a unified diff.' }
 const verifyArg = { type: 'boolean' as const, default: true, description: 'Typecheck post-transform; refuse --apply on regression. Disable with --no-verify.' }
 const verifyModeArg = { type: 'string' as const, description: 'Verification mode: touched, project, or none. Defaults to touched; --no-verify maps to none.' }
-const vueArg = { type: 'boolean' as const, default: true, description: 'Enable Volar pass for .vue files. Disable with --no-vue to skip the Volar pass.' }
+const vueArg = { type: 'boolean' as const, default: true, description: 'Enable Vue support. Use --no-vue for projects without authored Vue files.' }
 const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit machine-readable JSON (suppresses diff/summary text).' }
 const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto uses std-env isAgent.' }
 
