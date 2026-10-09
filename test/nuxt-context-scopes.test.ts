@@ -75,7 +75,7 @@ for (const input of cases) {
         input.provider,
         '--apply',
         '--json',
-        ...(noVerify ? ['--no-verify'] : []),
+        ...(noVerify ? ['--verify-mode', 'none'] : []),
       ], { cwd: fx.dir, encoding: 'utf8' })
       assert.notEqual(result.status, 0, result.stdout)
       assert.match(result.stderr, /cannot resolve auto-import metadata/)

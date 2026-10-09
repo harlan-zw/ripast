@@ -115,7 +115,8 @@ it('exposes barrel alias targeting through the public CLI', () => {
       'index.ts',
       '--target-import',
       '#public',
-      '--no-verify',
+      '--verify-mode',
+      'none',
       '--apply',
     ], { cwd: fixture.dir, encoding: 'utf8' })
     const output = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'use.ts'], { cwd: fixture.dir, encoding: 'utf8' })
