@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, linkSync, readFileSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { it } from 'vitest'
@@ -222,9 +222,66 @@ it('doctor fixes use compact text and apply every fix despite display limits', (
     const payload = JSON.parse(applied.stdout)
     assert.equal(payload.changePage.total, 4)
     assert.equal(payload.changePage.omitted, 3)
-    assert.equal(JSON.parse(fixture.read('fix.json')).changes.length, 4)
+    assert.equal(JSON.parse(fixture.read('fix.json')).fix.changes.length, 4)
     for (let i = 0; i < 4; i++)
       assert.doesNotMatch(fixture.read(`file${i}.ts`), /missing/)
+  }
+  finally { fixture.cleanup() }
+})
+
+it.each(['source.ts', 'tsconfig.json', 'hardlink.ts', 'alias/source.ts'])('artifact collision refuses existing %s before any source write', (artifact) => {
+  const source = 'export const value = 1\nexport const taken = 2\n'
+  const fixture = makeFixture({ 'source.ts': source })
+  try {
+    linkSync(resolve(fixture.dir, 'source.ts'), resolve(fixture.dir, 'hardlink.ts'))
+    symlinkSync(fixture.dir, resolve(fixture.dir, 'alias'), 'junction')
+    const config = fixture.read('tsconfig.json')
+    for (const to of ['other', 'taken']) {
+      const result = run(fixture.dir, ['rename', 'value', to, '--scope', 'source.ts', '--no-vue', '--apply', '--json', '--profile', 'full', '--artifact', artifact])
+      assert.equal(result.status, 1)
+      assert.equal(JSON.parse(result.stdout).status, 'error')
+      assert.equal(fixture.read('source.ts'), source)
+      assert.equal(fixture.read('hardlink.ts'), source)
+      assert.equal(fixture.read('tsconfig.json'), config)
+    }
+  }
+  finally { fixture.cleanup() }
+})
+it.each(['new.ts', 'alias/new.ts'])('artifact cannot occupy prospective rename-file destination: %s', (artifact) => {
+  const source = 'export const value = 1\n'
+  const fixture = makeFixture({ 'source.ts': source })
+  try {
+    symlinkSync(fixture.dir, resolve(fixture.dir, 'alias'), 'junction')
+    const result = run(fixture.dir, ['rename-file', 'source.ts', 'new.ts', '--no-vue', '--apply', '--json', '--artifact', artifact])
+    assert.equal(result.status, 1)
+    assert.equal(JSON.parse(result.stdout).status, 'error')
+    assert.equal(fixture.read('source.ts'), source)
+    assert.equal(existsSync(resolve(fixture.dir, 'new.ts')), false)
+  }
+  finally { fixture.cleanup() }
+})
+
+it.each(['other', 'taken'])('new artifact stores one complete plan before %s apply outcome', (to) => {
+  const source = 'export const value = 1\nexport const taken = 2\n'
+  const fixture = makeFixture({ 'source.ts': source })
+  try {
+    const result = run(fixture.dir, ['rename', 'value', to, '--no-vue', '--apply', '--json', '--profile', 'full', '--artifact', 'plan.json'])
+    assert.equal(result.status, to === 'taken' ? 1 : 0, result.stderr)
+    const payload = JSON.parse(result.stdout)
+    const artifact = JSON.parse(fixture.read('plan.json'))
+    assert.equal(payload.status, to === 'taken' ? 'refused' : 'ok')
+    assert.equal(artifact.verification._tag, 'Checked')
+    assert.equal(artifact.changes.length, 1)
+    assert.equal(artifact.regressions.length > 0, to === 'taken')
+    assert.equal(artifact.applied, undefined)
+    assert.equal(fixture.read('source.ts'), to === 'taken' ? source : source.replace('value', 'other'))
+    const saved = fixture.read('plan.json')
+    const before = fixture.read('source.ts')
+    const repeated = run(fixture.dir, ['scan', 'taken', '--json', '--artifact', 'plan.json'])
+    assert.equal(repeated.status, 1)
+    assert.equal(JSON.parse(repeated.stdout).status, 'error')
+    assert.equal(fixture.read('plan.json'), saved)
+    assert.equal(fixture.read('source.ts'), before)
   }
   finally { fixture.cleanup() }
 })

@@ -1,7 +1,7 @@
 import type { CommandDef } from 'citty'
 import type { ExportFilter, ProfileSink, Verification, VerifyMode } from 'ripide-api'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { renderUsage, runCommand, showUsage } from 'citty'
@@ -111,7 +111,7 @@ const outputArgs = {
   code: { type: 'string' as const, description: 'Display diagnostics with this numeric TypeScript code.' },
   fields: { type: 'string' as const, description: 'Comma-separated result fields for JSON discovery output.' },
   minify: { type: 'boolean' as const, default: false, description: 'Emit JSON without indentation.' },
-  artifact: { type: 'string' as const, description: 'Save complete JSON evidence to this file before display selection.' },
+  artifact: { type: 'string' as const, description: 'Create a new JSON evidence file. Mutations save plans and verification receipts before apply. Stdout reports the apply outcome.' },
 }
 
 type OutputArgs = Record<string, unknown>
@@ -136,12 +136,38 @@ function selectedFields(items: unknown[], args: OutputArgs) {
     return Object.fromEntries(fields.map(field => [field, data[field]]))
   })
 }
-function saveArtifact(args: OutputArgs, full: unknown): void {
-  if (args.artifact)
-    writeFileSync(resolve(String(args.artifact)), `${JSON.stringify(full, null, 2)}\n`)
+function canonicalDestination(path: string): string {
+  let parent = dirname(resolve(path))
+  const parts = [basename(path)]
+  while (!existsSync(parent)) {
+    parts.unshift(basename(parent))
+    const next = dirname(parent)
+    if (next === parent)
+      throw new Error(`Cannot resolve artifact parent: ${path}.`)
+    parent = next
+  }
+  const canonical = join(realpathSync(parent), ...parts)
+  return process.platform === 'win32' || process.platform === 'darwin' ? canonical.toLowerCase() : canonical
 }
-function emitJson(payload: unknown, args: OutputArgs, full = payload): void {
-  saveArtifact(args, full)
+function rejectArtifactCollision(args: OutputArgs, protectedPaths: string[] = []): void {
+  if (!args.artifact)
+    return
+  const path = resolve(String(args.artifact))
+  if (lstatSync(path, { throwIfNoEntry: false }))
+    throw new Error('Artifact path already exists. Choose a new evidence file outside the change paths.')
+  const artifact = canonicalDestination(path)
+  if (protectedPaths.some(path => canonicalDestination(path) === artifact))
+    throw new Error('Artifact path matches a change path. Choose a separate evidence file.')
+}
+function saveArtifact(args: OutputArgs, full: unknown, protectedPaths: string[] = []): void {
+  if (args.artifact) {
+    rejectArtifactCollision(args, protectedPaths)
+    writeFileSync(resolve(String(args.artifact)), `${JSON.stringify(full, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+  }
+}
+function emitJson(payload: unknown, args: OutputArgs, full = payload, artifact: 'save' | 'saved' = 'save'): void {
+  if (artifact === 'save')
+    saveArtifact(args, full)
   process.stdout.write(`${JSON.stringify(payload, null, args.minify || resolveProfile(args.profile).agentProfile ? undefined : 2)}\n`)
 }
 function discoveryJson<T>(results: T[], args: OutputArgs, file?: (item: T) => string, full: unknown = results) {
@@ -478,7 +504,7 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
   if (json) {
     const blockedByRegression = apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
-    saveArtifact(args, r)
+    saveArtifact(args, r, r.changes.map(change => change.path))
     if (wrote)
       writeChanges(r.changes)
     const payload = agentProfile
@@ -500,7 +526,7 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
           })(),
 
         }
-    emitJson(payload, args, { ...r, summary: s, applied: wrote, blockedByRegression })
+    emitJson(payload, args, r, 'saved')
     if (blockedByRegression)
       process.exitCode = 1
     return
@@ -601,7 +627,7 @@ const renameFileCmd = defineCommand({
         })
       : undefined
 
-    saveArtifact(args, r)
+    saveArtifact(args, r, [r.fileMove.from, r.fileMove.to, ...r.changes.map(change => change.path)])
     if (wrote) {
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
       renameSync(r.fileMove.from, r.fileMove.to)
@@ -641,7 +667,7 @@ const renameFileCmd = defineCommand({
             })(),
 
           }
-      emitJson(payload, args, r)
+      emitJson(payload, args, r, 'saved')
       if (blockedByRegression)
         process.exitCode = 1
       return
@@ -1011,7 +1037,7 @@ const doctorCmd = defineCommand({
     if (args.fix) {
       const fix = buildDoctorFixes(report, process.cwd())
       if (args.json) {
-        saveArtifact(args, { report, fix })
+        saveArtifact(args, { report, fix }, fix.changes.map(change => change.path))
         if (args.apply && fix.changes.length)
           writeChanges(fix.changes)
         const full = {
@@ -1029,7 +1055,7 @@ const doctorCmd = defineCommand({
               findings: skippedPage.results,
               findingPage: { ...skippedPage, results: undefined },
             }
-          : full, args, full)
+          : full, args, full, 'saved')
         if (fix.skipped.length)
           process.exitCode = 1
         return
@@ -1136,6 +1162,10 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
         async run(context: Parameters<NonNullable<typeof selected.run>>[0]) {
           const start = performance.now()
           try {
+            const destinations = name === 'rename-file'
+              ? [recoverSmushedPair(context.args.old as string, context.args.new as string).new]
+              : name === 'move' ? [context.args.to as string] : []
+            rejectArtifactCollision(context.args, destinations)
             const needsAdapter = ['rename', 'move', 'rename-file', 'replace', 'delete', 'doctor', 'components', 'vue-template-wrap', 'vue-template-unwrap'].includes(name)
             if (needsAdapter && context.args.vue !== false && ensureAdapters && await ensureAdapters())
               return
