@@ -12,6 +12,16 @@ import { StringDecoder } from 'node:string_decoder'
 import { sha256 } from './manifest.ts'
 import { createTraceTracker, groupMembers } from './processes.ts'
 
+async function waitForGroupTermination(group: number): Promise<void> {
+  if (process.platform !== 'linux')
+    return
+  const deadline = performance.now() + 1000
+  while (groupMembers(group).length && performance.now() < deadline)
+    await new Promise(resolve => setTimeout(resolve, 10))
+  if (groupMembers(group).length)
+    throw new Error('Remaining command processes did not terminate.')
+}
+
 export type ParentExit = {
   _tag: 'Exited'
   code: number
@@ -203,17 +213,18 @@ export async function recordCommand(options: {
         const parent = exit as ParentExit
         terminate('SIGKILL')
         exit = { _tag: 'DescendantsTerminated', parent, pids: remaining.map(member => member.pid) }
-        const deadline = performance.now() + 1000
-        while (groupMembers(child.pid).length && performance.now() < deadline)
-          await new Promise(resolve => setTimeout(resolve, 10))
-        if (groupMembers(child.pid).length)
-          throw new Error('Remaining command processes did not terminate.')
+        await waitForGroupTermination(child.pid)
       }
     }
   }
   catch (error) {
     terminate('SIGKILL')
     await closed
+    if (child.pid) {
+      await waitForGroupTermination(child.pid).catch((cleanupError) => {
+        throw new AggregateError([error, cleanupError], 'Output recording failed; command cleanup failed.')
+      })
+    }
     throw error
   }
   finally {

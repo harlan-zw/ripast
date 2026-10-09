@@ -2,7 +2,7 @@ import type { CommandDef } from 'citty'
 import type { ExportFilter, ProfileSink, Verification, VerifyMode } from 'ripide-api'
 import type { JsonTag } from './json.ts'
 import type { OutputPage } from './presentation/index.ts'
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -21,19 +21,13 @@ import {
   runCssClassFileScan,
   runCssClassRename,
   runCssClassScan,
-  runDelete,
   runDoctor,
-  runMove,
-  runRename,
-  runRenameFile,
-  runReplace,
-  runVueTemplateUnwrap,
-  runVueTemplateWrap,
   scan,
   writeChanges,
 } from 'ripide-api'
 import { agent, isAgent } from 'std-env'
 import { defineStrictCommand as defineCommand } from './command.ts'
+import { createCliEngine, loadVueOperations } from './engine.ts'
 import { jsonResult, mutationTag } from './json.ts'
 import {
   compactVerification,
@@ -105,7 +99,7 @@ function splitGlobs(value: string): string[] {
 }
 const applyArg = { type: 'boolean' as const, default: false, description: 'Write changes. Default prints a unified diff.' }
 const verifyModeArg = { type: 'string' as const, description: 'Verification mode: touched, project, or none. Defaults to touched.' }
-const vueArg = { type: 'boolean' as const, default: true, description: 'Enable Volar pass for .vue files. Disable with --no-vue to skip the Volar pass.' }
+const vueArg = { type: 'boolean' as const, default: true, description: 'Enable Vue support. Use --no-vue for projects without authored Vue files.' }
 const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit machine-readable JSON (suppresses diff/summary text).' }
 const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto detects agents for text. JSON auto uses the compact agent profile.' }
 
@@ -281,9 +275,12 @@ const scanCmd = defineCommand({
     ...outputArgs,
     json: { type: 'boolean', default: false },
   },
-  run({ args }) {
+  async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
+    const engine = sdk.services
     const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const opts = {
+      engine,
       profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       kinds: args.kind ? (args.kind as string).split(',') : undefined,
@@ -331,15 +328,15 @@ const renameCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
     const verifyMode = resolveCliVerifyMode(args.verifyMode)
-    const r = await runRename(args.from as string, args.to as string, {
+    const r = await sdk.rename(args.from as string, args.to as string, {
       profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       verifyMode,
       scope: args.scope as string | undefined,
       allowMultiple: args.all as boolean,
-      vue: args.vue as boolean,
     })
     emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
@@ -360,8 +357,9 @@ const replaceCmd = defineCommand({
     'json': jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
     const verifyMode = resolveCliVerifyMode(args.verifyMode, 'project')
-    const r = await runReplace(args.from as string, args.to as string, {
+    const r = await sdk.replace(args.from as string, args.to as string, {
       profile: phaseSink(args),
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       verifyMode,
@@ -381,16 +379,14 @@ const treeCmd = defineCommand({
     ...outputArgs,
     json: jsonArg,
   },
-  run({ args }) {
+  async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
+    const engine = sdk.services
     const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const exportFilter = args.exports == null
       ? agentProfile ? 'exported' : 'all'
       : resolveExportFilter(args.exports)
-    const tree = buildDeclarationTree({
-      profile: phaseSink(args),
-      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
-      exports: agentProfile ? 'all' : exportFilter,
-    })
+    const tree = buildDeclarationTree({ engine, profile: phaseSink(args), glob: args.glob ? splitGlobs(args.glob as string) : undefined, exports: agentProfile ? 'all' : exportFilter })
     tree.files.sort((a, b) => a.file.localeCompare(b.file))
     if (args.json) {
       const filtered = { files: tree.files.map(file => ({ ...file, declarations: file.declarations.filter(declaration => exportFilter === 'all' || (exportFilter === 'exported') === declaration.exported) })) }
@@ -417,12 +413,10 @@ const unusedCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
+    const engine = sdk.services
     const exportFilter = args.exports == null ? 'exported' : resolveExportFilter(args.exports)
-    const unused = await buildUnusedDeclarations({
-      profile: phaseSink(args),
-      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
-      exports: exportFilter,
-    })
+    const unused = await buildUnusedDeclarations({ engine, profile: phaseSink(args), glob: args.glob ? splitGlobs(args.glob as string) : undefined, exports: exportFilter })
     const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const declarations = unused.files.flatMap(file => file.declarations.map(declaration => ({ file: file.file, ...declaration })))
     if (args.json) {
@@ -450,12 +444,12 @@ const moveCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
     const verifyMode = resolveCliVerifyMode(args.verifyMode)
-    const r = await runMove(args.symbol as string, args.from as string, args.to as string, {
+    const r = await sdk.move(args.symbol as string, args.from as string, args.to as string, {
       profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
       verifyMode,
-      vue: args.vue as boolean,
     })
     emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
   },
@@ -473,8 +467,9 @@ const deleteCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
     const verifyMode = resolveCliVerifyMode(args.verifyMode)
-    const r = await runDelete(args.symbol as string, args.from as string, {
+    const r = await sdk.delete(args.symbol as string, args.from as string, {
       profile: phaseSink(args),
       verifyMode,
     })
@@ -597,15 +592,15 @@ const renameFileCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
     const verifyMode = resolveCliVerifyMode(args.verifyMode)
     const recovered = recoverSmushedPair(args.old as string, args.new as string)
     if (recovered.warning)
       process.stderr.write(`warning: ${recovered.warning}\n`)
-    const r = await runRenameFile(recovered.old, recovered.new, {
+    const r = await sdk.renameFile(recovered.old, recovered.new, {
       profile: phaseSink(args),
       tsconfig: args.tsconfig as string | undefined,
       verifyMode,
-      vue: args.vue as boolean,
     })
     const apply = !!args.apply
     const json = !!args.json
@@ -628,22 +623,8 @@ const renameFileCmd = defineCommand({
       : undefined
 
     saveArtifact(args, r, [r.fileMove.from, r.fileMove.to, ...r.changes.map(change => change.path)])
-    if (wrote) {
-      mkdirSync(dirname(r.fileMove.to), { recursive: true })
-      renameSync(r.fileMove.from, r.fileMove.to)
-      try {
-        writeChanges(displayChanges)
-      }
-      catch (error) {
-        try {
-          renameSync(r.fileMove.to, r.fileMove.from)
-        }
-        catch (rollbackError) {
-          throw new AggregateError([error, rollbackError], 'File rename failed. Restoring the source path also failed.')
-        }
-        throw error
-      }
-    }
+    if (wrote)
+      sdk.commit(r)
 
     if (json) {
       const payload = agentProfile
@@ -732,8 +713,11 @@ const cssClassRenameCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
+    const engine = sdk.services
     const map = buildRenameMap(args.from as string | undefined, args.to as string | undefined, args.map as string | undefined)
     const r = await runCssClassRename(map, {
+      engine,
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
     })
     emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)
@@ -789,7 +773,9 @@ const cssClassScanCmd = defineCommand({
     ...outputArgs,
     json: jsonArg,
   },
-  run({ args }) {
+  async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
+    const engine = sdk.services
     const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const by = resolveCssClassScanGroup(args.by)
     const base = {
@@ -797,7 +783,7 @@ const cssClassScanCmd = defineCommand({
       pattern: args.pattern ? (args.pattern as string).split(',') : undefined,
     }
     if (by === 'file') {
-      const hits = runCssClassFileScan({ ...base, sort: resolveCssClassFileScanSort(args.sort) })
+      const hits = runCssClassFileScan({ engine, ...base, sort: resolveCssClassFileScanSort(args.sort) })
       if (args.json) {
         const results = agentProfile ? hits.map(hit => ({ file: hit.file, count: hit.count, unique: hit.unique })) : hits
         discoveryJson(results, args, hit => hit.file, hits)
@@ -811,7 +797,7 @@ const cssClassScanCmd = defineCommand({
       process.stdout.write(`${formatFileScanHits(page.results, false)}\n${formatOutputPage(page)}\n`)
       return
     }
-    const hits = runCssClassScan({ ...base, sort: resolveCssClassScanSort(args.sort) })
+    const hits = runCssClassScan({ engine, ...base, sort: resolveCssClassScanSort(args.sort) })
     if (args.json) {
       if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null) {
         emitJson(hits, args, hits)
@@ -875,6 +861,7 @@ const vueTemplateWrapCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const { runVueTemplateWrap } = await loadVueOperations()
     const r = await runVueTemplateWrap(args.selector as string, args.wrapper as string, {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       scope: args.scope as string | undefined,
@@ -897,6 +884,7 @@ const vueTemplateUnwrapCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const { runVueTemplateUnwrap } = await loadVueOperations()
     const r = await runVueTemplateUnwrap(args.selector as string, {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       scope: args.scope as string | undefined,
@@ -918,8 +906,11 @@ const componentsCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
+    const engine = sdk.services
     const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const opts = {
+      engine,
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       source: resolveComponentsSource(args.source),
     }
@@ -1001,10 +992,12 @@ const doctorCmd = defineCommand({
     json: jsonArg,
   },
   async run({ args }) {
+    const sdk = await createCliEngine(process.cwd(), args.vue !== false)
+    const engine = sdk.services
     const { agentProfile } = resolveProfile(args.profile, !!args.json)
     const checks = args.checks ? (args.checks as string).split(',') : undefined
     if (checks) {
-      const names = await getDoctorCheckNames({ cwd: process.cwd() })
+      const names = await getDoctorCheckNames({ engine, cwd: process.cwd() })
       for (const check of checks) {
         if (!names.includes(check))
           throw new Error(`Unknown doctor check: ${check}. Available checks: ${names.join(', ')}`)
@@ -1023,13 +1016,7 @@ const doctorCmd = defineCommand({
         return
       }
     }
-    const report = await runDoctor({
-      profile: phaseSink(args),
-      glob: args.glob ? splitGlobs(args.glob as string) : undefined,
-      checks,
-      entry,
-      changedFiles,
-    })
+    const report = await runDoctor({ engine, profile: phaseSink(args), glob: args.glob ? splitGlobs(args.glob as string) : undefined, checks, entry, changedFiles })
     if (args.fix) {
       const fix = buildDoctorFixes(report, process.cwd())
       if (args.json) {

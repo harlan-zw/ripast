@@ -344,18 +344,30 @@ Run `ripide --help` for all commands, or `ripide <command> --help` for its optio
 
 ## Programmatic API
 
+The SDK uses an isolated engine. Core supports TypeScript and JavaScript without framework dependencies.
+
 ```ts
-import { runRename, runReplace, scan } from 'ripide-api'
+import { createEngine } from 'ripide-api'
 
-const hits = scan('useStore', { cwd: process.cwd() })
-
-const result = await runRename('useStore', 'useAppStore', { cwd: process.cwd() })
-// result.changes, result.regressions, result.scanned
-
-const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cwd: process.cwd() })
+const engine = createEngine()
+const hits = engine.scan('useStore', { cwd: process.cwd() })
+const result = await engine.rename('useStore', 'useAppStore', { cwd: process.cwd() })
+engine.commit(result)
 ```
 
-The [core exports](./packages/core/src/index.ts) include refactors, scans, declaration trees, formatters, and the `writeChanges` helper.
+Supply framework extensions explicitly:
+
+```ts
+import { createEngine } from 'ripide-api'
+import { createVueExtension } from 'ripide-vue'
+
+const engine = createEngine({ extensions: [createVueExtension()] })
+const result = await engine.rename('useStore', 'useAppStore', { cwd: process.cwd() })
+engine.commit(result)
+```
+
+The CLI loads relevant optional packages. The SDK never loads optional packages automatically.
+Read the [extension contract and migration guide](./docs/engine.md) before adding a language.
 
 Reuse declaration analysis during repeated SDK inspection:
 

@@ -5,6 +5,7 @@ export default defineBuildConfig({
     {
       type: 'bundle',
       input: ['./src/cli.ts', './src/presentation/index.ts'],
+      rolldown: { external: ['ripide-vue'] },
     },
   ],
 })

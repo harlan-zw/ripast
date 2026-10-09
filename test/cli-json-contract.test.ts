@@ -93,7 +93,7 @@ it('mutation tags distinguish preview, apply, and empty without changing source 
   finally { fixture.cleanup() }
 })
 
-it.each([['scan', 'answer', '--no-verify'], ['scan', 'answer', '--profile', 'bad']])('jSON failures retain command metadata for %s', (...args) => {
+it.each([['scan', 'answer', '--verify-mode', 'none'], ['scan', 'answer', '--profile', 'bad']])('jSON failures retain command metadata for %s', (...args) => {
   const fixture = makeFixture({ 'source.ts': 'export const answer = 42\n' })
   try {
     const result = run(fixture.dir, args)

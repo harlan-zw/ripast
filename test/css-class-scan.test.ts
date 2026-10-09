@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { formatAgentFileScanHits, formatFileScanHits } from '../packages/cli/src/presentation/index.ts'
+import { formatAgentFileScanHits, formatFileScanHits } from '../packages/cli/src/presentation/css-class-scan.ts'
 import { runCssClassFileScan, runCssClassScan } from '../packages/core/src/css-class-scan.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('runCssClassScan', () => {
@@ -10,7 +11,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const cls = 'bg-gray-500 text-white bg-gray-500'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       const bg = hits.find(h => h.token === 'bg-gray-500')
       assert.ok(bg, 'bg-gray-500 present')
       assert.equal(bg!.count, 2)
@@ -24,7 +25,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const cls = 'bg-gray-500 hover:bg-gray-500 dark:md:bg-gray-500'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       const bg = hits.find(h => h.token === 'bg-gray-500')
       assert.equal(bg!.count, 3)
     }
@@ -36,7 +37,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const cls = 'bg-gray-500 hover:!bg-gray-500'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       const bg = hits.find(h => h.token === 'bg-gray-500')
       assert.equal(bg!.count, 2)
     }
@@ -49,7 +50,7 @@ describe('runCssClassScan', () => {
       'src/b.ts': `export const className = 'bg-gray-500 text-white'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       const bg = hits.find(h => h.token === 'bg-gray-500')
       assert.equal(bg!.count, 2)
       assert.deepEqual(bg!.files, ['src/a.ts', 'src/b.ts'])
@@ -62,7 +63,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const cls = 'bg-gray-500 text-white border-gray-200'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir, pattern: ['bg-*'] })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir, pattern: ['bg-*'] }, engine: vueServices() })
       assert.equal(hits.length, 1)
       assert.equal(hits[0].token, 'bg-gray-500')
     }
@@ -74,7 +75,7 @@ describe('runCssClassScan', () => {
       'src/c.vue': `<template><div class="bg-gray-500 hover:text-white">x</div></template>\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       assert.ok(hits.find(h => h.token === 'bg-gray-500'))
       assert.ok(hits.find(h => h.token === 'text-white'))
     }
@@ -86,7 +87,7 @@ describe('runCssClassScan', () => {
       'src/x.css': `.btn { @apply bg-gray-500 hover:text-white; }\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       assert.ok(hits.find(h => h.token === 'bg-gray-500'))
       assert.ok(hits.find(h => h.token === 'text-white'))
     }
@@ -98,7 +99,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const cls = 'flex flex flex items-center'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(hits[0].token, 'flex')
       assert.equal(hits[0].count, 3)
       assert.equal(hits[1].token, 'items-center')
@@ -111,7 +112,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const cls = 'flex flex flex block block items-center'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir, sort: 'count-asc' })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir, sort: 'count-asc' }, engine: vueServices() })
       assert.deepEqual(hits.map(h => `${h.token}:${h.count}`), [
         'items-center:1',
         'block:2',
@@ -126,7 +127,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const cls = 'flex block items-center'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir, sort: 'token' })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir, sort: 'token' }, engine: vueServices() })
       assert.deepEqual(hits.map(h => h.token), ['block', 'flex', 'items-center'])
     }
     finally { fx.cleanup() }
@@ -139,7 +140,7 @@ describe('runCssClassScan', () => {
       'src/c.ts': `export const msg = 'not classes here'\n`,
     }, false)
     try {
-      const hits = runCssClassFileScan({ cwd: fx.dir })
+      const hits = runCssClassFileScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       assert.deepEqual(hits.map(h => `${h.file}:${h.unique}:${h.count}`), [
         'src/a.ts:3:4',
         'src/b.ts:1:1',
@@ -155,7 +156,7 @@ describe('runCssClassScan', () => {
       'src/b.ts': `export const cls = 'flex'\n`,
     }, false)
     try {
-      const hits = runCssClassFileScan({ cwd: fx.dir, sort: 'unique-asc' })
+      const hits = runCssClassFileScan({ ...{ cwd: fx.dir, sort: 'unique-asc' }, engine: vueServices() })
       assert.deepEqual(hits.map(h => h.file), ['src/b.ts', 'src/a.ts'])
     }
     finally { fx.cleanup() }
@@ -179,7 +180,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const x = 42\nexport const s = 'hello world 123'\nexport const cls = 'bg-gray-500'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       assert.ok(!hits.some(h => h.token === '42'))
       assert.ok(!hits.some(h => h.token === '123'))
       assert.ok(!hits.some(h => h.token === 'hello'))
@@ -194,7 +195,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const text = 'the Google default'\nexport const cls = cn('flex', active && 'text-sm', { 'items-center': active })\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       assert.ok(hits.find(h => h.token === 'flex'))
       assert.ok(hits.find(h => h.token === 'text-sm'))
       assert.ok(hits.find(h => h.token === 'items-center'))
@@ -212,7 +213,7 @@ describe('runCssClassScan', () => {
       'layers/readme.md': `the Google default\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir, glob: ['app/**', 'layers/**'] })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir, glob: ['app/**', 'layers/**'] }, engine: vueServices() })
       assert.ok(hits.find(h => h.token === 'flex'))
       assert.ok(!hits.some(h => h.token === 'the'))
       assert.ok(!hits.some(h => h.token === 'Google'))
@@ -226,7 +227,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const cls = 'bg-[#ff0000] text-[14px]'\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       assert.ok(hits.find(h => h.token === 'bg-[#ff0000]'))
       assert.ok(hits.find(h => h.token === 'text-[14px]'))
     }
@@ -238,7 +239,7 @@ describe('runCssClassScan', () => {
       'src/a.ts': `export const x = 1\n`,
     }, false)
     try {
-      const hits = runCssClassScan({ cwd: fx.dir })
+      const hits = runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })
       assert.equal(hits.length, 0)
     }
     finally { fx.cleanup() }

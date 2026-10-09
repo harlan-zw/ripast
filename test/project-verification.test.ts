@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { it } from 'vitest'
 import { runReplace } from '../packages/core/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const cli = resolve('packages/cli/src/cli.ts')
@@ -40,7 +41,7 @@ it('replacement checks unchanged Vue consumers after changing a TypeScript expor
     'Comp.vue': '<script setup lang="ts">\nimport { value } from "./bridge"\nconst result: number = value\n</script>\n<template>{{ result }}</template>\n',
   })
   try {
-    const result = await runReplace('original', 'replacement', { cwd: fx.dir })
+    const result = await runReplace('original', 'replacement', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.ok(result.regressions.some(regression => regression.file === `${fx.dir}/Comp.vue` && regression.code === 2322), JSON.stringify(result.regressions))
     assert.equal(result.changes.some(change => change.path.endsWith('.vue')), false)
   }
@@ -60,7 +61,7 @@ it.each([
     'consumer.ts': 'import { value } from "./bridge.ts"\nexport const result: number = value\n',
   })
   try {
-    const result = await runReplace('original', 'replacement', { cwd: fx.dir, verifyMode })
+    const result = await runReplace('original', 'replacement', { ...{ cwd: fx.dir, verifyMode }, engine: vueServices() })
     assert.equal(result.regressions.some(regression => regression.file.endsWith('/consumer.ts') && regression.code === 2322), blocked)
     assert.equal(result.changes[0]?.rel, 'bridge.ts')
   }

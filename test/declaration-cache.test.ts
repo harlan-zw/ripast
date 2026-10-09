@@ -3,7 +3,21 @@ import { rmSync, statSync, utimesSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { buildDeclarationTree, createDeclarationCache } from 'ripide-api'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
+
+it('separates authored analysis for different engine registrations', () => {
+  const source = '<script setup lang="ts">\nconst value = 42\n</script>\n'
+  const fixture = makeFixture({ 'Comp.vue': source })
+  try {
+    const cache = createDeclarationCache()
+    assert.deepEqual(cache.inspect('Comp.vue', source, fixture.dir)?.declarations, [])
+    const authored = cache.inspect('Comp.vue', source, fixture.dir, vueServices())
+    assert.deepEqual(authored?.declarations.map(({ name, line }) => ({ name, line })), [{ name: 'value', line: 2 }])
+    assert.deepEqual(cache.inspect('Comp.vue', source, fixture.dir)?.declarations, [])
+  }
+  finally { fixture.cleanup() }
+})
 
 it('declaration cache reuses analysis while preserving export filters and caller isolation', () => {
   const fixture = makeFixture({ 'source.ts': 'export const publicName = 1\nconst localName = 2\n' })

@@ -1,3 +1,4 @@
+import type { EngineServices } from './engine.ts'
 import type { ImportInfo } from './imports.ts'
 import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
@@ -9,17 +10,17 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
-import { loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, isVuePath, projectScriptFiles, resolveVerificationOptions, verifyScope } from './project.ts'
+import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerificationOptions, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
 import { createVerification } from './verification.ts'
-import { findRegressions, findVueRegressions } from './verify.ts'
+import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
+  engine?: EngineServices
   profile?: ProfileSink
   cwd?: string
   glob?: string | string[]
@@ -44,12 +45,15 @@ interface ReplacementTarget {
 }
 
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
+  const verifyMode = resolveVerificationOptions(opts, 'project')
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
-  const verifyMode = resolveVerificationOptions(opts, 'project')
+  const engine = opts.engine
+  assertSourceSupport(cwd, engine)
+  engine?.assertOperation({ operation: 'replace', from, to }, cwd)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : timed(profile, 'target discovery', () => rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path)))
+    : timed(profile, 'target discovery', () => rgFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine)))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripide replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
@@ -57,7 +61,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   try {
     const target = await timedAsync(profile, 'resolve replacement', () => findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope))
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path)))
+    const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine) && !target.declarationFiles.includes(path)))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     const referenceCache = new Map<string, SourceSite[]>()
@@ -70,9 +74,9 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
     const verification = createVerification(verifyMode, !!changes.length)
     const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await timedAsync(profile, 'verify', () => findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path)), verification.typescript))
+      : await timedAsync(profile, 'verify', () => findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), engine), verification.typescript))
     if (verifyMode === 'project')
-      regressions.push(...await timedAsync(profile, 'vue verify', () => findVueRegressions(cwd, changes, findTsconfig(cwd), () => loadAdapter('vue'), verification.vue)))
+      regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine, verification.extension)))
     return { changes, scanned: candidatePaths.length, regressions, verification: verification.result() }
   }
   finally {
@@ -279,7 +283,7 @@ async function cachedReferences(server: TsServer, cache: Map<string, SourceSite[
 }
 
 function relativeScriptSpecifier(specifier: string): boolean {
-  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|vue|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
+  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
 }
 
 function inferProjectSpecifierStyle(cwd: string): (path: string) => string {

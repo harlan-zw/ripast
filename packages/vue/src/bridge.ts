@@ -1,10 +1,11 @@
 import type { AutoImportRenamePlan, DiagnosticRecorder, FileChange, Regression, RenameSite } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { diagnosticRegressions, posToLineCol, rewriteTemplateReferences } from 'ripide-api/adapter'
+import { diagnosticRegressions, posToLineCol } from 'ripide-api/adapter'
 import { URI } from 'vscode-uri'
 import { createVueService, vueProjectConfigs, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
 import { hasVueFilesContaining, listVueFiles, listVueFilesContaining } from './vue-files.ts'
+import { rewriteTemplateReferences } from './vue-template.ts'
 
 export { hasVueFilesContaining }
 

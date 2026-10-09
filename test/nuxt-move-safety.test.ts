@@ -7,6 +7,7 @@ import { compileScript, parse } from '@vue/compiler-sfc'
 import { runMove } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 
 it('preserves local Vue bindings when moving a Nuxt auto-import out of scope', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-move-safety-'))
@@ -19,7 +20,7 @@ const label = format(7)
 <template>{{ label }} {{ format(1) }}</template>
 `
     writeFileSync(join(dir, 'pages/local.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/local.vue')?.after ?? source
     const { descriptor } = parse(transformed)
     const compiled = compileScript(descriptor, { id: 'local' })
@@ -47,7 +48,7 @@ it.each([
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     writeFileSync(join(dir, 'pages/local.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(result.changes.find(change => change.rel === 'pages/local.vue'), undefined)
     assert.equal(readFileSync(join(dir, 'pages/local.vue'), 'utf8'), source)
   }
@@ -72,12 +73,12 @@ ${freeUse ? 'const label = format(7)' : ''}
     writeFileSync(join(dir, 'pages/props.vue'), source)
     if (freeUse) {
       await assert.rejects(
-        () => runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const }),
+        () => runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() }),
         /Use an explicit import alias before moving it/,
       )
     }
     else {
-      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
       assert.equal(result.changes.find(change => change.rel === 'pages/props.vue'), undefined)
     }
     assert.equal(readFileSync(join(dir, 'pages/props.vue'), 'utf8'), source)
@@ -97,7 +98,7 @@ it.each([
   try {
     cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
     writeFileSync(join(dir, 'consumer.ts'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'consumer.ts')?.after ?? source
     const exports = {}
     runInNewContext(ts.transpileModule(transformed, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
@@ -118,7 +119,7 @@ function local(format: (value: number) => number) { return format(7) }
 export const labels = [local(value => value * 10), format(2), other(3)]
 `
     writeFileSync(join(dir, 'consumer.ts'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'consumer.ts')!.after
     const exports = {}
     runInNewContext(ts.transpileModule(transformed, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
@@ -150,7 +151,7 @@ const label = format(7)
 <template>{{ label }}</template>
 `
     writeFileSync(join(dir, 'pages/dual.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/dual.vue')!.after
     const { descriptor } = parse(transformed)
     const compiled = compileScript(descriptor, { id: 'dual' })
@@ -192,7 +193,7 @@ const label = format(7)
 <template>{{ label }}</template>
 `
     writeFileSync(join(dir, 'pages/props.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/props.vue')!.after
     const { descriptor } = parse(transformed)
     const setup = ts.createSourceFile('setup.ts', descriptor.scriptSetup!.content, ts.ScriptTarget.Latest, true)
@@ -221,7 +222,7 @@ const label = format(local(value => value))
 <template>{{ label }}</template>
 `
     writeFileSync(join(dir, 'pages/dual.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/dual.vue')!.after
     const { descriptor } = parse(transformed)
     const compiled = compileScript(descriptor, { id: 'dual' })

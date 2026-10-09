@@ -2,6 +2,7 @@ import type { Fixture } from './helpers.ts'
 import { parse } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
 import { runCssClassRename, runCssClassScan, writeChanges } from '../packages/core/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeReactFixture, reactDiagnostics, renderReactFixture } from './react-helpers.ts'
 import { assertSolidDiagnostics, makeSolidFixture, renderSolidFixture } from './solid-helpers.ts'
 
@@ -50,13 +51,13 @@ describe.each(frameworks)('$name JSX class attributes', (framework) => {
       fx.write(framework.file, framework.source(attribute))
       framework.check(fx)
       expect(renderedClass(framework.render(fx))).toBe(before)
-      expect(runCssClassScan({ cwd: fx.dir, glob: framework.file })).toEqual([{ token: before, count: 1, files: [framework.file] }])
-      const result = await runCssClassRename(new Map([[before, after]]), { cwd: fx.dir, glob: framework.file })
+      expect(runCssClassScan({ ...{ cwd: fx.dir, glob: framework.file }, engine: vueServices() })).toEqual([{ token: before, count: 1, files: [framework.file] }])
+      const result = await runCssClassRename(new Map([[before, after]]), { ...{ cwd: fx.dir, glob: framework.file }, engine: vueServices() })
       expect(result.changes).toHaveLength(1)
       writeChanges(result.changes)
       framework.check(fx)
       expect(renderedClass(framework.render(fx))).toBe(after)
-      expect(runCssClassScan({ cwd: fx.dir, glob: framework.file })).toEqual([{ token: after, count: 1, files: [framework.file] }])
+      expect(runCssClassScan({ ...{ cwd: fx.dir, glob: framework.file }, engine: vueServices() })).toEqual([{ token: after, count: 1, files: [framework.file] }])
     }
     finally { fx.cleanup() }
   })
@@ -68,8 +69,8 @@ describe.each(frameworks)('$name JSX class attributes', (framework) => {
       fx.write(framework.file, framework.source(`"content-[&quot;${entity}&quot;] flex"`))
       framework.check(fx)
       expect(renderedClass(framework.render(fx))).toBe(`${preserved} flex`)
-      expect(runCssClassScan({ cwd: fx.dir, glob: framework.file, sort: 'token' }).map(hit => hit.token)).toEqual([preserved, 'flex'])
-      writeChanges((await runCssClassRename(new Map([['flex', 'grid']]), { cwd: fx.dir, glob: framework.file })).changes)
+      expect(runCssClassScan({ ...{ cwd: fx.dir, glob: framework.file, sort: 'token' }, engine: vueServices() }).map(hit => hit.token)).toEqual([preserved, 'flex'])
+      writeChanges((await runCssClassRename(new Map([['flex', 'grid']]), { ...{ cwd: fx.dir, glob: framework.file }, engine: vueServices() })).changes)
       framework.check(fx)
       expect(renderedClass(framework.render(fx))).toBe(`${preserved} grid`)
     }
@@ -84,8 +85,8 @@ describe.each(frameworks)('$name JSX class attributes', (framework) => {
       fx.write(framework.file, framework.source(`{${JSON.stringify(before)}}`))
       framework.check(fx)
       expect(renderedClass(framework.render(fx))).toBe(before)
-      expect(runCssClassScan({ cwd: fx.dir, glob: framework.file }).map(hit => hit.token)).toEqual([before])
-      writeChanges((await runCssClassRename(new Map([[before, after]]), { cwd: fx.dir, glob: framework.file })).changes)
+      expect(runCssClassScan({ ...{ cwd: fx.dir, glob: framework.file }, engine: vueServices() }).map(hit => hit.token)).toEqual([before])
+      writeChanges((await runCssClassRename(new Map([[before, after]]), { ...{ cwd: fx.dir, glob: framework.file }, engine: vueServices() })).changes)
       framework.check(fx)
       expect(renderedClass(framework.render(fx))).toBe(after)
     }

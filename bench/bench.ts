@@ -6,7 +6,8 @@ import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { cpus, loadavg, platform, release } from 'node:os'
 import { join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, runMove, runRename, runRenameFile, scan } from 'ripide-api'
+import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, createEngine, runMove, runRename, runRenameFile, scan } from 'ripide-api'
+import { createVueExtension } from 'ripide-vue'
 import { makeBenchFixture } from './fixture.ts'
 
 interface BenchCase {
@@ -41,7 +42,7 @@ const benches: BenchCase[] = [
   {
     name: 'unused exported',
     fn: async (fixture) => {
-      const result = await buildUnusedDeclarations({ cwd: fixture.dir, exports: 'exported' })
+      const result = await buildUnusedDeclarations({ engine: createEngine({ extensions: [createVueExtension()] }).services, cwd: fixture.dir, exports: 'exported' })
       assertCount('unused exported declarations', result.files.reduce((count, file) => count + file.declarations.length, 0), FILE_COUNT * 3 + 2)
     },
   },
@@ -50,7 +51,7 @@ const benches: BenchCase[] = [
     tsconfig: 'app/.nuxt/tsconfig.app.json',
     fn: async (fixture) => {
       const tsconfig = 'app/.nuxt/tsconfig.app.json'
-      const result = await runRenameFile('src/hot.ts', 'src/renamed.ts', { cwd: fixture.dir, tsconfig })
+      const result = await runRenameFile('src/hot.ts', 'src/renamed.ts', { engine: createEngine({ extensions: [createVueExtension()] }).services, cwd: fixture.dir, tsconfig })
       assertCount('rename-file changes', result.changes.length, IMPORTERS_PER_SYMBOL)
       assertCount('rename-file regressions', result.regressions.length, 0)
     },
@@ -72,7 +73,7 @@ const benches: BenchCase[] = [
   {
     name: 'tree exported',
     fn: (fixture) => {
-      const tree = buildDeclarationTree({ cwd: fixture.dir, exports: 'exported' })
+      const tree = buildDeclarationTree({ engine: createEngine({ extensions: [createVueExtension()] }).services, cwd: fixture.dir, exports: 'exported' })
       assertCount('tree files', tree.files.length, FILE_COUNT + 3)
     },
   },
@@ -80,7 +81,7 @@ const benches: BenchCase[] = [
     name: 'rename no verify',
     profile: true,
     fn: async (fixture, profile) => {
-      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verifyMode: 'none' as const, vue: false, profile })
+      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { engine: createEngine({ extensions: [createVueExtension()] }).services, cwd: fixture.dir, verifyMode: 'none' as const, profile })
       assertCount('rename no verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 1)
     },
   },
@@ -89,7 +90,7 @@ const benches: BenchCase[] = [
     runs: Math.max(3, Math.min(RUNS, 5)),
     profile: true,
     fn: async (fixture, profile) => {
-      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { cwd: fixture.dir, verifyMode: 'touched' as const, vue: false, profile })
+      const result = await runRename('hotSymbol', 'hotSymbolRenamed', { engine: createEngine({ extensions: [createVueExtension()] }).services, cwd: fixture.dir, verifyMode: 'touched' as const, profile })
       assertCount('rename verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 1)
       assertCount('rename verify regressions', result.regressions.length, 0)
     },
@@ -98,7 +99,7 @@ const benches: BenchCase[] = [
     name: 'move no verify',
     profile: true,
     fn: async (fixture, profile) => {
-      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verifyMode: 'none' as const, vue: false, profile })
+      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { engine: createEngine({ extensions: [createVueExtension()] }).services, cwd: fixture.dir, verifyMode: 'none' as const, profile })
       assertCount('move no verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 2)
     },
   },
@@ -107,7 +108,7 @@ const benches: BenchCase[] = [
     runs: Math.max(3, Math.min(RUNS, 5)),
     profile: true,
     fn: async (fixture, profile) => {
-      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { cwd: fixture.dir, verifyMode: 'touched' as const, vue: false, profile })
+      const result = await runMove('movedSymbol', 'src/source.ts', 'src/target.ts', { engine: createEngine({ extensions: [createVueExtension()] }).services, cwd: fixture.dir, verifyMode: 'touched' as const, profile })
       assertCount('move verify changes', result.changes.length, IMPORTERS_PER_SYMBOL + 2)
       assertCount('move verify regressions', result.regressions.length, 0)
     },

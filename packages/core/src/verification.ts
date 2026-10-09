@@ -6,7 +6,7 @@ export interface DiagnosticSummary {
 }
 
 export interface DiagnosticCheck extends DiagnosticSummary {
-  checker: 'typescript' | 'vue'
+  checker: string
   scope: 'touched' | 'project'
   /** Diagnostics excluded while verifying a planned file move. */
   ignoredErrors?: number
@@ -29,6 +29,7 @@ export function createVerification(verifyMode: VerifyMode, hasChanges: boolean) 
     typescript: record('typescript', verifyMode === 'project' ? 'project' : 'touched'),
     // The Vue adapter checks every configured Vue file, including unchanged consumers.
     vue: record('vue', 'project'),
+    extension: (name: string) => record(name, 'project'),
     ignore(checker: DiagnosticCheck['checker'], count: number) {
       const check = checks.slice().reverse().find(check => check.checker === checker)
       if (check && count) {

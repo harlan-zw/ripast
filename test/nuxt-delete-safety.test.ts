@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm'
 import { runDelete } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-delete-'))
@@ -23,7 +24,7 @@ it.each([
   try {
     writeFileSync(join(dir, 'pages/index.vue'), source)
     const before = readFileSync(join(dir, 'utils/format.ts'), 'utf8')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { cwd: dir }), /auto-import/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() }), /auto-import/)
     assert.equal(readFileSync(join(dir, 'pages/index.vue'), 'utf8'), source)
     assert.equal(readFileSync(join(dir, 'utils/format.ts'), 'utf8'), before)
   }
@@ -42,7 +43,7 @@ it.each([
   try {
     writeFileSync(join(dir, '.nuxt/imports.d.ts'), metadata)
     writeFileSync(join(dir, 'pages/index.vue'), '<template>{{ pretty(7) }}</template>')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { cwd: dir }), /auto-imports.*pages\/index.vue/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() }), /auto-imports.*pages\/index.vue/)
   }
   finally {
     rmSync(dir, { recursive: true, force: true })
@@ -56,9 +57,9 @@ it('reads current Nuxt global declarations under types with root export metadata
     writeFileSync(join(dir, '.nuxt/imports.d.ts'), `export { format } from '../utils/format'`)
     writeFileSync(join(dir, '.nuxt/types/imports.d.ts'), `declare global { const format: typeof import('../../utils/format').format } export {}`)
     writeFileSync(join(dir, 'pages/index.vue'), '<template>{{ format(7) }}</template>')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { cwd: dir }), /auto-imports/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() }), /auto-imports/)
     writeFileSync(join(dir, 'pages/index.vue'), '<template>Unused</template>')
-    const result = await runDelete('format', 'utils/format.ts', { cwd: dir })
+    const result = await runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() })
     const exports = {}
     runInNewContext(ts.transpileModule(result.changes[0]!.after, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
     assert.deepEqual(exports, {})
@@ -80,7 +81,7 @@ it.each(['missing', 'malformed', 'bare-package', 'missing-export'])('refuses unr
     else
       writeFileSync(join(dir, '.nuxt/imports.d.ts'), 'export {}')
     const before = readFileSync(join(dir, 'utils/format.ts'), 'utf8')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { cwd: dir, verifyMode: 'none' as const }), /cannot resolve auto-import metadata/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() }), /cannot resolve auto-import metadata/)
     assert.equal(readFileSync(join(dir, 'utils/format.ts'), 'utf8'), before)
   }
   finally {
@@ -101,7 +102,7 @@ it('refuses deletion of a live provider whose generated global uses a bare packa
     writeFileSync(join(dir, 'node_modules/ripide-live-provider/package.json'), JSON.stringify({ name: 'ripide-live-provider', version: '1.0.0', main: '../../lib/value.ts', types: '../../lib/value.ts' }))
     writeFileSync(join(dir, 'pages/index.vue'), '<template>{{ value(7) }}</template>')
     const before = readFileSync(join(dir, 'lib/value.ts'), 'utf8')
-    await assert.rejects(() => runDelete('value', 'lib/value.ts', { cwd: dir, verifyMode: 'none' as const }), /reference/)
+    await assert.rejects(() => runDelete('value', 'lib/value.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() }), /reference/)
     assert.equal(readFileSync(join(dir, 'lib/value.ts'), 'utf8'), before)
   }
   finally {
@@ -116,7 +117,7 @@ it('deletes an inactive provider without capturing the active global binding', a
     writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const format: typeof import('../utils/active')['format'] } export {}`)
     const source = '<template>{{ format(7) }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), source)
-    const result = await runDelete('format', 'utils/format.ts', { cwd: dir })
+    const result = await runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() })
     const exports = {}
     runInNewContext(ts.transpileModule(result.changes[0]!.after, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
     assert.deepEqual(exports, {})
@@ -131,7 +132,7 @@ it('deletes an unused export outside Nuxt auto-import scopes', async () => {
   const dir = fixture()
   try {
     writeFileSync(join(dir, 'lib/value.ts'), 'export const value = 7')
-    const result = await runDelete('value', 'lib/value.ts', { cwd: dir })
+    const result = await runDelete('value', 'lib/value.ts', { ...{ cwd: dir }, engine: vueServices() })
     const exports = {}
     runInNewContext(ts.transpileModule(result.changes[0]!.after, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
     assert.deepEqual(exports, {})
@@ -150,7 +151,7 @@ it('checks each nested Nuxt app before deleting a workspace provider', async () 
     mkdirSync(join(dir, 'apps/site/pages'))
     writeFileSync(join(dir, 'apps/site/.nuxt/imports.d.ts'), `declare global { const pretty: typeof import('../../../utils/format')['format'] } export {}`)
     writeFileSync(join(dir, 'apps/site/pages/index.vue'), '<template>{{ pretty(7) }}</template>')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { cwd: dir }), /auto-imports.*apps\/site\/pages\/index.vue/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() }), /auto-imports.*apps\/site\/pages\/index.vue/)
   }
   finally {
     rmSync(dir, { recursive: true, force: true })
@@ -162,7 +163,7 @@ it('matches a symlinked source to its active generated provider', async () => {
   try {
     symlinkSync('format.ts', join(dir, 'utils/link.ts'))
     writeFileSync(join(dir, 'pages/index.vue'), '<template>{{ format(7) }}</template>')
-    await assert.rejects(() => runDelete('format', 'utils/link.ts', { cwd: dir }), /auto-imports/)
+    await assert.rejects(() => runDelete('format', 'utils/link.ts', { ...{ cwd: dir }, engine: vueServices() }), /auto-imports/)
   }
   finally {
     rmSync(dir, { recursive: true, force: true })
@@ -174,7 +175,7 @@ it('preserves unrelated named import aliases while deleting an unused provider',
   try {
     writeFileSync(join(dir, 'other.ts'), 'export function format(value: number) { return value * 10 }')
     writeFileSync(join(dir, 'consumer.ts'), `import { format as other } from './other'; export const label = other(7)`)
-    const result = await runDelete('format', 'utils/format.ts', { cwd: dir })
+    const result = await runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() })
     const exports = {}
     runInNewContext(ts.transpileModule(result.changes[0]!.after, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })
     assert.deepEqual(exports, {})
@@ -190,7 +191,7 @@ it('refuses an external Nuxt template whose implicit bindings cannot be inspecte
     writeFileSync(join(dir, 'pages/index.vue'), '<script setup lang="ts">const unrelated = 1</script><template src="./external.html"></template>')
     writeFileSync(join(dir, 'pages/external.html'), '<p>{{ format(7) }}</p>')
     const provider = readFileSync(join(dir, 'utils/format.ts'), 'utf8')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { cwd: dir }), /external Nuxt template/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() }), /external Nuxt template/)
     assert.equal(readFileSync(join(dir, 'utils/format.ts'), 'utf8'), provider)
   }
   finally {
@@ -202,7 +203,7 @@ it('refuses escaped TypeScript auto-import consumers', async () => {
   const dir = fixture()
   try {
     writeFileSync(join(dir, 'consumer.ts'), 'export const label = for\\u006Dat(7)')
-    await assert.rejects(() => runDelete('format', 'utils/format.ts', { cwd: dir, verifyMode: 'none' as const }), /auto-import/)
+    await assert.rejects(() => runDelete('format', 'utils/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() }), /auto-import/)
   }
   finally {
     rmSync(dir, { recursive: true, force: true })
@@ -221,7 +222,7 @@ it.each([
     writeFileSync(join(dir, 'pages/index.vue'), source)
     writeFileSync(join(dir, 'utils/format.ts'), `${readFileSync(join(dir, 'utils/format.ts'), 'utf8')}\nexport const keep = 2\n`)
     const generated = readFileSync(join(dir, '.nuxt/imports.d.ts'), 'utf8')
-    const result = await runDelete('format', 'utils/format.ts', { cwd: dir })
+    const result = await runDelete('format', 'utils/format.ts', { ...{ cwd: dir }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     const exports = {}
     runInNewContext(ts.transpileModule(result.changes[0]!.after, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports })

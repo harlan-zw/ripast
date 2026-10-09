@@ -9,6 +9,7 @@ import { runRenameFile } from '../packages/core/src/rename-file.ts'
 import { runRename } from '../packages/core/src/rename.ts'
 import { scan } from '../packages/core/src/scan.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/nuxt')
 
@@ -40,7 +41,7 @@ describe('nuxt auto-imports', () => {
     const fx = makeNuxtFixture()
     try {
       const generated = fx.read('.nuxt/imports.d.ts')
-      const result = await runRename('useCounter', 'useTally', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runRename('useCounter', 'useTally', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       assert.ok(result.changes.every(change => !change.rel.startsWith('.nuxt/')), 'does not rewrite generated .nuxt files')
       writeChanges(result.changes)
 
@@ -56,7 +57,7 @@ describe('nuxt auto-imports', () => {
     const fx = makeNuxtFixture()
     try {
       const generated = fx.read('.nuxt/components.d.ts')
-      const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       assert.ok(result.changes.every(change => !change.rel.startsWith('.nuxt/')), 'does not rewrite generated .nuxt files')
       applyRenameFile(result)
 
@@ -73,7 +74,7 @@ describe('nuxt auto-imports', () => {
   it('moves an auto-imported util within Nuxt auto-import scope without touching consumers', async () => {
     const fx = makeNuxtFixture()
     try {
-      const result = await runMove('format', 'utils/format.ts', 'utils/string.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runMove('format', 'utils/format.ts', 'utils/string.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(result.changes)
 
       assert.match(fx.read('utils/string.ts'), /export function format/)
@@ -87,7 +88,7 @@ describe('nuxt auto-imports', () => {
     const fx = makeNuxtFixture()
     try {
       const generated = fx.read('.nuxt/imports.d.ts')
-      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       assert.ok(result.changes.every(change => !change.rel.startsWith('.nuxt/')), 'does not rewrite generated .nuxt files')
       writeChanges(result.changes)
 
@@ -103,7 +104,7 @@ describe('nuxt auto-imports', () => {
     const fx = makeNuxtFixture()
     try {
       fx.write('plugins/consumer.ts', 'export const pluginLabel = format(7)\n')
-      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(result.changes)
 
       assert.match(fx.read('plugins/consumer.ts'), /import \{ format \} from '\.\.\/lib\/format'/)
@@ -117,7 +118,7 @@ describe('nuxt auto-imports', () => {
     try {
       fx.write('lib/format.ts', 'export const existing = 1\n')
       fx.write('pages/merge.vue', `<script setup lang="ts">\nimport { existing } from '../lib/format'\nconst label = format(existing)\n</script>\n<template>{{ label }}</template>\n`)
-      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(result.changes)
 
       const page = fx.read('pages/merge.vue')
@@ -132,8 +133,8 @@ describe('nuxt auto-imports', () => {
     try {
       fx.write('pages/template-only.vue', `<template><p>{{ format(1) }}</p></template>\n`)
       await assert.rejects(
-        () => runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verifyMode: 'none' as const }),
-        /ripide move: "format" is auto-imported in Nuxt; moving to .*lib\/format\.ts removes it from auto-import scope/,
+        () => runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() }),
+        /ripide move: "format" is auto-imported; moving to .*lib\/format\.ts removes it from auto-import scope/,
       )
     }
     finally { fx.cleanup() }
@@ -145,7 +146,7 @@ describe('nuxt auto-imports', () => {
       fx.write('nuxt.config.ts', `export default defineNuxtConfig({\n  imports: { dirs: ['custom'] },\n})\n`)
       fx.write('custom/formatCustom.ts', 'export function customFormat(value: number) { return value + 1 }\n')
       fx.write('pages/custom.vue', `<script setup lang="ts">\nconst value = customFormat(1)\n</script>\n<template>{{ value }}</template>\n`)
-      const result = await runMove('customFormat', 'custom/formatCustom.ts', 'custom/string.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runMove('customFormat', 'custom/formatCustom.ts', 'custom/string.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(result.changes)
 
       assert.match(fx.read('custom/string.ts'), /export function customFormat/)
@@ -159,7 +160,7 @@ describe('nuxt auto-imports', () => {
     const fx = makeNuxtFixture()
     try {
       fx.write('pages/shadow.vue', `<script setup lang="ts">\nconst useCounter = () => 'local'\nconst local = useCounter()\n</script>\n<template><p>{{ useCounter() }} {{ local }}</p></template>\n`)
-      const result = await runRename('useCounter', 'useTally', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runRename('useCounter', 'useTally', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(result.changes)
 
       const page = fx.read('pages/shadow.vue')
@@ -175,7 +176,7 @@ describe('nuxt auto-imports', () => {
     const fx = makeNuxtFixture()
     try {
       fx.write('pages/kebab.vue', `<template><my-button label="kebab"></my-button></template>\n`)
-      const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       applyRenameFile(result)
 
       assert.match(fx.read('pages/kebab.vue'), /<primary-button label="kebab"><\/primary-button>/)
@@ -193,7 +194,7 @@ describe('nuxt auto-imports', () => {
           paths: { '#lib/*': ['lib/*'] },
         },
       }))
-      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       writeChanges(result.changes)
       assert.match(fx.read('pages/index.vue'), /import \{ format \} from '#lib\/format'/)
     }
@@ -203,11 +204,12 @@ describe('nuxt auto-imports', () => {
   it('warns when renaming a component that is referenced via resolveComponent() string', async () => {
     const fx = makeNuxtFixture()
     try {
-      fx.write('pages/dynamic.vue', `<script setup lang="ts">\nconst Comp = resolveComponent('MyButton')\n</script>\n<template><component :is="Comp" /></template>\n`)
-      const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { cwd: fx.dir, verifyMode: 'none' as const })
+      fx.write('pages/dynamic.vue', `<script setup lang="ts">\nconst Comp = resolveComponent('MyButton')\n</script>\n<template><MyButton /><component :is="Comp" /></template>\n`)
+      const result = await runRenameFile('components/MyButton.vue', 'components/PrimaryButton.vue', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       assert.ok(result.warnings.some(w => /resolveComponent\(\) in 1 file/.test(w) && /pages\/dynamic\.vue/.test(w)))
       applyRenameFile(result)
       assert.match(fx.read('pages/dynamic.vue'), /resolveComponent\('PrimaryButton'\)/)
+      assert.match(fx.read('pages/dynamic.vue'), /<PrimaryButton \/>/)
     }
     finally { fx.cleanup() }
   })
@@ -215,7 +217,7 @@ describe('nuxt auto-imports', () => {
   it('adds explicit imports to vue consumers when moving a component out of auto-import scope', async () => {
     const fx = makeNuxtFixture()
     try {
-      const result = await runRenameFile('components/MyButton.vue', 'lib/MyButton.vue', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runRenameFile('components/MyButton.vue', 'lib/MyButton.vue', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       applyRenameFile(result)
       const page = fx.read('pages/index.vue')
       assert.match(page, /import MyButton from '\.\.\/lib\/MyButton\.vue'/)
@@ -233,7 +235,7 @@ describe('nuxt auto-imports', () => {
           paths: { '#lib/*': ['lib/*'] },
         },
       }))
-      const result = await runRenameFile('components/MyButton.vue', 'lib/MyButton.vue', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runRenameFile('components/MyButton.vue', 'lib/MyButton.vue', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       applyRenameFile(result)
       assert.match(fx.read('pages/index.vue'), /import MyButton from '#lib\/MyButton\.vue'/)
     }
@@ -246,7 +248,7 @@ describe('nuxt auto-imports', () => {
       fx.write('composables/useCounter.ts', `import { ref } from 'vue'\n\nexport function useCounter() {\n  return ref(useCounterStart())\n}\n\nexport function useCounterStart() {\n  return 1\n}\n`)
       fx.write('.nuxt/imports.d.ts', `${fx.read('.nuxt/imports.d.ts')}\ndeclare global { const useCounterStart: typeof import('../composables/useCounter')['useCounterStart'] }\n`)
       fx.write('pages/sibling.vue', `<script setup lang="ts">\nconst counter = useCounter()\nconst start = useCounterStart()\n</script>\n<template>{{ counter }} {{ start }}</template>\n`)
-      const result = await runRenameFile('composables/useCounter.ts', 'internal/composables/useCounter.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runRenameFile('composables/useCounter.ts', 'internal/composables/useCounter.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       applyRenameFile(result)
 
       const page = fx.read('pages/sibling.vue')
@@ -264,7 +266,7 @@ describe('nuxt auto-imports', () => {
       fx.write('composables/useThing.ts', `import { ONE } from '../shared/constant'\nexport function useThing() { return ONE }\n`)
       fx.write('.nuxt/imports.d.ts', `${fx.read('.nuxt/imports.d.ts')}\ndeclare global { const useThing: typeof import('../composables/useThing')['useThing'] }\n`)
       fx.write('pages/thing.vue', `<script setup lang="ts">\nconst v = useThing()\n</script>\n<template>{{ v }}</template>\n`)
-      const result = await runRenameFile('composables/useThing.ts', 'internal/composables/useThing.ts', { cwd: fx.dir, verifyMode: 'none' as const })
+      const result = await runRenameFile('composables/useThing.ts', 'internal/composables/useThing.ts', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
       applyRenameFile(result)
 
       assert.match(fx.read('internal/composables/useThing.ts'), /from '\.\.\/\.\.\/shared\/constant/, 'moved file\'s own relative import updated for new depth')
@@ -275,7 +277,7 @@ describe('nuxt auto-imports', () => {
   it('scans auto-imported Nuxt usages in pages', () => {
     const fx = makeNuxtFixture()
     try {
-      const hits = scan('format', { cwd: fx.dir, kinds: ['identifier-reference'] })
+      const hits = scan('format', { ...{ cwd: fx.dir, kinds: ['identifier-reference'] }, engine: vueServices() })
       assert.ok(hits.some(hit => hit.file === 'pages/index.vue' && hit.snippet.includes('format(count.value)')))
     }
     finally { fx.cleanup() }

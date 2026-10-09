@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { parse } from '@vue/compiler-sfc'
 import { rewriteClassString, runCssClassRename, runCssClassScan } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const rename = new Map([['old-token', 'new-token']])
@@ -19,8 +20,8 @@ describe('quoted arbitrary class variants', () => {
     const before = `\uFEFF// 日本語 😀\r\nexport const cls = ${JSON.stringify(`${prefix}!old-token old-token`)}\r\n`
     const fx = makeFixture({ 'classes.js': before }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([{ token: 'old-token', count: 2, files: ['classes.js'] }])
-      const result = await runCssClassRename(rename, { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([{ token: 'old-token', count: 2, files: ['classes.js'] }])
+      const result = await runCssClassRename(rename, { ...{ cwd: fx.dir }, engine: vueServices() })
       const after = result.changes[0].after
       const output = await import(`data:text/javascript,${encodeURIComponent(after)}`)
       expect(output.cls).toBe(`${prefix}!new-token new-token`)
@@ -36,8 +37,8 @@ describe('quoted arbitrary class variants', () => {
     const before = `\uFEFF<template>\r\n<!-- 日本語 😀 -->\r\n<div class="${prefix.replaceAll('"', '&quot;')}old-token old-token" />\r\n</template>\r\n`
     const fx = makeFixture({ 'Page.vue': before }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([{ token: 'old-token', count: 2, files: ['Page.vue'] }])
-      const result = await runCssClassRename(rename, { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([{ token: 'old-token', count: 2, files: ['Page.vue'] }])
+      const result = await runCssClassRename(rename, { ...{ cwd: fx.dir }, engine: vueServices() })
       const after = result.changes[0].after
       const { descriptor, errors } = parse(after)
       expect(errors).toEqual([])

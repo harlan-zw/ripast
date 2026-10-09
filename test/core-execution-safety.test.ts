@@ -2,8 +2,18 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadAdapter, rgFiles } from 'ripide-api/adapter'
+import { rgFiles } from 'ripide-api/adapter'
 import { it } from 'vitest'
+import { createCliEngine } from '../packages/cli/src/engine.ts'
+import { makeFixture } from './helpers.ts'
+
+it('refuses authored Vue consumers when Vue support is disabled', async () => {
+  const fx = makeFixture({ 'view.vue': '<template><div /></template>' })
+  try {
+    await assert.rejects(createCliEngine(fx.dir, false), /Required extension missing for \.vue/)
+  }
+  finally { fx.cleanup() }
+})
 
 it('returns every discovered file when filenames exceed the process output buffer', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'ripide-discovery-'))
@@ -25,26 +35,24 @@ it('returns every discovered file when filenames exceed the process output buffe
 
 it('preserves a broken adapter import cause instead of treating it as an absent package', async () => {
   const failure = new Error('Adapter dependency initialization failed')
-  await assert.rejects(loadAdapter('vue', { importModule: async () => {
+  await assert.rejects(createCliEngine(process.cwd(), true, { importModule: async () => {
     throw failure
-  } }), (error: unknown) => error instanceof Error && error.cause === failure)
+  } }), (error: unknown) => error === failure)
 })
 
 it('surfaces a missing transitive adapter dependency', async () => {
   const failure = Object.assign(new Error('Cannot find package \'broken-dependency\' imported from ripide-vue'), { code: 'ERR_MODULE_NOT_FOUND' })
-  await assert.rejects(loadAdapter('vue', { importModule: async () => {
+  await assert.rejects(createCliEngine(process.cwd(), true, { importModule: async () => {
     throw failure
-  } }), (error: unknown) => error instanceof Error && error.cause === failure)
+  } }), (error: unknown) => error === failure)
 })
 
-it('allows fallback only when the requested adapter package is absent', async () => {
+it('refuses a missing requested extension instead of omitting consumers', async () => {
   const attempted: string[] = []
-  const adapter = await loadAdapter('vue', { importModule: async (specifier) => {
+  await assert.rejects(createCliEngine(process.cwd(), true, { importModule: async (specifier) => {
     attempted.push(specifier)
     throw Object.assign(new Error(`Cannot find package '${specifier}'`), { code: 'ERR_MODULE_NOT_FOUND' })
-  } })
-  assert.equal(adapter, null)
+  } }), /Cannot find package/)
   assert.equal(attempted[0], 'ripide-vue')
-  assert.equal(attempted.length, 2)
-  assert.ok(attempted[1]?.endsWith('/vue/src/index.ts'))
+  assert.equal(attempted.length, 1)
 })

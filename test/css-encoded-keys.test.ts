@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { runCssClassRename, runCssClassScan } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const cases = [
@@ -20,8 +21,8 @@ describe('encoded class key discovery', () => {
       'Page.vue': `<script>${source}</script><template><div /></template>`,
     }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir })).toEqual([{ token, count: 2, files: ['Page.vue', 'classes.js'] }])
-      const result = await runCssClassRename(new Map([[token, 'new-token']]), { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir }, engine: vueServices() })).toEqual([{ token, count: 2, files: ['Page.vue', 'classes.js'] }])
+      const result = await runCssClassRename(new Map([[token, 'new-token']]), { ...{ cwd: fx.dir }, engine: vueServices() })
       expect(result.changes.map(c => c.rel).sort()).toEqual(['Page.vue', 'classes.js'])
       for (const change of result.changes) {
         const script = change.rel.endsWith('.vue') ? change.after.match(/<script>([\s\S]*)<\/script>/)![1] : change.after

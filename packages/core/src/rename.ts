@@ -1,3 +1,4 @@
+import type { EngineServices } from './engine.ts'
 import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
@@ -8,18 +9,17 @@ import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { isOnlyBindingIdentifier, isReferenceIdentifier, ScopeTracker, walk } from 'oxc-walker'
-import { loadAdapter, needsVueAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
-import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, isVuePath, resolveVerificationOptions, verifyScope } from './project.ts'
+import { assertSourceSupport, findTsconfig, isExtensionPath, isInsideAutoImportScope, resolveVerificationOptions, verifyScope } from './project.ts'
 import { recoverPropertyReferences } from './rename-property-references.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { applyTextEdits, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 import { createVerification } from './verification.ts'
-import { findRegressions, findVueRegressions } from './verify.ts'
+import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface RenameOptions {
+  engine?: EngineServices
   cwd?: string
   /** Configured project used for renames and verification. */
   tsconfig?: string
@@ -27,7 +27,6 @@ export interface RenameOptions {
   verifyMode?: VerifyMode
   scope?: string
   allowMultiple?: boolean
-  vue?: boolean
   profile?: ProfileSink
 }
 
@@ -47,13 +46,15 @@ interface Declaration {
 }
 
 export async function runRename(from: string, to: string, opts: RenameOptions = {}): Promise<RenameResult> {
-  const cwd = opts.cwd ?? process.cwd()
-  const profile = opts.profile
   const verifyMode = resolveVerificationOptions(opts)
-  const vueEnabled = opts.vue ?? true
+  const cwd = opts.cwd ?? process.cwd()
+  const engine = opts.engine
+  assertSourceSupport(cwd, engine)
+  engine?.assertOperation({ operation: 'rename', from, to }, cwd)
+  const profile = opts.profile
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }))
-  const scriptCandidates = candidatePaths.filter(path => !isVue(path))
+  const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }))
+  const scriptCandidates = candidatePaths.filter(path => !isExtensionFile(path, engine))
 
   const declarationPaths = opts.scope
     ? scriptCandidates.filter(path => path === resolve(cwd, opts.scope!))
@@ -90,16 +91,16 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     }
   }
 
-  const vueNeeded = vueEnabled && tsconfigPath && timed(profile, 'vue requirements', () => needsVueAdapter(cwd, candidatePaths, verifyMode === 'project'))
-  const vueAdapter = vueNeeded ? await timedAsync(profile, 'vue adapter', () => loadAdapter('vue')) : null
-  const scopes = vueAdapter?.autoImportScopes?.(cwd) ?? new Set<string>()
+  const adapter = engine?.adapter ?? null
+  const scopes = adapter?.autoImportScopes?.(cwd) ?? new Set<string>()
   const autoImportSites = declarations.filter(decl => decl._tag === 'TopLevel' && isInsideAutoImportScope(decl.filePath, scopes))
   const autoImportPlan = autoImportSites.length
-    ? timed(profile, 'nuxt rename plan', () => vueAdapter?.planAutoImportRename?.({ cwd, from, to, sites: autoImportSites }))
+    ? timed(profile, 'implicit rename plan', () => adapter?.planAutoImportRename?.({ cwd, from, to, sites: autoImportSites }))
     : undefined
 
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
+    for (const path of scriptCandidates) server.open(path, readFileSync(path, 'utf8'))
     const editsByPath = new Map<string, Map<string, LspTextEdit>>()
     await timedAsync(profile, 'rename transform', async () => {
       for (const decl of declarations) {
@@ -121,7 +122,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     const changes: FileChange[] = await timedAsync(profile, 'collect changes', async () => {
       const out: FileChange[] = []
       for (const path of new Set([...editsByPath.keys(), ...scriptCandidates])) {
-        if (isVue(path))
+        if (isExtensionFile(path, engine))
           continue
         const before = readFileSync(path, 'utf8')
         const fileEdits = await preserveConsumerBindings(server, path, before, [...(editsByPath.get(path)?.values() ?? [])], from, to, declarations, editsByPath)
@@ -138,45 +139,45 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
       return out
     })
 
-    if (vueAdapter && tsconfigPath && timed(profile, 'vue prefilter', () => vueAdapter.hasFilesContaining(cwd, from))) {
-      const vueChanges = await timedAsync(profile, 'vue rename', () => vueAdapter.applyRename(tsconfigPath, cwd, from, to, declarations, autoImportPlan))
-      for (const vc of vueChanges) {
+    if (adapter && tsconfigPath && timed(profile, 'extension prefilter', () => adapter.hasFilesContaining(cwd, from))) {
+      const extensionChanges = await timedAsync(profile, 'extension rename', () => adapter.applyRename(tsconfigPath, cwd, from, to, declarations, autoImportPlan))
+      for (const vc of extensionChanges) {
         if (!changes.some(c => c.path === vc.path))
           changes.push(vc)
       }
     }
 
-    if (vueAdapter?.autoImportScopes) {
+    if (adapter?.autoImportScopes) {
       if (autoImportSites.length) {
         for (const change of autoImportPlan?.changes ?? []) {
           if (!changes.some(existing => existing.path === change.path))
             changes.push(change)
         }
         for (const decl of autoImportSites)
-          vueAdapter.validateAutoImportRename?.({ cwd, symbol: from, to, fromAbs: decl.filePath, changes, scopes })
+          adapter.validateAutoImportRename?.({ cwd, symbol: from, to, fromAbs: decl.filePath, changes, scopes })
       }
       if (scopes.size)
-        vueAdapter.filterGeneratedChanges?.(cwd, changes)
+        adapter.filterGeneratedChanges?.(cwd, changes)
     }
 
     const verification = createVerification(verifyMode, !!changes.length)
     const regressions: Regression[] = []
     const verificationChanges = [...changes, ...autoImportPlan?.verificationChanges ?? []]
     if (verifyMode !== 'none' && changes.length) {
-      const scriptChanges = verificationChanges.filter(c => !isVue(c.path))
-      const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path))
+      const scriptChanges = verificationChanges.filter(c => !isExtensionFile(c.path, engine))
+      const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path), engine)
       regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, verifyFiles, verification.typescript)))
     }
 
-    if (vueEnabled && verifyMode === 'project') {
-      regressions.push(...await timedAsync(profile, 'vue verify', () => findVueRegressions(cwd, verificationChanges, tsconfigPath, async () => vueAdapter, verification.vue)))
+    if (verifyMode === 'project') {
+      regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, verificationChanges, tsconfigPath, engine, verification.extension)))
     }
-    else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
-      const vueRegs = await timedAsync(profile, 'vue verify', () => vueAdapter.regressions(tsconfigPath, cwd, verificationChanges, verification.vue))
-      regressions.push(...vueRegs)
+    else if (adapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isExtensionFile(c.path, engine))) {
+      const extensionRegressions = await timedAsync(profile, 'extension verify', () => adapter.regressions(tsconfigPath, cwd, verificationChanges, verification.extension(adapter.name)))
+      regressions.push(...extensionRegressions)
     }
 
-    const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob, autoImportPlan?.unrelatedGeneratedImports))
+    const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob, autoImportPlan?.unrelatedGeneratedImports, engine))
 
     return { changes, scanned: candidatePaths.length, regressions, verification: verification.result(), warnings }
   }
@@ -185,7 +186,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   }
 }
 
-const isVue = isVuePath
+const isExtensionFile = (path: string, engine?: EngineServices) => isExtensionPath(path, engine)
 
 // A shorthand binding has two names: the source property and its local value.
 // Preserve the local name when the renamed declaration belongs to the source.
@@ -366,10 +367,10 @@ async function preserveConsumerBindings(server: TsServer, path: string, source: 
 // outside that set (sibling test dirs, other packages) keeps the old name and
 // the server never sees it. Re-scan with rg and flag any file that still
 // imports the old name but was not rewritten.
-function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined, unrelatedGeneratedImports?: Set<string>): string[] {
+function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined, unrelatedGeneratedImports?: Set<string>, engine?: EngineServices): string[] {
   const rewritten = new Set(changes.map(c => c.path))
   const stale: string[] = []
-  for (const path of rgFiles(from, { cwd, glob })) {
+  for (const path of rgFiles(from, { cwd, glob, engine })) {
     if (rewritten.has(path))
       continue
     let text: string
@@ -379,7 +380,7 @@ function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], 
     catch {
       continue
     }
-    const { program } = parseSourceFile(path, text, cwd)
+    const { program } = parseSourceFile(path, text, cwd, engine)
     const importsName = program?.body.some((node: any) => {
       if (!node.source || (node.type !== 'ImportDeclaration' && node.type !== 'ExportNamedDeclaration'))
         return false

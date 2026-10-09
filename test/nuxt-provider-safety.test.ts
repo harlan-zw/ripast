@@ -7,6 +7,7 @@ import { compileScript, parse } from '@vue/compiler-sfc'
 import { runMove, runRename, runRenameFile } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-provider-'))
@@ -40,7 +41,7 @@ it('moves an inactive provider without importing it into active consumers', asyn
     writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const format: typeof import('../utils/active')['format'] } export {}`)
     const source = '<script setup lang="ts">const label = format(7)</script><template>{{ label }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/inactive.ts', { cwd: dir })
+    const result = await runMove('format', 'utils/format.ts', 'lib/inactive.ts', { ...{ cwd: dir }, engine: vueServices() })
     assert.equal(result.changes.find(change => change.rel === 'pages/index.vue'), undefined)
     assert.equal(labelFromVue(source, {}, moduleExports(readFileSync(join(dir, 'utils/active.ts'), 'utf8'))), 70)
     assert.deepEqual(result.regressions, [])
@@ -57,7 +58,7 @@ const prettier: typeof import('../utils/format').format
 } export {}`)
     const source = '<script setup lang="ts">const label = pretty(7) + ":" + prettier(8)</script><template>{{ label }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'pages/index.vue')!.after
     const provider = moduleExports(result.changes.find(change => change.rel === 'lib/format.ts')!.after)
     assert.equal(labelFromVue(transformed, provider), '#7:#8')
@@ -85,7 +86,7 @@ function appFixture() {
 it('adds explicit imports for standard Nuxt app providers moved out of scope', async () => {
   const { dir, source } = appFixture()
   try {
-    const result = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: dir })
+    const result = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { ...{ cwd: dir }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'app/pages/index.vue')!.after
     const provider = moduleExports(result.changes.find(change => change.rel === 'lib/format.ts')!.after)
     assert.equal(labelFromVue(transformed, provider), '#7')
@@ -99,7 +100,7 @@ it('adds explicit imports for standard Nuxt app providers moved out of scope', a
 it('renames standard Nuxt app providers in both script and template', async () => {
   const { dir, source } = appFixture()
   try {
-    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts' })
+    const result = await runRename('format', 'pretty', { ...{ cwd: dir, scope: 'app/utils/format.ts' }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'app/pages/index.vue')!.after
     const provider = moduleExports(result.changes.find(change => change.rel === 'app/utils/format.ts')!.after)
     assert.equal(labelFromVue(transformed, {}, provider), '#7')
@@ -122,7 +123,7 @@ const pretty: typeof import('../../app/utils/format').format
 } export {}`)
     const source = '<script setup lang="ts">const pretty = (value: number) => value * 10; const label = format(7)</script><template>{{ label }}</template>'
     writeFileSync(join(dir, 'app/pages/index.vue'), source)
-    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }), /Nuxt binding/)
+    await assert.rejects(runRename('format', 'pretty', { ...{ cwd: dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() }), /Nuxt binding/)
     assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
   }
   finally { rmSync(dir, { recursive: true, force: true }) }
@@ -138,7 +139,7 @@ const pretty: typeof import('../../app/utils/format').pretty
 } export {}`)
     const source = '<script setup lang="ts">const label = format(7)</script><template>{{ label }}</template>'
     writeFileSync(join(dir, 'app/pages/index.vue'), source)
-    await assert.rejects(runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }), /Nuxt binding/)
+    await assert.rejects(runRename('format', 'pretty', { ...{ cwd: dir, scope: 'app/utils/format.ts', verifyMode: 'none' as const }, engine: vueServices() }), /Nuxt binding/)
     assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
     assert.equal(typeof moduleExports(readFileSync(join(dir, 'app/utils/format.ts'), 'utf8')).format, 'function')
   }
@@ -154,7 +155,7 @@ it('adds imports when renaming a standard Nuxt app composable file out of scope'
     writeFileSync(join(dir, '.nuxt/types/imports.d.ts'), `declare global { const format: typeof import('../../app/utils/format').format; const useCounter: typeof import('../../app/composables/useCounter').useCounter } export {}`)
     const source = '<script setup lang="ts">const label = useCounter()</script><template>{{ label }}</template>'
     writeFileSync(join(dir, 'app/pages/index.vue'), source)
-    const result = await runRenameFile('app/composables/useCounter.ts', 'lib/useCounter.ts', { cwd: dir })
+    const result = await runRenameFile('app/composables/useCounter.ts', 'lib/useCounter.ts', { ...{ cwd: dir }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'app/pages/index.vue')!.after
     assert.equal(labelFromVue(transformed, moduleExports(readFileSync(join(dir, 'app/composables/useCounter.ts'), 'utf8'))), 7)
     assert.deepEqual(result.regressions, [])
@@ -169,7 +170,7 @@ it.each(['~', 'src', 'tool'])('uses generated local alias %s to discover app pro
     writeFileSync(join(dir, '.nuxt/tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '..', paths: { [alias === 'tool' ? alias : `${alias}/*`]: [alias === 'tool' ? 'app/utils/format.ts' : 'app/*'] } }, include: ['../**/*.ts'] }))
     writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const format: typeof import('${alias === 'tool' ? alias : `${alias}/utils/format`}')['format'] } export {}`)
     rmSync(join(dir, '.nuxt/types/imports.d.ts'))
-    const result = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { cwd: dir })
+    const result = await runMove('format', 'app/utils/format.ts', 'lib/format.ts', { ...{ cwd: dir }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'app/pages/index.vue')!.after
     assert.equal(labelFromVue(transformed, moduleExports(result.changes.find(change => change.rel === 'lib/format.ts')!.after)), '#7')
     assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
@@ -182,7 +183,7 @@ it.each([undefined, false])('renames mixed local and global Nuxt app consumers w
   try {
     const source = '<script setup lang="ts">function local() { const format = (value: number) => value; return format(1) }; const label = format(7) + ":" + local()</script><template>{{ format(8) }} {{ label }}</template>'
     writeFileSync(join(dir, 'app/pages/index.vue'), source)
-    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'app/utils/format.ts', verifyMode: verify === undefined ? undefined : 'none' })
+    const result = await runRename('format', 'pretty', { ...{ cwd: dir, scope: 'app/utils/format.ts', verifyMode: typeof verify === 'boolean' ? verify ? 'touched' : 'none' : verify }, engine: vueServices() })
     assert.equal(labelFromVue(result.changes.find(change => change.rel === 'app/pages/index.vue')!.after, {}, moduleExports(result.changes.find(change => change.rel === 'app/utils/format.ts')!.after)), '#7:1')
     assert.equal(readFileSync(join(dir, 'app/pages/index.vue'), 'utf8'), source)
     assert.equal(typeof moduleExports(readFileSync(join(dir, 'app/utils/format.ts'), 'utf8')).format === 'function', true)
@@ -203,7 +204,7 @@ it('selects each nested Nuxt consumer provider before adding imports', async () 
     const child = '<script setup lang="ts">const label = pretty(8)</script><template>{{ label }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), root)
     writeFileSync(join(dir, 'apps/site/pages/index.vue'), child)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(result.changes.find(change => change.rel === 'pages/index.vue'), undefined)
     const transformed = result.changes.find(change => change.rel === 'apps/site/pages/index.vue')!.after
     assert.equal(labelFromVue(transformed, moduleExports(result.changes.find(change => change.rel === 'lib/format.ts')!.after)), '#8')
@@ -226,7 +227,7 @@ it.each([false, true])('resolves nested consumer imports despite shadowed aliase
     writeFileSync(join(dir, 'apps/site/lib/format.ts'), 'export function format() { return 999 }')
     const source = '<script setup lang="ts">const label = format(7)</script><template>{{ label }}</template>'
     writeFileSync(join(dir, 'apps/site/page.vue'), source)
-    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: dir, verifyMode: 'none' as const })
+    const result = await runMove('format', 'utils/format.ts', 'lib/format.ts', { ...{ cwd: dir, verifyMode: 'none' as const }, engine: vueServices() })
     const transformed = result.changes.find(change => change.rel === 'apps/site/page.vue')!.after
     const { descriptor } = parse(transformed)
     const compiled = compileScript(descriptor, { id: 'nested-alias' })
@@ -252,7 +253,7 @@ const format: typeof import('../utils/active')['format']
 } export {}`)
     const source = '<script setup lang="ts">const label = format(7)</script><template>{{ format(8) }} {{ label }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), source)
-    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verifyMode: verify === undefined ? undefined : 'none' })
+    const result = await runRename('format', 'pretty', { ...{ cwd: dir, scope: 'utils/format.ts', verifyMode: typeof verify === 'boolean' ? verify ? 'touched' : 'none' : verify }, engine: vueServices() })
     assert.equal(result.changes.find(change => change.rel === 'pages/index.vue'), undefined)
     assert.equal(labelFromVue(source, {}, moduleExports(readFileSync(join(dir, 'utils/active.ts'), 'utf8'))), 70)
     assert.equal(readFileSync(join(dir, 'pages/index.vue'), 'utf8'), source)
@@ -273,7 +274,7 @@ const format: typeof import('../../../utils/active')['format']
     const child = '<script setup lang="ts">const label = format(8)</script><template>{{ format(9) }} {{ label }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), root)
     writeFileSync(join(dir, 'apps/site/page.vue'), child)
-    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts', verifyMode: verify === undefined ? undefined : 'none' })
+    const result = await runRename('format', 'pretty', { ...{ cwd: dir, scope: 'utils/format.ts', verifyMode: typeof verify === 'boolean' ? verify ? 'touched' : 'none' : verify }, engine: vueServices() })
     assert.equal(result.changes.find(change => change.rel === 'apps/site/page.vue'), undefined)
     assert.equal(labelFromVue(result.changes.find(change => change.rel === 'pages/index.vue')!.after, {}, moduleExports(result.changes.find(change => change.rel === 'utils/format.ts')!.after)), '#7')
     assert.equal(labelFromVue(child, {}, moduleExports(readFileSync(join(dir, 'utils/active.ts'), 'utf8'))), 80)
@@ -290,7 +291,7 @@ it('permits an inactive provider rename when consumer uses are local', async () 
     writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const format: typeof import('../utils/active')['format'] } export {}`)
     const source = '<script setup lang="ts">const format = (value: number) => value * 100; const label = format(7)</script><template>{{ format(8) }} {{ label }}</template>'
     writeFileSync(join(dir, 'pages/index.vue'), source)
-    const result = await runRename('format', 'pretty', { cwd: dir, scope: 'utils/format.ts' })
+    const result = await runRename('format', 'pretty', { ...{ cwd: dir, scope: 'utils/format.ts' }, engine: vueServices() })
     assert.equal(result.changes.find(change => change.rel === 'pages/index.vue'), undefined)
     assert.equal(labelFromVue(source, {}), 700)
     assert.equal(typeof moduleExports(result.changes.find(change => change.rel === 'utils/format.ts')!.after).pretty, 'function')

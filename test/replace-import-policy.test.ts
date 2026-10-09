@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
 import { runReplace, writeChanges } from '../packages/core/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const require = createRequire(import.meta.url)
@@ -26,7 +27,7 @@ async function compiledReplacement(style: 'extensionless' | 'javascript', fromPa
   }
   const fx = makeFixture(files)
   try {
-    writeChanges((await runReplace('original', 'replacement', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
+    writeChanges((await runReplace('original', 'replacement', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })).changes)
     const compiled = spawnSync(process.execPath, [compiler, '--project', resolve(fx.dir, 'tsconfig.json')], { cwd: fx.dir, encoding: 'utf8' })
     assert.equal(compiled.status, 0, `${compiled.stdout}${compiled.stderr}`)
     const value = execFileSync(process.execPath, ['--input-type=module', '--eval', `import * as consumer from ${JSON.stringify(pathToFileURL(resolve(fx.dir, 'dist/entry.js')).href)}; console.log(consumer.result)`], { encoding: 'utf8' }).trim()

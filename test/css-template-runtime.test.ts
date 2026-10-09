@@ -1,6 +1,7 @@
 import { compileTemplate, parse } from '@vue/compiler-sfc'
 import { runCssClassRename, runCssClassScan } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const replacement = 'content-["a\\b`' + '$' + '{x}&"]'
@@ -11,12 +12,12 @@ describe('class template runtime values', () => {
     const before = file.endsWith('.vue') ? `<script>${script}</script><template><div /></template>` : script
     const fx = makeFixture({ [file]: before }, false)
     try {
-      const result = await runCssClassRename(new Map([['old-token', String.raw`content-[\path]`]]), { cwd: fx.dir })
+      const result = await runCssClassRename(new Map([['old-token', String.raw`content-[\path]`]]), { ...{ cwd: fx.dir }, engine: vueServices() })
       const after = result.changes[0].after
       const outputScript = file.endsWith('.vue') ? parse(after).descriptor.script!.content : after
       const output = await import(`data:text/javascript,${encodeURIComponent(outputScript)}`)
       expect(output.cls).toBe(String.raw`content-[\path] content-[\x]`)
-      expect((await runCssClassRename(new Map([['old-token', 'content-[`x`]']]), { cwd: fx.dir })).changes).toEqual([])
+      expect((await runCssClassRename(new Map([['old-token', 'content-[`x`]']]), { ...{ cwd: fx.dir }, engine: vueServices() })).changes).toEqual([])
       expect(fx.read(file)).toBe(before)
     }
     finally { fx.cleanup() }
@@ -28,14 +29,14 @@ describe('class template runtime values', () => {
     const before = file.endsWith('.vue') ? `<script>${script}</script><template><div /></template>` : script
     const fx = makeFixture({ [file]: before }, false)
     try {
-      const result = await runCssClassRename(new Map([['old-token', replacement]]), { cwd: fx.dir })
+      const result = await runCssClassRename(new Map([['old-token', replacement]]), { ...{ cwd: fx.dir }, engine: vueServices() })
       const after = result.changes[0].after
       const outputScript = file.endsWith('.vue') ? parse(after).descriptor.script!.content : after
       const output = await import(`data:text/javascript,${encodeURIComponent(outputScript)}`)
       expect(output.cls).toBe(`${replacement} flex ${replacement}`)
       expect(fx.read(file)).toBe(before)
       fx.write(file, after)
-      expect(runCssClassScan({ cwd: fx.dir, pattern: [replacement] })).toEqual([{ token: replacement, count: 2, files: [file] }])
+      expect(runCssClassScan({ ...{ cwd: fx.dir, pattern: [replacement] }, engine: vueServices() })).toEqual([{ token: replacement, count: 2, files: [file] }])
     }
     finally { fx.cleanup() }
   })
@@ -44,7 +45,7 @@ describe('class template runtime values', () => {
     // eslint-disable-next-line no-template-curly-in-string
     const fx = makeFixture({ 'Page.vue': '<template><div :class="`old-token ${middle} old-token`" /></template>' }, false)
     try {
-      const result = await runCssClassRename(new Map([['old-token', replacement]]), { cwd: fx.dir })
+      const result = await runCssClassRename(new Map([['old-token', replacement]]), { ...{ cwd: fx.dir }, engine: vueServices() })
       const { descriptor, errors } = parse(result.changes[0].after)
       expect(errors).toEqual([])
       expect(compileTemplate({ source: descriptor.template!.content, filename: 'Page.vue', id: 'templates' }).errors).toEqual([])

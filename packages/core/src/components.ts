@@ -1,8 +1,9 @@
-import type { ComponentInfo, ComponentUsageInfo } from './adapter.ts'
+import type { ComponentInfo, ComponentUsageInfo, FrameworkAdapter } from './adapter.ts'
+import type { EngineServices } from './engine.ts'
 import process from 'node:process'
-import { detectFrameworks, loadAdapter } from './adapter.ts'
 
 export interface ComponentsListOptions {
+  engine?: EngineServices
   cwd?: string
   glob?: string[]
   source?: 'auto' | 'manifest' | 'filesystem'
@@ -26,23 +27,13 @@ export interface ComponentDetail {
   usages: ComponentUsageInfo[]
 }
 
-export async function loadVueComponentsAdapter(cwd?: string): Promise<{
-  listComponents: NonNullable<Awaited<ReturnType<typeof loadAdapter>>>['listComponents']
-  findComponentUsages: NonNullable<Awaited<ReturnType<typeof loadAdapter>>>['findComponentUsages']
-} | null> {
-  const frameworks = detectFrameworks(cwd ?? process.cwd())
-  const name = frameworks.includes('nuxt') ? 'nuxt' : frameworks.includes('vue') ? 'vue' : null
-  if (!name)
-    return null
-  const adapter = await loadAdapter(name)
-  if (!adapter?.listComponents || !adapter?.findComponentUsages)
-    return null
-  return { listComponents: adapter.listComponents, findComponentUsages: adapter.findComponentUsages }
+export async function loadComponentsAdapter(engine?: EngineServices): Promise<FrameworkAdapter | null> {
+  return engine?.adapter ?? null
 }
 
 export async function buildComponentInventory(opts: ComponentsListOptions = {}): Promise<ComponentInventory> {
   const cwd = opts.cwd ?? process.cwd()
-  const adapter = await loadVueComponentsAdapter(cwd)
+  const adapter = await loadComponentsAdapter(opts.engine)
   if (!adapter)
     return { components: [], duplicates: [], shadowed: [] }
   const components = adapter.listComponents!(cwd, { glob: opts.glob, source: opts.source, warn: opts.warn })
@@ -53,7 +44,7 @@ export async function buildComponentInventory(opts: ComponentsListOptions = {}):
 
 export async function buildComponentDetail(name: string, opts: ComponentsListOptions = {}): Promise<ComponentDetail | null> {
   const cwd = opts.cwd ?? process.cwd()
-  const adapter = await loadVueComponentsAdapter(cwd)
+  const adapter = await loadComponentsAdapter(opts.engine)
   if (!adapter)
     return null
   const components = adapter.listComponents!(cwd, { glob: opts.glob, source: opts.source, warn: opts.warn })

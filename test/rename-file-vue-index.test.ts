@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { it } from 'vitest'
 import { runRenameFile } from '../packages/core/src/index.ts'
 import { parseSourceFile } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each(['touched', 'none'] as const)('rewrites Vue directory-index imports with %s verification', async (verifyMode) => {
@@ -12,11 +13,12 @@ it.each(['touched', 'none'] as const)('rewrites Vue directory-index imports with
     'src/Alias.vue': '<script setup lang="ts">import { amount } from "@/utils"</script><template>{{ amount }}</template>',
   })
   try {
-    const result = await runRenameFile('src/utils/index.ts', 'src/utils/value.ts', { cwd: fixture.dir, verifyMode })
+    const engine = vueServices()
+    const result = await runRenameFile('src/utils/index.ts', 'src/utils/value.ts', { cwd: fixture.dir, engine, verifyMode })
     for (const [file, specifier] of [['src/Relative.vue', './utils/value'], ['src/Alias.vue', '@/utils/value']]) {
       const change = result.changes.find(change => change.rel === file)
       assert.ok(change, `Vue consumer ${file} must follow the moved module`)
-      const program = parseSourceFile(file, change.after).program
+      const program = parseSourceFile(file, change.after, fixture.dir, engine).program!
       const imported = program.body.find((statement: any) => statement.type === 'ImportDeclaration')
       assert.equal(imported.source.value, specifier)
     }

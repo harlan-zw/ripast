@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
 import { compactVerification } from '../packages/cli/src/presentation/index.ts'
-import { runCssClassRename, runDelete, runMove, runRename, runRenameFile, runReplace, runVueTemplateUnwrap, runVueTemplateWrap } from '../packages/core/src/index.ts'
+import { runCssClassRename, runDelete, runMove, runRename, runRenameFile, runReplace } from '../packages/core/src/index.ts'
+import { runVueTemplateUnwrap, runVueTemplateWrap } from '../packages/vue/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const files = {
@@ -12,11 +14,11 @@ const files = {
 }
 
 it.each([
-  { command: 'rename', count: 2, scope: 'touched', run: (cwd: string) => runRename('answer', 'value', { cwd, vue: false }) },
-  { command: 'move', count: 5, scope: 'touched', run: (cwd: string) => runMove('answer', 'source.ts', 'lib/value.ts', { cwd, vue: false }) },
+  { command: 'rename', count: 2, scope: 'touched', run: (cwd: string) => runRename('answer', 'value', { cwd }) },
+  { command: 'move', count: 5, scope: 'touched', run: (cwd: string) => runMove('answer', 'source.ts', 'lib/value.ts', { cwd }) },
   { command: 'delete', count: 1, scope: 'touched', run: (cwd: string) => runDelete('replacement', 'replacement.ts', { cwd }) },
   { command: 'replace', count: 4, scope: 'project', run: (cwd: string) => runReplace('answer', 'replacement', { cwd }) },
-  { command: 'rename-file', count: 3, scope: 'touched', run: (cwd: string) => runRenameFile('source.ts', 'lib/value.ts', { cwd, vue: false }) },
+  { command: 'rename-file', count: 3, scope: 'touched', run: (cwd: string) => runRenameFile('source.ts', 'lib/value.ts', { cwd }) },
 ])('$command reports files actually checked and retained new errors', async ({ run, count, scope }) => {
   const fixture = makeFixture(files)
   try {
@@ -38,11 +40,11 @@ it.each([
 })
 
 it.each([
-  { command: 'rename', run: (cwd: string) => runRename('answer', 'value', { cwd, verifyMode: 'none' as const, vue: false }) },
-  { command: 'move', run: (cwd: string) => runMove('answer', 'source.ts', 'lib/value.ts', { cwd, verifyMode: 'none' as const, vue: false }) },
+  { command: 'rename', run: (cwd: string) => runRename('answer', 'value', { cwd, verifyMode: 'none' as const }) },
+  { command: 'move', run: (cwd: string) => runMove('answer', 'source.ts', 'lib/value.ts', { cwd, verifyMode: 'none' as const }) },
   { command: 'delete', run: (cwd: string) => runDelete('replacement', 'replacement.ts', { cwd, verifyMode: 'none' as const }) },
   { command: 'replace', run: (cwd: string) => runReplace('answer', 'replacement', { cwd, verifyMode: 'none' as const }) },
-  { command: 'rename-file', run: (cwd: string) => runRenameFile('source.ts', 'lib/value.ts', { cwd, verifyMode: 'none' as const, vue: false }) },
+  { command: 'rename-file', run: (cwd: string) => runRenameFile('source.ts', 'lib/value.ts', { cwd, verifyMode: 'none' as const }) },
 ])('$command records disabled diagnostics', async ({ run }) => {
   const fixture = makeFixture(files)
   try {
@@ -55,7 +57,7 @@ it.each([
 it('unchanged refactors skip diagnostics instead of claiming a pass', async () => {
   const fixture = makeFixture(files)
   try {
-    const renamed = await runRename('answer', 'answer', { cwd: fixture.dir, vue: false })
+    const renamed = await runRename('answer', 'answer', { cwd: fixture.dir })
     const replaced = await runReplace('missing', 'replacement', { cwd: fixture.dir })
     assert.deepEqual(renamed.verification, { _tag: 'Skipped', reason: 'no-changes' })
     assert.deepEqual(replaced.verification, { _tag: 'Skipped', reason: 'no-changes' })
@@ -75,7 +77,7 @@ it('vue diagnostics count unchanged configured consumers', async () => {
   })
   fixture.write('tsconfig.json', JSON.stringify({ compilerOptions: { strict: true, module: 'ESNext', moduleResolution: 'bundler', noEmit: true }, include: ['*.ts', '*.vue'] }))
   try {
-    const result = await runReplace('original', 'replacement', { cwd: fixture.dir })
+    const result = await runReplace('original', 'replacement', { cwd: fixture.dir, engine: vueServices() })
     assert.equal(result.verification._tag, 'Checked')
     if (result.verification._tag !== 'Checked')
       throw new Error('Expected completed diagnostics')
@@ -91,7 +93,7 @@ it('cSS and template transforms record unsupported diagnostics', async () => {
   })
   try {
     const results = await Promise.all([
-      runCssClassRename(new Map([['font-semibold', 'font-medium']]), { cwd: fixture.dir }),
+      runCssClassRename(new Map([['font-semibold', 'font-medium']]), { cwd: fixture.dir, engine: vueServices() }),
       runVueTemplateWrap('span', 'article', { cwd: fixture.dir }),
       runVueTemplateUnwrap('section', { cwd: fixture.dir }),
     ])
