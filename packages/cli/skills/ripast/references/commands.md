@@ -24,15 +24,20 @@ Quote `--glob` patterns. CSS transforms affect strings, Vue classes, and CSS `@a
 Use a file glob when the task limits files. A Vue glob also includes script strings in Vue files.
 Use `--no-vue` only when there are no Vue consumers or Nuxt auto-imports.
 Template commands accept `--scope <file>` and `--root-only`.
-Mutation agent JSON returns `mode`, `verification`, and `changes: [[path, lines]]`.
+Every JSON response contains `_tag`, `command`, `base`, and `data`.
+Mutation tags are `Preview`, `Applied`, `Refused`, or `Empty`. Failures use `Error`.
+Compact mutation JSON returns `data.verification` and `data.changes: [[path, lines]]`.
 Verification entries use `[checker, scope, files, newErrors, ignoredErrors?]`.
-Checkers are `typescript` and `vue`. Counts describe checks that ran against proposed content.
+Built-in checkers are `typescript` and `vue`. SDK extensions can use other checker names.
+Counts describe checks that ran against proposed content.
 Skipped checks return `disabled`, `no-changes`, or `not-applicable`.
-When ranges shift, entries use `[path, beforeLines, afterLines]`. Moves use `moves: [[from, to]]`.
+When ranges shift, entries use `[path, beforeLines, afterLines]`. Moves use `data.moves: [[from, to]]`.
 Lines are one-based and inclusive. Commas separate ranges; `3+` marks a gap after line 3.
 After apply, earlier file reads are outdated. Read changed ranges only when current code is needed.
 Follow any editing tool requirement for a fresh read. Do not reread every changed file just to confirm success.
 Use `--profile full --json` when you need complete before/after source.
+Use `--artifact <new-file.json>` to preserve the complete plan before apply.
+Display limits never narrow writes or the complete artifact.
 Save large results outside model context. Read the required fields or changed ranges on demand.
 Put actionable errors before optional previews. Preserve omitted details in a complete artifact.
 Batch independent searches. Keep dependent mutations and verification sequential.

@@ -22,14 +22,22 @@ If setup is needed, read [installation and launchers](references/setup.md), incl
 2. If uncertain, resolve the target and review a dry run first. Read [command syntax and examples](references/commands.md) when needed.
 3. Use `--apply --profile agent`; keep type verification enabled. Use `--scope` for a known declaration file.
 4. If a check is supplied, append it with `&&` in the mutation's shell call. Do not run it separately or invent checks.
-5. Read the result and changed-file diff. Run relevant checks once, then stop after success.
+5. Read the result. Inspect changed ranges only when the result or task leaves uncertainty. Stop after required checks pass.
+
+Before manual edits, read the current source required by the editing tool.
 
 Common commands, run only the requested operation and append its supplied check:
 
 ```bash
 ripide rename useStore useAppStore --scope src/store.ts --apply --profile agent
+ripide rename-file src/store.ts src/app-store.ts --apply --profile agent
 ripide css-class-rename font-semibold font-medium --apply --profile agent
 ```
+
+`--artifact`, `--fields`, and `--minify` require `--json`. `--fields` is for discovery commands only.
+For a complete plan, add `--json --artifact <new-file.json>`.
+For JSON, read `_tag` for the outcome and `data` for command fields.
+Keep complete artifacts outside model context. Read selected fields only when the compact result leaves uncertainty.
 
 Batch known commands. An exact CSS mapping needs no `css-class-scan`.
 CSS and template transforms have no type verification; run their project checks.

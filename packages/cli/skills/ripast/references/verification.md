@@ -16,6 +16,9 @@ Zero new errors applies only to the reported scope. It does not prove a clean bu
 Use `--verify-mode touched|project|none` to select scope. Keep verification enabled.
 Replacement defaults to project checks. Other refactors default to touched files in both the CLI and SDK.
 The SDK accepts `verifyMode: 'none' | 'touched' | 'project'`. Boolean `verify` options and legacy CLI verification flags fail.
+Create an SDK engine with `createEngine`, then call its refactor methods.
+Commit the returned plan with `engine.commit(plan)`. Changed plans and new diagnostics refuse commit.
+Vue SDK callers inject `createVueExtension()` through the engine's `extensions` option.
 Project verification includes unchanged Vue consumers. It requires the Vue adapter when Vue files exist.
 Refactor globs limit edits without narrowing project verification. File discovery ignores still apply.
 CSS and Vue template transforms have no type verification. Run their relevant project checks.
@@ -49,5 +52,6 @@ Pass `--tsconfig .nuxt/tsconfig.json` to rename, move, or rename-file.
 
 Missing `rg` uses slower Node file search. Programmatic regex searches still require `rg`.
 
-CLI flags and output contracts: [CLI source](https://github.com/harlan-zw/ripide/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/src/cli.ts).
-Adapter selection: [launcher](https://github.com/harlan-zw/ripide/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/bin/ripast.mjs).
+CLI flags and output contracts: [CLI source](https://github.com/harlan-zw/ripide/blob/9bc8d6abb60d8968fb4cffd458c87003fc634989/packages/cli/src/cli.ts).
+Adapter selection: [launcher](https://github.com/harlan-zw/ripide/blob/9bc8d6abb60d8968fb4cffd458c87003fc634989/packages/cli/bin/ripide.mjs).
+SDK plans and commits: [engine guide](https://github.com/harlan-zw/ripide/blob/9bc8d6abb60d8968fb4cffd458c87003fc634989/docs/engine.md).
