@@ -6,6 +6,53 @@ import process from 'node:process'
 import { it } from 'vitest'
 import { makeFixture, prepareLauncher } from './helpers.ts'
 
+const engineDiscoveryCommands = [
+  ['scan', 'target'],
+  ['tree'],
+  ['unused'],
+  ['css-class-scan'],
+  ['css-class-rename', 'old-token', 'new-token'],
+]
+
+it.each(engineDiscoveryCommands)('launcher installs the matching Vue adapter before %s', (...args) => {
+  const fx = makeFixture({
+    'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
+    'Component.vue': '<script setup lang="ts">const target = 1</script><template><div class="old-token">{{ target }}</div></template>',
+    'pnpm': '#!/bin/sh\necho pnpm > manager\nprintf "%s\\n" "$@" > args\nexit 0\n',
+  })
+  try {
+    chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
+    const child = spawnSync(process.execPath, [prepareLauncher(fx, '0.8.0'), ...args], {
+      cwd: fx.dir,
+      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPIDE_REEXEC: '' },
+      encoding: 'utf8',
+    })
+    assert.equal(child.status, 0, child.stderr)
+    assert.equal(fx.read('manager').trim(), 'pnpm')
+    assert.deepEqual(fx.read('args').trim().split('\n'), ['dlx', '--package=ripide@0.8.0', '--package=ripide-vue@0.8.0', 'ripide', ...args])
+  }
+  finally { fx.cleanup() }
+})
+
+it.each(engineDiscoveryCommands)('launcher runs %s in script projects without an adapter install', (...args) => {
+  const fx = makeFixture({
+    'package.json': '{"type":"module"}',
+    'source.ts': 'export const target = "old-token"\n',
+    'pnpm': '#!/bin/sh\necho pnpm > manager\nexit 91\n',
+  })
+  try {
+    chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
+    const child = spawnSync(process.execPath, [prepareLauncher(fx, '0.8.0'), ...args], {
+      cwd: fx.dir,
+      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPIDE_REEXEC: '' },
+      encoding: 'utf8',
+    })
+    assert.equal(child.status, 0, child.stderr)
+    assert.equal(existsSync(resolve(fx.dir, 'manager')), false)
+  }
+  finally { fx.cleanup() }
+})
+
 it.each(['0.7.0', '0.8.0-beta.1'])('launcher installs its %s release through pnpm without running npm', (version) => {
   const fx = makeFixture({
     'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
