@@ -48,7 +48,7 @@ it('applied file moves report moves and changed consumer lines', () => {
     assert.deepEqual(payload.moves, [['source.ts', 'lib/value.ts']])
     assert.deepEqual(payload.changes, [['consumer.ts', '1']])
     assert.equal(JSON.parse(result.stdout)._tag, 'Applied')
-    assert.deepEqual(payload.verification, [['typescript', 'project', 3, 0, 1]])
+    assert.deepEqual(payload.verification, [['typescript', 'touched', 3, 0, 1]])
     assert.equal(existsSync(resolve(fixture.dir, 'source.ts')), false)
   }
   finally { fixture.cleanup() }

@@ -15,7 +15,8 @@ it.each([undefined, 'project'])('rename-file preserves default scope and accepts
   })
   try {
     const args = [resolve('packages/cli/dist/cli.mjs'), 'rename-file', 'source.ts', 'target.ts', '--no-vue', '--json', '--profile', 'full']
-    if (mode) args.push('--verify-mode', mode)
+    if (mode)
+      args.push('--verify-mode', mode)
     const result = spawnSync(process.execPath, args, { cwd: fixture.dir, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
     const output = JSON.parse(result.stdout)
