@@ -1,3 +1,4 @@
+export { checkEnginePlanCapability } from './engine-plan-gate.ts'
 export { executeExperiment } from './execute.ts'
 export { checkChangedVerifiedPlan, expectedProject, gradeProject, snapshotProject } from './grading.ts'
 export { buildSchedule, freezeManifest, parseManifest, random, sha256, verifyArtifacts, verifyFrozenManifest } from './manifest.ts'
