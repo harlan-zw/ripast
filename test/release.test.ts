@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { downloadPublishedPackages, planRelease, publicationDecision } from '../scripts/release.ts'
 
-const packages = ['@ripast/core', '@ripast/vue', '@ripast/cli'].map(name => ({ name, version: '0.5.0' }))
+const packages = ['@ripast/core', '@ripast/vue', 'ripide'].map(name => ({ name, version: '0.5.0' }))
 
 describe('registry download', () => {
   it('waits for processed packages before completing the download', async () => {

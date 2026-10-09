@@ -1,6 +1,6 @@
 # OpenCode comparison
 
-Compare an agent using Ripast with an agent using normal editing tools.
+Compare an agent using RipIDE with an agent using normal editing tools.
 Each run gets a fresh TypeScript project and the same task.
 
 ## Run
@@ -21,15 +21,15 @@ The full comparison defaults to GLM 5.3 Flash, three tasks, and two repeats per 
 ```sh
 pnpm eval --model zai-coding-plan/glm-5.3-flash --runs 3 --consumers 50
 pnpm eval --case rename --arm both --timeout 180
-pnpm eval --case rename --arm ripast --skill current
-pnpm eval --case rename --arm ripast --skill /path/to/previous/SKILL.md
+pnpm eval --case rename --arm ripide --skill current
+pnpm eval --case rename --arm ripide --skill /path/to/previous/SKILL.md
 ```
 
 Options: `--model`, `--runs`, `--consumers`, `--case`, `--arm`, `--timeout`, `--out`, `--skill`, and `--preflight`.
-`--skill` includes the complete Skill in the Ripast prompt, replacing the supplied exact CLI command.
+`--skill` includes the complete Skill in the RipIDE prompt, replacing the supplied exact CLI command.
 The runner records the Skill's SHA-256 hash. Without this option, the comparison does not exercise a Skill.
 Cases: `rename`, `rename-file`, and `move`.
-Arms: `ripast`, `agent`, and `both`.
+Arms: `ripide`, `agent`, and `both`.
 Counts and timeout seconds must be positive integers.
 
 Results default to a new directory under `~/scratch/`.
@@ -62,7 +62,7 @@ Both arms use isolated home and configuration directories.
 Global Skills, plugins, MCP servers, and project instructions are excluded.
 Provider configuration and authentication come from the current OpenCode profile.
 
-The Ripast arm receives the exact command and a prebuilt local launcher.
+The RipIDE arm receives the exact command and a prebuilt local launcher.
 The baseline may use editing tools or scripts, but cannot use a refactor CLI.
 This measures assisted refactoring. It excludes CLI discovery, package installation, and Skill loading.
 Shared provider caches and network variation can affect the result.
@@ -88,12 +88,12 @@ Sources cover Unimport, Unhead, Mdream, Skilld, Request Indexing, and Forgd.
 Four cases rename TypeScript symbols. Two rename static Vue class tokens.
 Each Vue case includes ten affected files and up to ten unrelated files.
 
-The Ripast arm receives the current Skill. The baseline receives normal editing tools.
+The RipIDE arm receives the current Skill. The baseline receives normal editing tools.
 Each case runs once per arm. Three projects run concurrently to bound elapsed time.
 Each project alternates its two arms. Timing remains sensitive to concurrent work and provider load.
 
 `check-snapshot` independently checks expected code and compares TypeScript diagnostics against the initial snapshot.
-Command launchers record actual Ripast invocation and successful snapshot checks.
+Command launchers record actual RipIDE invocation and successful snapshot checks.
 The harness checks these records after each run.
 
 Dependencies, credentials, repository instructions, and generated Nuxt files are excluded from snapshots.
@@ -131,9 +131,9 @@ pnpm eval:projects --batch second --runner both --timeout 150
 The ten-case second batch produces 40 runs: ten tasks, two methods, two models.
 Each task captures its source once and supplies the same expected edits to both models.
 The model that starts alternates by task. The second model reverses method order.
-Codex always runs Ripast first. OpenCode always runs ordinary editing first.
+Codex always runs RipIDE first. OpenCode always runs ordinary editing first.
 Method order is not balanced within each model. Cache effects can bias timing.
-Directories include the runner, such as `c12-codex-ripast`, to keep all four copies separate.
+Directories include the runner, such as `c12-codex-ripide`, to keep all four copies separate.
 The report keeps one row per task and runner. It does not pool the two models.
 This mode fixes differing task assignments. It still provides only one run per method and model.
 Source slices omit full project dependencies and generated framework state.
@@ -142,7 +142,7 @@ Codex uses `gpt-6-luna` with medium reasoning and emits JSONL events.
 It uses temporary configuration and a private authentication copy, deleted after the run.
 User configuration, user rules, project instructions, and external Skills are excluded.
 Both runners execute without an OS sandbox. Prompts restrict agents to their source copy.
-Codex's workspace sandbox blocks Ripast subprocesses on this host, so it cannot measure the CLI correctly.
+Codex's workspace sandbox blocks RipIDE subprocesses on this host, so it cannot measure the CLI correctly.
 
 Codex reports total input tokens with cached input already included.
 The parser counts input plus output once and records cached input separately.
@@ -160,6 +160,6 @@ The matched 40-run batch lives in [its separate results file](./results/2026-10-
 ### GPT-6.1 Sol findings
 
 The [GPT-6.1 Sol report](./results/2026-10-09-6.1-sol.md) records ten second-batch projects with medium reasoning.
-Both methods passed all ten cases. Ripast used 60.4% fewer total tokens and 51.2% less total agent time.
+Both methods passed all ten cases. RipIDE used 60.4% fewer total tokens and 51.2% less total agent time.
 These are single-run measurements. The report includes source commits, model selection, and comparison limits.
 The [measurement file](./results/2026-10-09-6.1-sol.json) retains all twenty attempts.

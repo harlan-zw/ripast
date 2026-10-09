@@ -139,7 +139,7 @@ export function vueProjectConfigs(tsconfigPath: string): { tsconfigPath: string,
       return
     seen.add(path)
     if (!existsSync(path))
-      throw new Error(`ripast: cannot inspect the referenced Vue project ${path}`)
+      throw new Error(`ripide: cannot inspect the referenced Vue project ${path}`)
     const { commandLine, fileNames } = withFilteredConsoleWarn(() => readVueProject(path))
     // Each project retains its own compiler options and path aliases.
     if (fileNames.length || !commandLine.projectReferences?.length)

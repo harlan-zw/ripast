@@ -9,7 +9,7 @@ import ts from 'typescript'
 import { it } from 'vitest'
 
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-provider-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-provider-'))
   cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
   writeFileSync(join(dir, 'pages/index.vue'), '<template>Unused</template>')
   return dir

@@ -9,7 +9,7 @@ import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
 function fixture(directory: string) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-metadata-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-metadata-'))
   cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
   rmSync(join(dir, '.nuxt/imports.d.ts'))
   rmSync(join(dir, '.nuxt/types/imports.d.ts'), { force: true })

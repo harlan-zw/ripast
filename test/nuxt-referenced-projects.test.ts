@@ -10,7 +10,7 @@ import ts from 'typescript'
 import { it } from 'vitest'
 
 function fixture(alias: boolean) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-reference-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-reference-'))
   cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
   rmSync(join(dir, 'pages'), { recursive: true, force: true })
   mkdirSync(join(dir, 'app/utils'), { recursive: true })

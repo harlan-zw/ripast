@@ -9,14 +9,14 @@
     "url": "https://harlanzw.com/"
   },
   "license": "MIT",
-  "homepage": "https://github.com/harlan-zw/ripast#readme",
+  "homepage": "https://github.com/harlan-zw/ripide#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/harlan-zw/ripast.git",
+    "url": "git+https://github.com/harlan-zw/ripide.git",
     "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/harlan-zw/ripast/issues"
+    "url": "https://github.com/harlan-zw/ripide/issues"
   },
   "keywords": [
     "ast",

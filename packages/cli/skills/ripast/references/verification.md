@@ -20,5 +20,5 @@ Pass `--tsconfig .nuxt/tsconfig.json` to rename, move, or rename-file.
 
 Missing `rg` uses slower Node file search. Programmatic regex searches still require `rg`.
 
-CLI flags and output contracts: [CLI source](https://github.com/harlan-zw/ripast/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/src/cli.ts).
-Adapter selection: [launcher](https://github.com/harlan-zw/ripast/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/bin/ripast.mjs).
+CLI flags and output contracts: [CLI source](https://github.com/harlan-zw/ripide/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/src/cli.ts).
+Adapter selection: [launcher](https://github.com/harlan-zw/ripide/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/bin/ripast.mjs).

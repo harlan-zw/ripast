@@ -40,10 +40,10 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
       for (const symbol of symbols) {
         const binding = loadNuxtBindingNames(context, symbol, fromAbs)
         if (binding._tag === 'Unknown')
-          throw new Error(`ripast: cannot resolve Nuxt auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
+          throw new Error(`ripide: cannot resolve Nuxt auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
         for (const name of binding.names) {
           if (names.has(name) && names.get(name) !== symbol)
-            throw new Error(`ripast: cannot resolve the Nuxt auto-import binding "${name}". Run Nuxt prepare first.`)
+            throw new Error(`ripide: cannot resolve the Nuxt auto-import binding "${name}". Run Nuxt prepare first.`)
           names.set(name, symbol)
         }
       }

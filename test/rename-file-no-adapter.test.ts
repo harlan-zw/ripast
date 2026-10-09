@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { describe, it, vi } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
-// Simulate `npx @ripast/cli` with no @ripast/vue installed: no framework
+// Simulate `npx ripide` with no @ripast/vue installed: no framework
 // adapter resolves. A pure-TS rename-file must still work.
 vi.mock('../packages/core/src/adapter.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../packages/core/src/adapter.ts')>()
@@ -22,7 +22,7 @@ const TSCONFIG = JSON.stringify({
 }, null, 2)
 
 function makeFx(files: Record<string, string>) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-rf-noadapter-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-rf-noadapter-'))
   const write = (rel: string, content: string) => {
     const abs = join(dir, rel)
     mkdirSync(dirname(abs), { recursive: true })

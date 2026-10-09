@@ -47,10 +47,10 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     const hint = looksSmushed
       ? ` (path contains whitespace; if you meant two arguments, quote each path separately: rename-file "<old>" "<new>")`
       : ''
-    throw new Error(`ripast rename-file: source "${oldPath}" does not exist${hint}`)
+    throw new Error(`ripide rename-file: source "${oldPath}" does not exist${hint}`)
   }
   if (lstatSync(oldAbs).isSymbolicLink())
-    throw new Error(`ripast rename-file: source "${oldPath}" is a symbolic link. Rename its target file instead.`)
+    throw new Error(`ripide rename-file: source "${oldPath}" is a symbolic link. Rename its target file instead.`)
   // Inspect the entry itself: existsSync follows symlinks and misses dangling targets.
   const target = lstatSync(newAbs, { throwIfNoEntry: false })
   const source = lstatSync(oldAbs)
@@ -61,11 +61,11 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     && source.dev === target.dev && source.ino === target.ino
     && !readdirSync(dirname(newAbs)).includes(basename(newAbs))
   if (target && !caseOnlyRename)
-    throw new Error(`ripast rename-file: target "${newPath}" already exists`)
+    throw new Error(`ripide rename-file: target "${newPath}" already exists`)
 
   const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
   if (!tsconfigPath)
-    throw new Error('ripast rename-file: no tsconfig.json found; required for cross-file import rewriting')
+    throw new Error('ripide rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
   const verifyMode = resolveVerifyMode(opts.verify)
   const vueAdapter = opts.vue === false ? null : await loadAdapter('vue')
@@ -84,11 +84,11 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       }
     }
     else {
-      // No Vue adapter available (e.g. `npx @ripast/cli` without @ripast/vue
+      // No Vue adapter available (e.g. `npx ripide` without @ripast/vue
       // installed). A pure-TS file rename does not need it: the TypeScript
       // server rewrites every importing file on its own.
       if (oldAbs.endsWith('.vue') || newAbs.endsWith('.vue'))
-        throw new Error('ripast rename-file: renaming .vue files requires the Vue adapter (install @ripast/vue)')
+        throw new Error('ripide rename-file: renaming .vue files requires the Vue adapter (install @ripast/vue)')
       consumerChanges = await tsOnlyFileRename(server!, cwd, oldAbs, newAbs)
       const vueConsumers = rgFiles(basename(oldAbs, extname(oldAbs)), { cwd, glob: '*.vue' })
       if (vueConsumers.length)
@@ -151,7 +151,7 @@ const SPECIFIER_RE = /^(['"]?)(\.{1,2}\/.*?)\1$/
 const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
 
 // The server picks module specifier endings from its own preferences (it
-// wrote `./aa.js` for an import that read `./a.ts`). ripast keeps the style
+// wrote `./aa.js` for an import that read `./a.ts`). ripide keeps the style
 // the file already used: same extension, or none. The server edits the string
 // contents, sometimes with the quotes and sometimes without.
 function keepSpecifierStyle(text: string, edit: LspTextEdit, path: string, oldAbs: string, newAbs: string): LspTextEdit {

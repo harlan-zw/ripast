@@ -190,10 +190,10 @@ export interface TemplateSelector {
 export function parseTemplateSelector(input: string): TemplateSelector {
   const trimmed = input.trim()
   if (!trimmed)
-    throw new Error('ripast: empty selector')
+    throw new Error('ripide: empty selector')
   const tagMatch = trimmed.match(/^([A-Z][\w-]*)/i)
   if (!tagMatch)
-    throw new Error(`ripast: invalid selector "${input}" (expected tag name, optionally with [attr] or [attr=value] predicates)`)
+    throw new Error(`ripide: invalid selector "${input}" (expected tag name, optionally with [attr] or [attr=value] predicates)`)
   const tag = tagMatch[1]!
   const rest = trimmed.slice(tag.length)
   const attrs: { name: string, value?: string }[] = []
@@ -201,13 +201,13 @@ export function parseTemplateSelector(input: string): TemplateSelector {
   let consumed = 0
   for (const m of rest.matchAll(attrRe)) {
     if (m.index !== consumed)
-      throw new Error(`ripast: invalid selector "${input}" near "${rest.slice(consumed)}"`)
+      throw new Error(`ripide: invalid selector "${input}" near "${rest.slice(consumed)}"`)
     consumed = m.index + m[0].length
     const value = m[2] ?? m[3] ?? m[4]
     attrs.push(value === undefined ? { name: m[1]! } : { name: m[1]!, value })
   }
   if (consumed !== rest.length)
-    throw new Error(`ripast: invalid selector "${input}" (unexpected trailing "${rest.slice(consumed)}")`)
+    throw new Error(`ripide: invalid selector "${input}" (unexpected trailing "${rest.slice(consumed)}")`)
   return { tag, attrs }
 }
 
@@ -301,18 +301,18 @@ export interface TemplateMatchOptions {
 export function parseTemplateWrapper(input: string): { tag: string, inner: string } {
   const inner = input.trim()
   if (!inner)
-    throw new Error('ripast: empty wrapper tag')
+    throw new Error('ripide: empty wrapper tag')
   const tag = inner.match(/^([A-Z][\w.:-]*)(?=\s|$)/i)?.[1]
   if (tag) {
-    const parsed = parseSfc(`<template><${inner}><RipastChild /></${tag}></template>`)
+    const parsed = parseSfc(`<template><${inner}><RipIDEChild /></${tag}></template>`)
     const children = parsed.descriptor.template?.ast?.children as any[] | undefined
     const parent = children?.[0]
     if (!parsed.errors.length && children?.length === 1 && parent.type === NODE_ELEMENT
-      && parent.tag === tag && parent.children?.length === 1 && parent.children[0].tag === 'RipastChild') {
+      && parent.tag === tag && parent.children?.length === 1 && parent.children[0].tag === 'RipIDEChild') {
       return { tag, inner }
     }
   }
-  throw new Error('ripast: wrapper must be a valid tag with optional attributes')
+  throw new Error('ripide: wrapper must be a valid tag with optional attributes')
 }
 
 function collectMatches(ast: any, sel: TemplateSelector, recurseIntoMatches: boolean, opts: TemplateMatchOptions = {}): any[] {

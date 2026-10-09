@@ -377,7 +377,7 @@ const CLASS_EXPRESSION_PREFIX = 'cn('
 
 function parseClassExpression(expression: string): { source: string, program: any | null } {
   const source = `${CLASS_EXPRESSION_PREFIX}${expression})`
-  const { program, errors } = parseSync('ripast-class-expression.ts', source)
+  const { program, errors } = parseSync('ripide-class-expression.ts', source)
   return { source, program: errors.length ? null : program }
 }
 

@@ -30,7 +30,7 @@ export async function applyVueRename(
         for (const c of vueChanges) {
           const existing = byPath.get(c.path)
           if (existing && existing.after !== c.after)
-            throw new Error(`ripast: Vue projects disagree on edits for ${c.rel}. Use an explicit tsconfig.`)
+            throw new Error(`ripide: Vue projects disagree on edits for ${c.rel}. Use an explicit tsconfig.`)
           byPath.set(c.path, c)
         }
       }
@@ -114,7 +114,7 @@ export async function applyVueFileRenameEdits(
       for (const change of workspaceEditToChanges(edits, vue, cwd, filter)) {
         const existing = byPath.get(change.path)
         if (existing && existing.after !== change.after)
-          throw new Error(`ripast: Vue projects disagree on edits for ${change.rel}. Use an explicit tsconfig.`)
+          throw new Error(`ripide: Vue projects disagree on edits for ${change.rel}. Use an explicit tsconfig.`)
         byPath.set(change.path, change)
       }
     }
@@ -137,7 +137,7 @@ export async function vueRegressions(
     if (projects.some(project => project.files.includes(change.path)))
       continue
     if (projects.length !== 1)
-      throw new Error(`ripast: cannot select a Vue project for ${change.rel}. Use an explicit tsconfig.`)
+      throw new Error(`ripide: cannot select a Vue project for ${change.rel}. Use an explicit tsconfig.`)
     projects[0].files.push(change.path)
   }
   const out: Regression[] = []

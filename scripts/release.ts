@@ -7,6 +7,7 @@ import { setTimeout } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 
 const folders = ['core', 'vue', 'cli'] as const
+const packageNames = { core: '@ripast/core', vue: '@ripast/vue', cli: 'ripide' } as const
 interface ReleasePackage { name: string, version: string }
 interface RegistryResponse { status: number | null, stdout: string }
 
@@ -35,7 +36,7 @@ export function planRelease(tag: string, packages: ReleasePackage[]) {
     throw new Error('Pass a version tag, such as v0.5.0 or v0.6.0-beta.1.')
   const version = match[1]
   const names = new Set(packages.map(pkg => pkg.name))
-  if (packages.length !== 3 || names.size !== 3 || folders.some(folder => !names.has(`@ripast/${folder}`)))
+  if (packages.length !== 3 || names.size !== 3 || folders.some(folder => !names.has(packageNames[folder])))
     throw new Error('Release the core, Vue, and CLI packages together.')
   if (packages.some(pkg => pkg.version !== version))
     throw new Error('Every package version must match the release tag.')
@@ -85,7 +86,7 @@ async function run() {
   if (command === 'download') {
     mkdirSync(directory, { recursive: true })
     await downloadPublishedPackages(() => {
-      const response = spawnSync(process.execPath, [npm, 'pack', ...folders.map(folder => `@ripast/${folder}@${plan.version}`), '--json', '--pack-destination', directory, '--registry=https://registry.npmjs.org'], { encoding: 'utf8' })
+      const response = spawnSync(process.execPath, [npm, 'pack', ...folders.map(folder => `${packageNames[folder]}@${plan.version}`), '--json', '--pack-destination', directory, '--registry=https://registry.npmjs.org'], { encoding: 'utf8' })
       if (response.error)
         throw response.error
       if (response.stderr)
@@ -98,8 +99,8 @@ async function run() {
     return
   }
   const artifacts = folders.map((folder) => {
-    const name = `@ripast/${folder}`
-    const tarball = join(directory, `ripast-${folder}-${plan.version}.tgz`)
+    const name = packageNames[folder]
+    const tarball = join(directory, `${name.replace(/^@/, '').replace('/', '-')}-${plan.version}.tgz`)
     const integrity = `sha512-${createHash('sha512').update(readFileSync(tarball)).digest('base64')}`
     const response = spawnSync(process.execPath, [npm, 'view', `${name}@${plan.version}`, 'dist.integrity', '--json', '--registry=https://registry.npmjs.org'], { encoding: 'utf8' })
     if (response.error)

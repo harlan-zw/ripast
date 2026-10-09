@@ -18,15 +18,15 @@ it.each(['pnpm', 'npm'] as const)('launcher runs %s shims with literal arguments
     const args = ['scan', 'space & (literal)', '--glob', 'src/{a,b}.ts']
     const child = spawnSync(process.execPath, [prepareLauncher(fx), ...args], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 0, child.stderr)
     const result = JSON.parse(fx.read('record.json'))
     assert.equal(realpathSync(result.cwd), realpathSync(fx.dir))
     const expected = manager === 'pnpm'
-      ? ['dlx', '--package=@ripast/cli', '--package=@ripast/vue', 'ripast', ...args]
-      : ['exec', '--yes', result.args[2], '--package=@ripast/cli', '--package=@ripast/vue', '--', 'ripast', ...args]
+      ? ['dlx', '--package=ripide', '--package=@ripast/vue', 'ripide', ...args]
+      : ['exec', '--yes', result.args[2], '--package=ripide', '--package=@ripast/vue', '--', 'ripide', ...args]
     assert.deepEqual(result.args, expected)
   }
   finally { fx.cleanup() }
