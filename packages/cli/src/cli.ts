@@ -1053,20 +1053,25 @@ const doctorCmd = defineCommand({
           process.exitCode = 1
         return
       }
-      if (fix.skipped.length)
-        process.stdout.write(formatDoctorReport({ ...report, findings: fix.skipped }, false))
+      if (fix.skipped.length) {
+        const page = selectOutput(fix.skipped, selection(args, false), finding => finding.file)
+        process.stdout.write(`${fullPageText(formatDoctorReport({ ...report, findings: page.results }, false), page, 'findings', args)}\n`)
+      }
+      const page = selectOutput(fix.changes, selection(args, false), change => change.rel)
       const s = summarize(fix.changes)
       process.stdout.write(`${formatVerification(fix.verification)}\n`)
       process.stdout.write(`doctor --fix: ${fix.fixed.length} fixable / ${fix.skipped.length} non-fixable findings\n`)
       process.stdout.write(`${fix.changes.length} file${fix.changes.length === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
       if (!args.apply) {
-        printDiffs(fix.changes)
+        printDiffs(page.results)
         process.stdout.write(`\n(dry run, pass --apply to write)\n`)
       }
       else {
         writeChanges(fix.changes)
-        for (const c of fix.changes) process.stdout.write(`wrote ${c.rel}\n`)
+        for (const c of page.results) process.stdout.write(`wrote ${c.rel}\n`)
       }
+      if (args.limit != null || args.offset != null || args.file != null)
+        process.stdout.write(`files: ${formatOutputPage(page)}\n`)
       if (fix.skipped.length)
         process.exitCode = 1
       return
