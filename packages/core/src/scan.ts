@@ -100,7 +100,7 @@ export function createDeclarationCache(opts: DeclarationCacheOptions = {}): Decl
   const maxBytes = opts.maxBytes ?? 16 * 1024 * 1024
   if (!Number.isSafeInteger(maxEntries) || maxEntries <= 0 || !Number.isSafeInteger(maxBytes) || maxBytes <= 0)
     throw new Error('Declaration cache bounds must be a positive safe integer.')
-  const entries = new Map<string, { source: string, engine?: EngineServices, analysis: DeclarationFileAnalysis | null, bytes: number }>()
+  const entries = new Map<string, { source: string, cwd: string, engine?: EngineServices, analysis: DeclarationFileAnalysis | null, bytes: number }>()
   let hits = 0
   let misses = 0
   let evictions = 0
@@ -115,7 +115,7 @@ export function createDeclarationCache(opts: DeclarationCacheOptions = {}): Decl
       const abs = resolve(cwd, path)
       const cached = entries.get(abs)
       let analysis: DeclarationFileAnalysis | null
-      if (cached && cached.source === source && cached.engine === engine) {
+      if (cached && cached.source === source && cached.cwd === cwd && cached.engine === engine) {
         hits++
         analysis = cached.analysis
         entries.delete(abs)
@@ -126,13 +126,13 @@ export function createDeclarationCache(opts: DeclarationCacheOptions = {}): Decl
         if (cached)
           bytes -= remove(abs)
         analysis = inspectDeclarationFile(abs, source, cwd, engine)
-        const size = 2 * (abs.length + source.length + JSON.stringify(analysis).length)
+        const size = 2 * (abs.length + cwd.length + source.length + JSON.stringify(analysis).length)
         if (size <= maxBytes) {
           while (entries.size >= maxEntries || bytes + size > maxBytes) {
             bytes -= remove(entries.keys().next().value!)
             evictions++
           }
-          entries.set(abs, { source, engine, analysis, bytes: size })
+          entries.set(abs, { source, cwd, engine, analysis, bytes: size })
           bytes += size
         }
       }
