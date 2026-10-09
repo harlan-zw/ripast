@@ -182,9 +182,16 @@ const isVue = isVuePath
 // Preserve the local name when the renamed declaration belongs to the source.
 function preserveConsumerBindings(path: string, source: string, edits: LspTextEdit[], from: string, to: string, selectedPositions: Set<number>): LspTextEdit[] {
   const shorthandOffsets = new Set<number>()
+  const sourceExportOffsets = new Set<number>()
   const { program } = parseSource(path, source)
   walk(program, {
     enter(node: any) {
+      if (node.type === 'ExportNamedDeclaration' && node.source) {
+        for (const specifier of node.specifiers ?? []) {
+          if (specifier.local)
+            sourceExportOffsets.add(specifier.local.start)
+        }
+      }
       if (node.type !== 'ObjectPattern')
         return
       for (const property of node.properties ?? []) {
@@ -209,7 +216,17 @@ function preserveConsumerBindings(path: string, source: string, edits: LspTextEd
         if (root?.type === 'Identifier')
           typeQueryOffsets.add(root.start)
       }
-      if (node.type !== 'Identifier' || node.name !== from || (!isReferenceIdentifier(node, parent, { mode: 'value' }) && !typeQueryOffsets.has(node.start)))
+      if (node.name !== from || sourceExportOffsets.has(node.start))
+        return
+      const jsxReference = node.type === 'JSXIdentifier' && (
+        parent?.type === 'JSXMemberExpression'
+          ? parent.object === node
+          : (parent?.type === 'JSXOpeningElement' || parent?.type === 'JSXClosingElement')
+            && parent.name === node && !/^[a-z]/.test(node.name)
+      )
+      const identifierReference = node.type === 'Identifier'
+        && (isReferenceIdentifier(node, parent, { mode: 'value' }) || typeQueryOffsets.has(node.start))
+      if (!jsxReference && !identifierReference)
         return
       const declaration = tracker.getDeclaration(from)
       if (declaration && shorthandOffsets.has(declaration.node.start))

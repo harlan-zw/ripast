@@ -6,6 +6,38 @@ import { writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([
+  ['component', 'export function UseStore() { return null }', '<UseStore></UseStore>'],
+  ['qualified component', 'export const UseStore = { View: () => null }', '<UseStore.View></UseStore.View>'],
+])('rename preserves JSX references to a destructured %s binding', async (_, declaration, element) => {
+  const fx = makeFixture({
+    'store.ts': `${declaration}\n`,
+    'view.tsx': `export async function render() {\n  const { UseStore } = await import('./store.ts')\n  return ${element}\n}\n`,
+  })
+  try {
+    const result = await runRename('UseStore', 'UseAppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    assert.deepEqual(result.regressions, [])
+  }
+  finally { fx.cleanup() }
+})
+
+it('rename changes source re-exports and preserves local export aliases beside a consumer binding', async () => {
+  const fx = makeFixture({
+    'store.ts': 'export function useStore() { return 1 }\n',
+    'load.ts': `import * as store from './store.ts'\nconst { useStore } = store\nexport { useStore } from './store.ts'\nexport { useStore as localStore }\nexport const invoke = () => useStore()\n`,
+  })
+  try {
+    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    assert.deepEqual(result.regressions, [])
+    writeChanges(result.changes)
+    const consumer = await import(pathToFileURL(`${fx.dir}/load.ts`).href)
+    assert.equal(consumer.useAppStore(), 1)
+    assert.equal(consumer.localStore(), 1)
+    assert.equal(consumer.invoke(), 1)
+  }
+  finally { fx.cleanup() }
+})
+
+it.each([
   ['shorthand', '', 'const { useStore } = await import(\'./store.ts\')'],
   ['default binding', '', 'const { useStore = () => 9 } = await import(\'./store.ts\')'],
   ['mutable binding', '', 'let { useStore } = await import(\'./store.ts\'); useStore = useStore'],
