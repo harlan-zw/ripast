@@ -226,9 +226,6 @@ importers:
       ignore:
         specifier: ^7.0.12
         version: 7.0.12
-      magic-string:
-        specifier: ^1.4.3
-        version: 1.4.3
       oxc-parser:
         specifier: ^0.153.0
         version: 0.153.0
@@ -238,9 +235,6 @@ importers:
       picomatch:
         specifier: ^4.0.7
         version: 4.0.7
-      std-env:
-        specifier: ^4.3.0
-        version: 4.3.0
       typescript-native:
         specifier: npm:typescript@7.1.0-dev.20260905.1
         version: typescript@7.1.0-dev.20260905.1
