@@ -182,15 +182,23 @@ const isVue = isVuePath
 // Preserve the local name when the renamed declaration belongs to the source.
 function preserveConsumerBindings(path: string, source: string, edits: LspTextEdit[], from: string, to: string, selectedPositions: Set<number>): LspTextEdit[] {
   const shorthandOffsets = new Set<number>()
-  const sourceExportOffsets = new Set<number>()
+  const externalReferenceOffsets = new Set<number>()
   const { program } = parseSource(path, source)
   walk(program, {
     enter(node: any) {
       if (node.type === 'ExportNamedDeclaration' && node.source) {
         for (const specifier of node.specifiers ?? []) {
           if (specifier.local)
-            sourceExportOffsets.add(specifier.local.start)
+            externalReferenceOffsets.add(specifier.local.start)
         }
+      }
+      if (node.type === 'TSImportType' && node.qualifier) {
+        walk(node.qualifier, {
+          enter(qualifier: any) {
+            if (qualifier.type === 'Identifier')
+              externalReferenceOffsets.add(qualifier.start)
+          },
+        })
       }
       if (node.type !== 'ObjectPattern')
         return
@@ -216,7 +224,7 @@ function preserveConsumerBindings(path: string, source: string, edits: LspTextEd
         if (root?.type === 'Identifier')
           typeQueryOffsets.add(root.start)
       }
-      if (node.name !== from || sourceExportOffsets.has(node.start))
+      if (node.name !== from || externalReferenceOffsets.has(node.start))
         return
       const jsxReference = node.type === 'JSXIdentifier' && (
         parent?.type === 'JSXMemberExpression'

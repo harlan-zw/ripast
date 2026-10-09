@@ -5,6 +5,24 @@ import { runRename } from '../packages/core/src/index.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
 import { makeFixture } from './helpers.ts'
 
+it.each(['useStore', 'Store'])('rename updates external import type qualifiers beside a local %s binding', async (name) => {
+  const fx = makeFixture({
+    'store.ts': `export class ${name} {}\nexport namespace ${name} { export class Entry {} }\n`,
+    'load.ts': `import * as store from './store.ts'\nconst { ${name} } = store\nexport type T = typeof import('./store.ts').${name}\nexport type U = import('./store.ts').${name}\nexport type V = typeof import('./store.ts').${name}.Entry\nexport type W = import('./store.ts').${name}.Entry\nconst alias: typeof ${name} = ${name}\nconst label: typeof ${name}.name = ${name}.name\nexport const load = () => ({ ${name}, alias, label })\n`,
+  })
+  try {
+    const result = await runRename(name, 'AppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    assert.deepEqual(result.regressions, [])
+    writeChanges(result.changes)
+    const consumer = await import(pathToFileURL(`${fx.dir}/load.ts`).href)
+    const loaded = consumer.load()
+    assert.equal(loaded[name], loaded.alias)
+    assert.equal(loaded.label, 'AppStore')
+    assert.equal('AppStore' in loaded, false)
+  }
+  finally { fx.cleanup() }
+})
+
 it.each([
   ['component', 'export function UseStore() { return null }', '<UseStore></UseStore>'],
   ['qualified component', 'export const UseStore = { View: () => null }', '<UseStore.View></UseStore.View>'],
