@@ -27,7 +27,7 @@ RipIDE aims to bring that same refactoring magic to your agent.
 One command handles the references and edits.
 Your agent can use fewer tokens and finish sooner.
 
-Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
+<img src="./branding/refactor-menu.png" alt="WebStorm refactoring actions mapped to RipIDE terminal commands" width="1600">
 
 ## Features
 
