@@ -54,6 +54,8 @@ After a failure, repair the cause and run the focused proving check.
 If source and inputs are unchanged, do not repeat a failing lint command.
 If a diagnostic receipt covers the required scope, do not repeat that check without a relevant edit.
 Run required builds and tests outside that receipt.
+Finish builds before checks that read generated exports.
+Keep generated artifacts unchanged until those checks finish.
 Run final required checks on the submitted tree.
 
 A compound command's final exit does not prove every child succeeded.

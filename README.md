@@ -25,14 +25,14 @@ When you rename a function in your IDE, it updates the references for you.
 RipIDE aims to bring that same refactoring magic to your agent.
 
 One command handles the references and edits.
-Your agent can use fewer tokens and finish sooner.
+Recorded source-slice tasks used fewer total tokens. Results depend on the task and model.
 
 <img src="./branding/refactor-menu.png" alt="WebStorm refactoring actions mapped to RipIDE terminal commands" width="1600">
 
 ## Features
 
 - ✂️ **IDE refactoring for your agent.** Rename functions, move files, and automatically update references across your project.
-- 📉 **Less time, fewer tokens.** In [local tests](./bench/README.md), typical refactors took about half the time and used less than half the tokens.
+- 📉 **Measured mechanical tasks.** [Local source-slice tests](./bench/README.md) recorded token and time reductions for symbol and static class renames.
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
 - 🧰 **One command, many files.** Move exports, replace imports, delete unused declarations, or migrate CSS classes across your project.
@@ -398,7 +398,8 @@ Licensed under the [MIT license](https://github.com/harlan-zw/ripide/blob/main/L
 
 ## Agent benchmarks
 
-Forty runs compared RipIDE with ordinary editing on ten matched project tasks using both models.
+Forty runs compared RipIDE with ordinary editing on ten matched source-slice tasks using both models.
+Five tasks renamed TypeScript symbols. Five migrated static Vue class tokens.
 RipIDE passed **20/20** runs. Ordinary editing passed **19/20**.
 
 | Model | Completed pairs | Fewer total tokens | Less total time |
@@ -407,4 +408,6 @@ RipIDE passed **20/20** runs. Ordinary editing passed **19/20**.
 | GLM 5.3 Flash | 10 | 73.9% | 55.4% |
 
 Percentages compare completed pairs within each model. One run per combination used source slices, with fixed method order per model.
-See [full results, methods, and limits](./bench/README.md).
+Total tokens include cached input once. Installation, Skill loading, generated state, and full builds were excluded.
+These observations do not establish architecture gains or dollar savings.
+See [full results, methods, and limits](./bench/README.md) and the [recovery protocol](./evals/experiment/README.md).

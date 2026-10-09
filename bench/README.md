@@ -151,3 +151,62 @@ Total tokens include cached input, so token savings do not imply the same cost s
 
 See the [eval implementation and commands](https://github.com/harlan-zw/ripide/blob/58d5da54dd1384d5e0def97bf05a4959a962bd74/evals/README.md)
 and [measurement evidence](https://github.com/harlan-zw/ripide/pull/42#issuecomment-6060408443).
+
+## Evidence recovery
+
+The historical batches above measure bounded mechanical source-slice tasks.
+They do not establish typical architecture performance or money savings.
+Completed-pair percentages exclude failed pairs. They also exclude installation and Skill loading.
+Their denominator is ordinary editing's summed resources within the same runner and model.
+Total tokens include cached input once. Uncached input is a different metric.
+
+| Historical sample | Completed pairs | Total token reduction | Uncached input reduction |
+| --- | ---: | ---: | ---: |
+| Matched Luna | 9 | 60.4% | 49.6% |
+| Matched GLM | 10 | 73.9% | 30.0% |
+| Same-model Sol | 10 | 60.4% | 70.0% |
+| Split GLM | 5 | 45.3% | -12.2% |
+| First GLM | 5 | 39.9% | -18.3% |
+
+Negative reductions mean more uncached input with RipIDE.
+The Sol slice used the same model as the later architecture trial.
+Its tasks still measure source-slice renames, rather than architecture delivery.
+Its documented model substitutions must accompany its harness revision and file hashes.
+
+### Architecture trial quality and windows
+
+The frozen direct SDK accepted an invalid changed verified plan.
+The frozen assisted SDK refused it and preserved source bytes.
+Cost therefore differs alongside this reproduced quality difference.
+Current main exposes raw writers, rather than the frozen protected-plan API.
+
+| Window | Direct minutes | Assisted minutes | Direct total tokens | Assisted total tokens |
+| --- | ---: | ---: | ---: | ---: |
+| Original frozen cutoff | 31.834 | 34.848 | 9,629,962 | 10,113,531 |
+| Complete commit tool output | 31.850 | 34.864 | 9,849,417 | 10,179,903 |
+
+The original cutoff omitted the commit-request response near its second-level boundary.
+The correction includes that response through the matching commit tool's complete output timestamp.
+Direct total-token reduction changes from 4.78% to 3.25%, using assisted totals as the denominator.
+Corrected direct uncached input is 202,523. Corrected assisted uncached input is 279,557.
+One run per arm used Codex GPT-6.1 Sol with medium reasoning.
+No controller-adjusted, equal-quality, repeated architecture gain is established.
+Actual provider charges remain unavailable.
+See [the sanitized immutable windows](../evals/results/2026-10-09-architecture-windows.json).
+
+### Reproduce local SDK timings
+
+Set `RIPIDE_BENCH_OUT` to retain every timed sample, warmup, phase event, artifact hash, and host-load observation.
+
+```sh
+RIPIDE_BENCH_OUT="$HOME/scratch/ripide-sdk-samples.json" pnpm bench
+```
+
+The timer excludes fixture creation and cleanup.
+It measures fresh-fixture SDK operations after one warmup per case.
+It excludes CLI startup, file application, installation, model work, and agent decisions.
+Earlier exact millisecond claims lacked located raw samples.
+Use retained samples for narrowly scoped current measurements.
+
+Use the [registered experiment harness](../evals/experiment/README.md) for new whole-project comparisons.
+Its scripted pilot verifies transport and grading. It cannot establish restored agent gains.
