@@ -19,27 +19,24 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 </div>
 
+## Why RipIDE?
+
+When you rename a function in your IDE, it updates the references for you.
+RipIDE aims to bring that same refactoring magic to your agent.
+
+One command handles the references and edits.
+Your agent can use fewer tokens and finish sooner.
+
+Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
+
 ## Features
 
-- ✂️ **IDE refactoring for your coding agent.** Rename functions, move files, and automatically update references across your project.
+- ✂️ **IDE refactoring for your agent.** Rename functions, move files, and automatically update references across your project.
 - 📉 **Less time, fewer tokens.** In [local tests](./bench/README.md), typical refactors took about half the time and used less than half the tokens.
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
-- 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
+- 🧰 **One command, many files.** Move exports, replace imports, delete unused declarations, or migrate CSS classes across your project.
 - 🪂 **Preview first.** Dry runs show the diff; [type checking](#verify) blocks supported refactors that introduce errors.
-
-[^benchmark]: Local medians across five runs, with 160 importers per symbol.
-
-## Why RipIDE?
-
-Agents can refactor code well, but finding references and editing files takes time and tokens.
-RipIDE handles that work in one command, so your agent spends less time reading and editing files.
-
-In local benchmarks, median reductions by model were **59% to 71% fewer tokens** and **48% to 56% less time**.
-See the [benchmark setup and results](#agent-benchmarks).
-
-Rename functions, move files, and update imports and references together. Preview the diff before writing changes.
-Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
 
 ## Installation
 
