@@ -1,6 +1,8 @@
+import type { FrameworkAdapter } from './adapter.ts'
 import type { LspDiagnostic, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import { relative } from 'node:path'
+import { rgFiles } from './util.ts'
 
 export interface Regression {
   file: string
@@ -8,6 +10,18 @@ export interface Regression {
   col: number
   code: number
   message: string
+}
+
+/** Project verification includes Vue consumers even when only scripts change. */
+export async function findVueRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, loadVueAdapter: () => Promise<FrameworkAdapter | null>): Promise<Regression[]> {
+  if (!changes.length || !rgFiles('', { cwd, glob: '*.vue', listAll: true }).length)
+    return []
+  if (!tsconfigPath)
+    throw new Error('ripide: Vue verification requires a tsconfig. Prepare the project before applying changes.')
+  const adapter = await loadVueAdapter()
+  if (!adapter)
+    throw new Error('ripide: Vue verification requires ripide-vue. Install the adapter before applying changes.')
+  return adapter.regressions(tsconfigPath, cwd, changes)
 }
 
 /**

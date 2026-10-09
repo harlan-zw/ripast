@@ -6,15 +6,16 @@ import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { walk } from 'oxc-walker'
+import { isReferenceIdentifier, ScopeTracker, walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
+import { recoverPropertyReferences } from './rename-property-references.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { applyTextEdits, parseSourceFile, rgFiles, rgFilesMany } from './util.ts'
-import { findRegressions } from './verify.ts'
+import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface RenameOptions {
   cwd?: string
@@ -110,6 +111,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
           editsByPath.set(path, unique)
         }
       }
+      await recoverPropertyReferences(server, scriptCandidates, declarations, from, to, editsByPath)
     })
 
     const changes: FileChange[] = timed(profile, 'collect changes', () => {
@@ -118,13 +120,15 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
         if (isVue(path))
           continue
         const before = readFileSync(path, 'utf8')
+        const selectedPositions = new Set(declarations.filter(declaration => declaration.filePath === path).map(declaration => declaration.pos))
+        const fileEdits = preserveConsumerBindings(path, before, [...edits.values()], from, to, selectedPositions)
         const after = autoImportPlan
-          ? applyTextEdits(before, autoImportPlan.transformEdits(path, before, [...edits.values()].map(edit => ({
+          ? applyTextEdits(before, autoImportPlan.transformEdits(path, before, fileEdits.map(edit => ({
               start: offsetOfPosition(before, edit.range.start),
               end: offsetOfPosition(before, edit.range.end),
               replacement: edit.newText,
             }))))
-          : applyLspEdits(before, [...edits.values()])
+          : applyLspEdits(before, fileEdits)
         if (after !== before)
           out.push({ path, rel: relative(cwd, path), before, after })
       }
@@ -156,16 +160,19 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     const verificationChanges = [...changes, ...autoImportPlan?.verificationChanges ?? []]
     if (verifyMode !== 'none') {
       const scriptChanges = verificationChanges.filter(c => !isVue(c.path))
-      const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path), opts.glob)
+      const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path))
       regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, verifyFiles)))
     }
 
-    if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
+    if (vueEnabled && verifyMode === 'project') {
+      regressions.push(...await findVueRegressions(cwd, verificationChanges, tsconfigPath, async () => vueAdapter))
+    }
+    else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
       const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, verificationChanges)
       regressions.push(...vueRegs)
     }
 
-    const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob))
+    const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob, autoImportPlan?.unrelatedGeneratedImports))
 
     return { changes, scanned: candidatePaths.length, regressions, warnings }
   }
@@ -176,12 +183,86 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
 
 const isVue = isVuePath
 
+// A shorthand binding has two names: the source property and its local value.
+// Preserve the local name when the renamed declaration belongs to the source.
+function preserveConsumerBindings(path: string, source: string, edits: LspTextEdit[], from: string, to: string, selectedPositions: Set<number>): LspTextEdit[] {
+  const shorthandOffsets = new Set<number>()
+  const externalReferenceOffsets = new Set<number>()
+  const { program } = parseSource(path, source)
+  walk(program, {
+    enter(node: any) {
+      if (node.type === 'ExportNamedDeclaration' && node.source) {
+        for (const specifier of node.specifiers ?? []) {
+          if (specifier.local)
+            externalReferenceOffsets.add(specifier.local.start)
+        }
+      }
+      if (node.type === 'TSImportType' && node.qualifier) {
+        walk(node.qualifier, {
+          enter(qualifier: any) {
+            if (qualifier.type === 'Identifier')
+              externalReferenceOffsets.add(qualifier.start)
+          },
+        })
+      }
+      if (node.type !== 'ObjectPattern')
+        return
+      for (const property of node.properties ?? []) {
+        if (property.shorthand && property.key?.type === 'Identifier' && property.key.name === from && !selectedPositions.has(property.key.start))
+          shorthandOffsets.add(property.key.start)
+      }
+    },
+  })
+  if (!shorthandOffsets.size)
+    return edits
+  const tracker = new ScopeTracker({ preserveExitedScopes: true })
+  walk(program, { scopeTracker: tracker })
+  tracker.freeze()
+  const localOffsets = new Set<number>()
+  const typeQueryOffsets = new Set<number>()
+  walk(program, {
+    scopeTracker: tracker,
+    enter(node: any, parent: any) {
+      if (node.type === 'TSTypeQuery') {
+        let root = node.exprName
+        while (root?.type === 'TSQualifiedName') root = root.left
+        if (root?.type === 'Identifier')
+          typeQueryOffsets.add(root.start)
+      }
+      if (node.name !== from || externalReferenceOffsets.has(node.start))
+        return
+      const jsxReference = node.type === 'JSXIdentifier' && (
+        parent?.type === 'JSXMemberExpression'
+          ? parent.object === node
+          : (parent?.type === 'JSXOpeningElement' || parent?.type === 'JSXClosingElement')
+            && parent.name === node && !/^[a-z]/.test(node.name)
+      )
+      const identifierReference = node.type === 'Identifier'
+        && (isReferenceIdentifier(node, parent, { mode: 'value' }) || typeQueryOffsets.has(node.start))
+      if (!jsxReference && !identifierReference)
+        return
+      const declaration = tracker.getDeclaration(from)
+      if (declaration && shorthandOffsets.has(declaration.node.start))
+        localOffsets.add(node.start)
+    },
+  })
+  return edits.flatMap((edit) => {
+    const start = offsetOfPosition(source, edit.range.start)
+    const end = offsetOfPosition(source, edit.range.end)
+    if (source.slice(start, end) !== from || edit.newText !== to)
+      return [edit]
+    if (shorthandOffsets.has(start))
+      return [{ ...edit, newText: `${to}: ${source.slice(start, end)}` }]
+    return localOffsets.has(start) ? [] : [edit]
+  })
+}
+
 // After a rename, the server's file set is bounded by the project it discovers.
 // A symbol re-exported through a package barrel and consumed from a file
 // outside that set (sibling test dirs, other packages) keeps the old name and
 // the server never sees it. Re-scan with rg and flag any file that still
 // imports the old name but was not rewritten.
-function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined): string[] {
+function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined, unrelatedGeneratedImports?: Set<string>): string[] {
   const rewritten = new Set(changes.map(c => c.path))
   const stale: string[] = []
   for (const path of rgFiles(from, { cwd, glob })) {
@@ -197,6 +278,8 @@ function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], 
     const { program } = parseSourceFile(path, text, cwd)
     const importsName = program?.body.some((node: any) => {
       if (!node.source || (node.type !== 'ImportDeclaration' && node.type !== 'ExportNamedDeclaration'))
+        return false
+      if (node.source.value === '#imports' && unrelatedGeneratedImports?.has(path))
         return false
       return node.specifiers.some((specifier: any) => {
         const imported = specifier.type === 'ImportSpecifier' ? specifier.imported : specifier.local

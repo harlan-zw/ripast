@@ -1,18 +1,19 @@
 import type { ImportInfo } from './imports.ts'
 import type { VerifyMode } from './project.ts'
-import type { TsServer } from './ts-server.ts'
+import type { SourceSite, TsServer } from './ts-server.ts'
 import type { FileChange, TextEdit } from './util.ts'
 import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
+import { loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
-import { isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
+import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
-import { findRegressions } from './verify.ts'
+import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
   cwd?: string
@@ -38,7 +39,7 @@ interface ReplacementTarget {
 
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
   const cwd = opts.cwd ?? process.cwd()
-  const verifyMode = resolveVerifyMode(opts.verify)
+  const verifyMode = resolveVerifyMode(opts.verify === undefined || opts.verify === true ? 'project' : opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
     : rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
@@ -52,15 +53,18 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
     const candidatePaths = rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
+    const referenceCache = new Map<string, SourceSite[]>()
     for (const path of candidatePaths) {
       const before = readFileSync(path, 'utf8')
-      const after = await replaceImportedSymbol(server, path, before, from, to, target, projectStyle, opts.targetImport)
+      const after = await replaceImportedSymbol(server, referenceCache, path, before, from, to, target, projectStyle, opts.targetImport)
       if (after !== before)
         changes.push({ path, rel: relative(cwd, path), before, after })
     }
-    const regressions = verifyMode === 'none'
+    const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), opts.glob))
+      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path)))
+    if (verifyMode === 'project')
+      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), () => loadAdapter('vue')))
     return { changes, scanned: candidatePaths.length, regressions }
   }
   finally {
@@ -131,7 +135,7 @@ interface ImportedBinding {
   offset: number
 }
 
-async function replaceImportedSymbol(server: TsServer, path: string, source: string, from: string, to: string, target: ReplacementTarget, projectStyle: (path: string) => string, targetImport?: string): Promise<string> {
+async function replaceImportedSymbol(server: TsServer, referenceCache: Map<string, SourceSite[]>, path: string, source: string, from: string, to: string, target: ReplacementTarget, projectStyle: (path: string) => string, targetImport?: string): Promise<string> {
   const program = parseProgram(path, source)
   const imports = listImports(source, path, program)
   const bindings: ImportedBinding[] = []
@@ -194,7 +198,7 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   const edits: TextEdit[] = []
   let replaced = false
   for (const binding of bindings) {
-    for (const ref of await server.references(path, binding.offset)) {
+    for (const ref of await cachedReferences(server, referenceCache, path, binding.offset)) {
       if (ref.path !== path || imports.some(i => ref.start >= i.start && ref.start < i.end))
         continue
       // References can follow the exported symbol through other local aliases,
@@ -250,6 +254,20 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
     isTypeOnly: target.isTypeOnly,
   })
   return pruneUnusedImports(withImport, path)
+}
+
+async function cachedReferences(server: TsServer, cache: Map<string, SourceSite[]>, path: string, offset: number): Promise<SourceSite[]> {
+  const key = `${path}:${offset}`
+  const cached = cache.get(key)
+  if (cached)
+    return cached
+  const references = await server.references(path, offset)
+  cache.set(key, references)
+  // The server reports every reference to this symbol. Each reported site
+  // shares that result while the operation still reads the original sources.
+  for (const reference of references)
+    cache.set(`${reference.path}:${reference.start}`, references)
+  return references
 }
 
 function relativeScriptSpecifier(specifier: string): boolean {

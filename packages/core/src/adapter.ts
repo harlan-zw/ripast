@@ -29,6 +29,8 @@ export interface RenameSite {
 export interface AutoImportRenamePlan {
   changes: FileChange[]
   verificationChanges: FileChange[]
+  /** Consumers whose generated barrel uses a different provider for this name. */
+  unrelatedGeneratedImports?: Set<string>
   transformEdits: (path: string, source: string, edits: TextEdit[]) => TextEdit[]
 }
 
@@ -108,6 +110,9 @@ export interface FrameworkAdapter {
 
   /** Drop changes targeting framework-generated paths. Mutates `changes` in place. */
   filterGeneratedChanges?: (cwd: string, changes: FileChange[]) => void
+
+  /** Prove an unresolved consumer specifier points at the planned destination. */
+  isPlannedImportTarget?: (cwd: string, consumer: string, specifier: string, target: string) => boolean
 
   /**
    * After a move/rename that takes a symbol or file out of an auto-import scope,

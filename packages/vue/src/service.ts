@@ -158,8 +158,12 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
   const overlays = new Map<string, string>()
   const roots = new Set(fileNames.map(file => resolve(cwd, file)))
   const overlayDirectories = new Set<string>()
-  const sys: ts.System = {
+  let projectVersion = 0
+  const sys: ts.System & { readonly version: number } = {
     ...ts.sys,
+    // Volar can retain its project version when only script overlays change.
+    // Its host includes sys.version, so every overlay invalidates TypeScript.
+    get version() { return projectVersion },
     fileExists: file => overlays.has(normalizeFileName(file)) || ts.sys.fileExists(file),
     readFile: file => overlays.get(normalizeFileName(file)) ?? ts.sys.readFile(file),
     directoryExists: directory => overlayDirectories.has(normalizeFileName(directory)) || ts.sys.directoryExists(directory),
@@ -194,7 +198,6 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
     },
   )
 
-  let projectVersion = 0
   const projectHost: TypeScriptProjectHost = {
     getCurrentDirectory: () => cwd.replace(/\\/g, '/'),
     getCompilationSettings: () => commandLine.options,
