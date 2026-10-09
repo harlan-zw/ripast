@@ -33,6 +33,9 @@ Lines are one-based and inclusive. Commas separate ranges; `3+` marks a gap afte
 After apply, earlier file reads are outdated. Read changed ranges only when current code is needed.
 Follow any editing tool requirement for a fresh read. Do not reread every changed file just to confirm success.
 Use `--profile full --json` when you need complete before/after source.
+Save large results outside model context. Read the required fields or changed ranges on demand.
+Put actionable errors before optional previews. Preserve omitted details in a complete artifact.
+Batch independent searches. Keep dependent mutations and verification sequential.
 
 
 ## Examples
