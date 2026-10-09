@@ -219,7 +219,7 @@ export function createEngine(options: EngineOptions = {}) {
     buildComponentDetail: (name: string, opts: Parameters<typeof buildComponentDetail>[1] = {}) => buildComponentDetail(name, { ...opts, engine: services }),
     rename: (from: string, to: string, opts: RenameOptions = {}) => execute({ operation: 'rename', from, to }, opts, async () => {
       const planners = extensions.filter(extension => extension.planRename && rgFiles(from, { cwd: opts.cwd, glob: extension.suffixes.map(suffix => `*${suffix}`) }).length)
-      const coreBindings = scan(from, { cwd: opts.cwd, engine: services }).some(hit => !services.owns(hit.file) && hit.kind === 'identifier-binding')
+      const coreBindings = planners.length > 0 && scan(from, { cwd: opts.cwd, engine: services }).some(hit => !services.owns(hit.file) && hit.kind === 'identifier-binding')
       const results: RenameResult[] = []
       if (coreBindings || !planners.length)
         results.push(await runRename(from, to, { ...opts, engine: services }))
