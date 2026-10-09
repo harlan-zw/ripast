@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { compactVerification, runCssClassRename, runDelete, runMove, runRename, runRenameFile, runReplace, runVueTemplateUnwrap, runVueTemplateWrap } from '../packages/core/src/index.ts'
+import { compactVerification } from '../packages/cli/src/presentation/index.ts'
+import { runCssClassRename, runDelete, runMove, runRename, runRenameFile, runReplace, runVueTemplateUnwrap, runVueTemplateWrap } from '../packages/core/src/index.ts'
 import { makeFixture } from './helpers.ts'
 
 const files = {
