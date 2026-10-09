@@ -17,6 +17,7 @@ flowchart LR
 Build package exports before registering their hashes.
 Keep output directories under private `~/scratch/`.
 Use a fresh output directory for each revision.
+Follow the [runner preflight protocol](../../docs/benchmark-runbook.md#runner-preflight) before model dispatch.
 
 ```sh
 pnpm build
@@ -143,5 +144,5 @@ Only sanitized metrics and hashes belong in public results.
 Raw native transcripts and prompts stay private.
 
 Read [historical benchmark limits](../../bench/README.md) before using any percentage.
-Read the [maintained benchmark runbook](https://github.com/harlan-zw/ripide/blob/docs/recovery-skill-runbook/docs/benchmark-runbook.md) for rerun decisions.
+Read the [maintained benchmark runbook](../../docs/benchmark-runbook.md) for rerun decisions.
 A held-out repeated study with comparable quality must precede restored-gain advertising.
