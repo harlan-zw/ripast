@@ -4,6 +4,12 @@ import { assertReplacementPublished, downloadPublishedPackages, planRelease, pub
 const packages = ['ripide-api', 'ripide-vue', 'ripide'].map(name => ({ name, version: '0.5.0' }))
 
 describe('legacy package deprecation', () => {
+  it('accepts one replacement version from npm 12 and rejects ambiguous results', () => {
+    expect(() => assertReplacementPublished({ status: 0, stdout: '["0.7.0"]' }, '0.7.0')).not.toThrow()
+    expect(() => assertReplacementPublished({ status: 0, stdout: '["0.0.0"]' }, '0.7.0')).toThrow('replacement release')
+    expect(() => assertReplacementPublished({ status: 0, stdout: '["0.7.0","0.7.0"]' }, '0.7.0')).toThrow('replacement release')
+  })
+
   it('requires the replacement release before deprecating legacy packages', () => {
     expect(() => assertReplacementPublished({ status: 0, stdout: '"0.0.0"' }, '0.6.1')).toThrow('replacement release')
     expect(() => assertReplacementPublished({ status: 1, stdout: '{"error":{"code":"E404"}}' }, '0.6.1')).toThrow('replacement release')
