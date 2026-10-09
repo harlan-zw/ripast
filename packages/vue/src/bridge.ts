@@ -148,10 +148,16 @@ export async function vueRegressions(
       continue
     const vue = createVueService(project.tsconfigPath, cwd)
     try {
-      const baselinePairs = await withFilteredConsoleWarn(() => Promise.all(
+      for (const file of files)
+        vue.setSnapshot(file, pendingVue.find(change => change.path === file)?.before ?? readFileSync(file, 'utf8'))
+      for (const change of pendingChanges) {
+        if (change.path.endsWith('.vue') && !selected.has(change.path))
+          continue
+        vue.setSnapshot(change.path, change.before)
+      }
+      const baseline = new Map(await withFilteredConsoleWarn(() => Promise.all(
         files.map(async file => [file, await collectDiagKeys(vue, file)] as const),
-      ))
-      const baseline = new Map(baselinePairs)
+      )))
       for (const c of pendingChanges) {
         if (c.path.endsWith('.vue') && !selected.has(c.path))
           continue

@@ -15,7 +15,7 @@ import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './proje
 import { recoverPropertyReferences } from './rename-property-references.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { applyTextEdits, parseSourceFile, rgFiles, rgFilesMany } from './util.ts'
-import { findRegressions } from './verify.ts'
+import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface RenameOptions {
   cwd?: string
@@ -160,11 +160,14 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     const verificationChanges = [...changes, ...autoImportPlan?.verificationChanges ?? []]
     if (verifyMode !== 'none') {
       const scriptChanges = verificationChanges.filter(c => !isVue(c.path))
-      const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path), opts.glob)
+      const verifyFiles = verifyScope(verifyMode, cwd, scriptCandidates, scriptChanges.map(c => c.path))
       regressions.push(...await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, verifyFiles)))
     }
 
-    if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
+    if (vueEnabled && verifyMode === 'project') {
+      regressions.push(...await findVueRegressions(cwd, verificationChanges, tsconfigPath, async () => vueAdapter))
+    }
+    else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVue(c.path))) {
       const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, verificationChanges)
       regressions.push(...vueRegs)
     }

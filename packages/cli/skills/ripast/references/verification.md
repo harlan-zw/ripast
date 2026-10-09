@@ -5,6 +5,9 @@ New diagnostics block `--apply`. Agent output reports whether verification ran.
 `no new type diagnostics` means no increase within the selected verification scope.
 It does not prove a clean project build or passing tests.
 Use `--verify-mode touched|project|none` to select scope. Keep verification enabled.
+Replacement checks the project by default. Other symbol refactors default to touched files.
+Project verification includes unchanged Vue consumers. It requires the Vue adapter when Vue files exist.
+Refactor globs limit edits without narrowing project verification. File discovery ignores still apply.
 CSS and Vue template transforms have no type verification. Run their relevant project checks.
 
 After applying, review the changed-file diff and run relevant checks.

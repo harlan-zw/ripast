@@ -289,7 +289,9 @@ ripast rename useStore useAppStore --apply --json
 
 `rename`, `replace`, `move`, `delete`, and `rename-file` enable verification by default.
 They compare type errors before and after the change, then refuse `--apply` if new errors appear.
-The default checks touched files. Use `--verify-mode project` to check the full project.
+`replace` checks the project by default, including unchanged consumers of modified exports.
+Other refactors check touched files by default. Use `--verify-mode project` for broader checks, including unchanged Vue consumers.
+Project verification respects file discovery ignores. Refactor globs limit edits without narrowing project verification.
 Use `--no-verify` or `--verify-mode none` to skip verification. CSS class renames do not run a typecheck.
 
 ### Profiles
