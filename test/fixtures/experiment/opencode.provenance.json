@@ -1,0 +1,4 @@
+{
+  "sourceTranscriptSha256": "7dce3cf545be4f489ffde02594a4d339be350fb25b3ca96b98bd0c8a2ff123fa",
+  "transformation": "Retain one actual completion event usage shape. Exclude text, identifiers, commands, provider cost placeholders, and private metadata. Observation timestamp belongs to the test recorder."
+}

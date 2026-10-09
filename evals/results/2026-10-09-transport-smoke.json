@@ -1,0 +1,399 @@
+{
+  "kind": "scripted-transport-smoke",
+  "purpose": "Verify complete recording and independent grading. No agent productivity or recovered gains claim.",
+  "sourceReportSha256": "08f6c8493d6ce2352a64364d8e7d1e6f40336a6c0042e51a4146319ab04d16fd",
+  "manifestSha256": "2814f1e566368444c5903da6922f3b1c1153d0927ad67d0c47e4661e8029b90d",
+  "started": "2026-10-09T05:47:07.156Z",
+  "completed": "2026-10-09T05:48:42.462Z",
+  "attempts": [
+    {
+      "task": "rename-file",
+      "mode": "forced",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "rename-file",
+      "mode": "hybrid",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "rename-file",
+      "mode": "direct",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "architecture",
+      "mode": "forced",
+      "cohort": "architecture",
+      "quality": "passed"
+    },
+    {
+      "task": "architecture",
+      "mode": "hybrid",
+      "cohort": "architecture",
+      "quality": "passed"
+    },
+    {
+      "task": "architecture",
+      "mode": "direct",
+      "cohort": "architecture",
+      "quality": "passed"
+    },
+    {
+      "task": "installed-rename",
+      "mode": "hybrid",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "installed-rename",
+      "mode": "forced",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "installed-rename",
+      "mode": "direct",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "nuxt-rename",
+      "mode": "direct",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "nuxt-rename",
+      "mode": "forced",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "nuxt-rename",
+      "mode": "hybrid",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "mixed",
+      "mode": "forced",
+      "cohort": "mixed",
+      "quality": "passed"
+    },
+    {
+      "task": "mixed",
+      "mode": "hybrid",
+      "cohort": "mixed",
+      "quality": "passed"
+    },
+    {
+      "task": "mixed",
+      "mode": "direct",
+      "cohort": "mixed",
+      "quality": "passed"
+    },
+    {
+      "task": "move",
+      "mode": "direct",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "move",
+      "mode": "forced",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "move",
+      "mode": "hybrid",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "rename",
+      "mode": "hybrid",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "rename",
+      "mode": "direct",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "rename",
+      "mode": "forced",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "replace",
+      "mode": "hybrid",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "replace",
+      "mode": "forced",
+      "cohort": "mechanical",
+      "quality": "passed"
+    },
+    {
+      "task": "replace",
+      "mode": "direct",
+      "cohort": "mechanical",
+      "quality": "passed"
+    }
+  ],
+  "qualityGates": [
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "rename-file",
+      "mode": "forced",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "rename-file",
+      "mode": "hybrid",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "rename-file",
+      "mode": "direct",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "architecture",
+      "mode": "forced",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "architecture",
+      "mode": "hybrid",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "architecture",
+      "mode": "direct",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "installed-rename",
+      "mode": "hybrid",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "installed-rename",
+      "mode": "forced",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "installed-rename",
+      "mode": "direct",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "nuxt-rename",
+      "mode": "direct",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "nuxt-rename",
+      "mode": "forced",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "nuxt-rename",
+      "mode": "hybrid",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "mixed",
+      "mode": "forced",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "mixed",
+      "mode": "hybrid",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "mixed",
+      "mode": "direct",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "move",
+      "mode": "direct",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "move",
+      "mode": "forced",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "move",
+      "mode": "hybrid",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "rename",
+      "mode": "hybrid",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "rename",
+      "mode": "direct",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "rename",
+      "mode": "forced",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "replace",
+      "mode": "hybrid",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "replace",
+      "mode": "forced",
+      "repeat": 0,
+      "attempt": 0
+    },
+    {
+      "id": "protected-plan-capability",
+      "_tag": "Unavailable",
+      "required": false,
+      "task": "replace",
+      "mode": "direct",
+      "repeat": 0,
+      "attempt": 0
+    }
+  ],
+  "limitations": [
+    "Source predates final audit fixes. New regression tests separately prove runtime manifest freeze, unresolved alias rejection, response ownership, and canonical ordering.",
+    "Provider tokens and actual charges are unavailable. Scripted workers made no model calls.",
+    "Protected verified-plan commit capability is unavailable on current main."
+  ],
+  "priorAttempts": [
+    {
+      "revision": "pilot-1",
+      "passed": 16,
+      "total": 18,
+      "reason": "Two touched-file quote differences failed exact grading. Evidence stays immutable."
+    },
+    {
+      "revision": "pilot-2",
+      "passed": 21,
+      "total": 24,
+      "unavailable": 3,
+      "reason": "Nuxt offline metadata unavailable."
+    },
+    {
+      "revision": "nuxt-pilot-1",
+      "passed": 0,
+      "total": 3,
+      "unavailable": 3,
+      "reason": "Nuxt offline tarball unavailable."
+    }
+  ]
+}

@@ -163,3 +163,9 @@ The [GPT-6.1 Sol report](./results/2026-10-09-6.1-sol.md) records ten second-bat
 Both methods passed all ten cases. RipIDE used 60.4% fewer total tokens and 51.2% less total agent time.
 These are single-run measurements. The report includes source commits, model selection, and comparison limits.
 The [measurement file](./results/2026-10-09-6.1-sol.json) retains all twenty attempts.
+
+## New registered comparisons
+
+Use [registered experiments](./experiment/README.md) for new held-out comparisons.
+This historical runner remains available to reproduce historical method and limitations.
+New reports retain setup failures, repair costs, complete boundaries, and independent whole-project grades.
