@@ -1030,6 +1030,10 @@ const doctorCmd = defineCommand({
           fix: { files: fix.changes.length, fixed: fix.fixed, skipped: fix.skipped.length },
           changes: fix.changes.map(c => ({ path: c.rel, before: c.before, after: c.after })),
         }
+        const { results: changes, ...changePage } = selectOutput(full.changes, selection(args, false), change => change.path)
+        const { results: findings, ...findingPage } = selectOutput(report.findings, selection(args, false), finding => finding.file)
+        const { results: fixed, ...fixedPage } = selectOutput(fix.fixed, selection(args, false), finding => finding.file)
+        const fullOutput = { ...full, changes, changePage, findings, findingPage, fix: { ...full.fix, fixed }, fixedPage }
         const skippedPage = selectOutput(fix.skipped, selection(args, true, 50), finding => finding.file)
         emitJson(agentProfile
           ? {
@@ -1037,7 +1041,7 @@ const doctorCmd = defineCommand({
               findings: skippedPage.results,
               findingPage: { ...skippedPage, results: undefined },
             }
-          : full, args, full, 'saved', mutationTag(!!args.apply, false, fix.changes.length))
+          : fullOutput, args, full, 'saved', mutationTag(!!args.apply, false, fix.changes.length))
         if (fix.skipped.length)
           process.exitCode = 1
         return
