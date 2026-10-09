@@ -28,7 +28,8 @@ Every JSON response contains `_tag`, `command`, `base`, and `data`.
 Mutation tags are `Preview`, `Applied`, `Refused`, or `Empty`. Failures use `Error`.
 Compact mutation JSON returns `data.verification` and `data.changes: [[path, lines]]`.
 Verification entries use `[checker, scope, files, newErrors, ignoredErrors?]`.
-Checkers are `typescript` and `vue`. Counts describe checks that ran against proposed content.
+Built-in checkers are `typescript` and `vue`. SDK extensions can use other checker names.
+Counts describe checks that ran against proposed content.
 Skipped checks return `disabled`, `no-changes`, or `not-applicable`.
 When ranges shift, entries use `[path, beforeLines, afterLines]`. Moves use `data.moves: [[from, to]]`.
 Lines are one-based and inclusive. Commas separate ranges; `3+` marks a gap after line 3.
