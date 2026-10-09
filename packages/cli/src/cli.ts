@@ -1,5 +1,5 @@
 import type { CommandDef } from 'citty'
-import type { ExportFilter, ProfileSink, Verification, VerifyMode } from 'ripide-api'
+import type { ExportFilter, OutputPage, ProfileSink, Verification, VerifyMode } from 'ripide-api'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -182,7 +182,13 @@ function discoveryJson<T>(results: T[], args: OutputArgs, file?: (item: T) => st
 function diagnostics(r: MutatingResult, args: OutputArgs, agentProfile: boolean) {
   const all = [...r.regressions].map(d => ({ ...d, file: agentProfile ? outputPath(d.file, process.cwd()) : d.file })).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col || a.code - b.code || a.message.localeCompare(b.message))
   const filtered = args.code == null ? all : all.filter(d => d.code === Number(args.code))
-  return { ...selectOutput(filtered, selection(args, agentProfile, 20), d => d.file), total: all.length }
+  return { ...selectOutput(filtered, selection(args, agentProfile, 20), d => agentProfile ? d.file : outputPath(d.file, process.cwd())), total: all.length }
+}
+function fullPageText(rendered: string, page: OutputPage<unknown>, unit: 'hits' | 'files' | 'findings', args: OutputArgs): string {
+  if (args.limit == null && args.offset == null && args.file == null)
+    return rendered
+  const displayed = page.shown ? rendered.trimEnd() : `No ${unit} on this page.`
+  return [`project total: ${page.total} ${unit}`, `displayed ${unit}:`, displayed, formatOutputPage(page)].join('\n')
 }
 function diagnosticText(r: MutatingResult, args: OutputArgs, agentProfile: boolean): string {
   const page = diagnostics(r, args, agentProfile)
@@ -297,7 +303,7 @@ const scanCmd = defineCommand({
       process.stdout.write(`${profileHeader()}\n${formatAgentHits(hits, selection(args, true))}\n`)
       return
     }
-    process.stdout.write(`${formatHits(page.results, false)}\n`)
+    process.stdout.write(`${fullPageText(formatHits(page.results, false), page, 'hits', args)}\n`)
   },
 })
 
@@ -392,7 +398,7 @@ const treeCmd = defineCommand({
       process.stdout.write(`${formatAgentDeclarationTree({ files: page.results }, exportFilter)}\n${formatOutputPage(page)}\n`)
       return
     }
-    process.stdout.write(`${formatDeclarationTree({ files: page.results }, false)}\n`)
+    process.stdout.write(`${fullPageText(formatDeclarationTree({ files: page.results }, false), page, 'files', args)}\n`)
   },
 })
 
@@ -1099,7 +1105,7 @@ const doctorCmd = defineCommand({
     }
     else {
       const page = selectOutput(report.findings, selection(args, false), finding => finding.file)
-      process.stdout.write(formatDoctorReport({ ...report, findings: page.results }, false))
+      process.stdout.write(`${fullPageText(formatDoctorReport({ ...report, findings: page.results }, false), page, 'findings', args)}\n`)
     }
     if (report.findings.length)
       process.exitCode = 1
