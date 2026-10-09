@@ -5,10 +5,9 @@ import { rgFiles } from './util.ts'
 export type VerifyMode = 'none' | 'touched' | 'project'
 
 export function resolveVerifyMode(value: unknown, defaultMode: VerifyMode = 'touched'): VerifyMode {
-  if (value === undefined)
-    return defaultMode
-  if (value === 'none' || value === 'touched' || value === 'project')
-    return value
+  const mode = value === undefined ? defaultMode : value
+  if (mode === 'none' || mode === 'touched' || mode === 'project')
+    return mode
   throw new Error('ripide: verifyMode must be none, touched, or project.')
 }
 

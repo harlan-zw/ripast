@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { resolveVerifyMode, runDelete, runMove, runRename, runRenameFile, runReplace } from '../packages/core/src/index.ts'
+import { resolveVerificationOptions, resolveVerifyMode, runDelete, runMove, runRename, runRenameFile, runReplace } from '../packages/core/src/index.ts'
 
 it.each([false, true, '', 'all', null, 0, {}])('rejects invalid verification mode %j', (value) => {
   assert.throws(() => resolveVerifyMode(value as never), /verifyMode.*none.*touched.*project/)
+})
+
+it.each([false, true, '', 'all', null, 0, {}])('rejects invalid default verification mode %j', (value) => {
+  assert.throws(() => resolveVerifyMode(undefined, value as never), /verifyMode.*none.*touched.*project/)
+  assert.throws(() => resolveVerificationOptions({}, value as never), /verifyMode.*none.*touched.*project/)
+})
+
+it.each(['none', 'touched', 'project'] as const)('resolves omitted verification options with %s defaults', (mode) => {
+  assert.equal(resolveVerifyMode(undefined, mode), mode)
+  assert.equal(resolveVerificationOptions({}, mode), mode)
 })
 
 const operations = [
