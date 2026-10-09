@@ -75,6 +75,12 @@ Inspect the effective native prompt without a model call.
 Configuration flags alone may retain global instructions or Skills.
 Apply the same personal-context isolation boundary to every arm. Preserve authentication.
 Record the effective configuration, prompt, mount rules, and treatment Skill hashes.
+Before registration, verify which native transcripts, response identifiers, and usage records the runner persists.
+Export available records. Preserve exact session identifiers and artifact hashes.
+Mark unavailable native or provider internals explicitly. Ephemeral sessions may not persist native records.
+If full native auditing is required, select the persistence and isolation mode before registration.
+Smoke-test record persistence without model scoring.
+Raw CLI event streams do not expose hidden reasoning or complete provider records.
 Keep shared task constraints explicit after isolating personal instructions.
 Require TypeScript for new scripts. Ordinary shell tools remain allowed.
 State whether temporary edit helpers are permitted.
