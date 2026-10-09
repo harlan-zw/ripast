@@ -32,3 +32,19 @@ it('rejects unknown check names before reporting a clean project', async () => {
     fx.cleanup()
   }
 })
+
+it('reports doctor phase costs without source payloads', async () => {
+  const fx = makeFixture({ 'source.ts': 'export const confidentialSourceCanary = 1' })
+  const events: { phase: string, ms: number }[] = []
+  try {
+    const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'], profile: event => events.push(event) })
+    expect(report.findings).toEqual([])
+    expect(events.map(event => event.phase)).toContain('doctor parse')
+    expect(events.map(event => event.phase)).toContain('doctor index')
+    expect(events.every(event => Number.isFinite(event.ms) && event.ms >= 0)).toBe(true)
+    expect(JSON.stringify(events)).not.toContain('confidentialSourceCanary')
+  }
+  finally {
+    fx.cleanup()
+  }
+})

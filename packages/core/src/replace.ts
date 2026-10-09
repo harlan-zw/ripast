@@ -1,4 +1,5 @@
 import type { ImportInfo } from './imports.ts'
+import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { SourceSite, TsServer } from './ts-server.ts'
 import type { FileChange, TextEdit } from './util.ts'
@@ -11,6 +12,7 @@ import { walk } from 'oxc-walker'
 import { loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
+import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
@@ -18,6 +20,7 @@ import { createVerification } from './verification.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
+  profile?: ProfileSink
   cwd?: string
   glob?: string | string[]
   verify?: boolean | VerifyMode
@@ -42,18 +45,19 @@ interface ReplacementTarget {
 
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
   const cwd = opts.cwd ?? process.cwd()
+  const profile = opts.profile
   const verifyMode = resolveVerifyMode(opts.verify === undefined || opts.verify === true ? 'project' : opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+    : timed(profile, 'target discovery', () => rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path)))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripide replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
-  const server = await startTsServer(cwd)
+  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd))
   try {
-    const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
+    const target = await timedAsync(profile, 'resolve replacement', () => findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope))
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
+    const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path)))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     const referenceCache = new Map<string, SourceSite[]>()
@@ -66,9 +70,9 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
     const verification = createVerification(verifyMode, !!changes.length)
     const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path)), verification.typescript)
+      : await timedAsync(profile, 'verify', () => findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path)), verification.typescript))
     if (verifyMode === 'project')
-      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), () => loadAdapter('vue'), verification.vue))
+      regressions.push(...await timedAsync(profile, 'vue verify', () => findVueRegressions(cwd, changes, findTsconfig(cwd), () => loadAdapter('vue'), verification.vue)))
     return { changes, scanned: candidatePaths.length, regressions, verification: verification.result() }
   }
   finally {
