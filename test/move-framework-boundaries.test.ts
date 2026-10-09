@@ -3,8 +3,8 @@ import { execFileSync } from 'node:child_process'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
-import { runMove, writeChanges } from '../packages/core/src/index.ts'
 import { startTsServer } from '../packages/core/src/ts-server.ts'
+import { runMove, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 import { makeReactFixture, reactDiagnostics, renderReactFixture } from './react-helpers.ts'
 
@@ -31,7 +31,7 @@ it.each([
       assert.deepEqual([...diagnostics.values()].flat(), [], 'fixture must compile before the move')
     }
     finally { baseline.dispose() }
-    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: 'touched', vue: false })
+    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: 'touched' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const server = await startTsServer(fx.dir)
@@ -52,7 +52,7 @@ it('move rejects a captured non-exported sibling despite a nested shadow', async
     'target.ts': '',
   })
   try {
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false }), /non-exported symbol/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false }), /non-exported symbol/)
     assert.equal(fx.read('target.ts'), '')
   }
   finally { fx.cleanup() }
@@ -76,7 +76,7 @@ export function Button() {
     assert.deepEqual(reactDiagnostics(fx), [])
     const markup = renderReactFixture(fx, 'src/View.tsx')
     assert.equal(markup, '<strong>outer</strong><span>local</span>')
-    const result = await runMove('Button', 'src/source.tsx', 'src/target.tsx', { cwd: fx.dir, verify: 'project', vue: false })
+    const result = await runMove('Button', 'src/source.tsx', 'src/target.tsx', { cwd: fx.dir, verify: 'project' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     assert.deepEqual(reactDiagnostics(fx), [])

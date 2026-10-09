@@ -3,8 +3,8 @@ import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
-import { runReplace } from '../packages/core/src/replace.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { runReplace } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it('replace leaves the replacement wrapper callable without recursion', async () => {

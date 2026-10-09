@@ -320,15 +320,22 @@ Run `ripast --help` for all commands, or `ripast <command> --help` for its optio
 ## Programmatic API
 
 ```ts
-import { runRename, runReplace, scan } from '@ripast/core'
+import { createEngine } from '@ripast/core'
+import vue from '@ripast/vue'
 
-const hits = scan('useStore', { cwd: process.cwd() })
+const engine = createEngine({ extensions: [vue] })
 
-const result = await runRename('useStore', 'useAppStore', { cwd: process.cwd() })
+const hits = engine.scan('useStore', { cwd: process.cwd() })
+
+const result = await engine.runRename('useStore', 'useAppStore', { cwd: process.cwd() })
 // result.changes, result.regressions, result.scanned
 
-const migration = await runReplace('eventHandler', 'defineAdminApiHandler', { cwd: process.cwd() })
+const migration = await engine.runReplace('eventHandler', 'defineAdminApiHandler', { cwd: process.cwd() })
 ```
+
+See the [extension contract and migration](./docs-framework-engine.md).
+
+See the [extension contract and migration](./docs-framework-engine.md).
 
 The [core exports](./packages/core/src/index.ts) include refactors, scans, declaration trees, formatters, and the `writeChanges` helper.
 

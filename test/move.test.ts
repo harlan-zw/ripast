@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
-import { runMove, writeChanges } from '../packages/core/src/index.ts'
+import { runMove, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it('move rejects a destination alias before changing either module', async () => {
@@ -12,7 +12,7 @@ it('move rejects a destination alias before changing either module', async () =>
     'target.ts': 'import { helper as current } from \'./source.ts\'\nexport const result = current()\n',
   })
   try {
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false }), /Remove the alias/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false }), /Remove the alias/)
     const target = await import(pathToFileURL(`${fx.dir}/target.ts`).href)
     assert.equal(target.result, 42)
   }
@@ -25,7 +25,7 @@ it('move preserves a destination that already imports the moved declaration', as
     'target.ts': 'import { helper, other } from \'./source.ts\'\nexport const result = helper() + other\n',
   })
   try {
-    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `const target = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/target.ts`).href)}); console.log(target.result)`], { encoding: 'utf8' })
     assert.equal(output.trim(), '43')
@@ -269,7 +269,7 @@ it('move preserves a namespace import of the destination', async () => {
     'c.ts': 'export const existing = 3\n',
   })
   try {
-    const result = await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, vue: false })
+    const result = await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/b.ts`).href)})).result)`], { encoding: 'utf8' })
@@ -288,7 +288,7 @@ it.each([
     'c.ts': '',
   })
   try {
-    const result = await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, vue: false })
+    const result = await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/b.ts`).href)})).result)`], { encoding: 'utf8' })

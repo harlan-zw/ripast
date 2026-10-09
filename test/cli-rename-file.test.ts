@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { runRenameFile } from '@ripast/core'
 import { it } from 'vitest'
+import { runRenameFile } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it.skipIf(process.platform === 'win32')('rename-file SDK refuses a dangling target symlink', async () => {
@@ -13,7 +13,7 @@ it.skipIf(process.platform === 'win32')('rename-file SDK refuses a dangling targ
     symlinkSync('missing.ts', resolve(fixture.dir, 'target.ts'))
     await assert.rejects(runRenameFile('source.ts', 'target.ts', {
       cwd: fixture.dir,
-      vue: false,
+
       verify: false,
     }), /target "target\.ts" already exists/)
     assert.equal(readlinkSync(resolve(fixture.dir, 'target.ts')), 'missing.ts')

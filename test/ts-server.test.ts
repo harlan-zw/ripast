@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
-import { findRegressions, startTsServer } from '@ripast/core'
 import { it } from 'vitest'
+import { findRegressions, startTsServer } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it('disposes the server while document writes are queued without crashing', () => {

@@ -1,5 +1,5 @@
-import { buildDoctorFixes, runDoctor } from '@ripast/core'
 import { describe, expect, it } from 'vitest'
+import { buildDoctorFixes, runDoctor } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('doctor: stale-reexport', () => {

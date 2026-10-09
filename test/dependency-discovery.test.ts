@@ -2,9 +2,10 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { runCssClassRename, writeChanges } from '@ripast/core'
 import { rgFiles, rgFilesMany } from '@ripast/core/adapter'
+import vue from '@ripast/vue'
 import { it, vi } from 'vitest'
+import { runCssClassRename, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const files = {
@@ -65,7 +66,7 @@ it.each([
   [['!node_modules/**', '**/node_modules/**/*.vue'], ['packages/app/node_modules/other/Widget.vue']],
 ] as const)('discovery preserves dependency opt-in and fallback parity for %j', (glob, expected) => {
   const fx = makeFixture(files, false)
-  const opts = { cwd: fx.dir, glob: glob ? [...glob] : undefined }
+  const opts = { extensions: [vue], cwd: fx.dir, glob: glob ? [...glob] : undefined }
   const paths = (values: string[]) => values.map(path => relative(fx.dir, path)).sort()
   const check = () => {
     assert.deepEqual(paths(rgFiles('card', opts)), expected)

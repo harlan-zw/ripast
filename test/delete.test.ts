@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { it } from 'vitest'
-import { runDelete } from '../packages/core/src/delete.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { runDelete } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it('delete removes an unused top-level function', async () => {

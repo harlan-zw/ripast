@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
-import { runRename } from '../packages/core/src/index.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { runRename } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each(['useStore', 'Store'])('rename updates external import type qualifiers beside a local %s binding', async (name) => {
@@ -11,7 +11,7 @@ it.each(['useStore', 'Store'])('rename updates external import type qualifiers b
     'load.ts': `import * as store from './store.ts'\nconst { ${name} } = store\nexport type T = typeof import('./store.ts').${name}\nexport type U = import('./store.ts').${name}\nexport type V = typeof import('./store.ts').${name}.Entry\nexport type W = import('./store.ts').${name}.Entry\nconst alias: typeof ${name} = ${name}\nconst label: typeof ${name}.name = ${name}.name\nexport const load = () => ({ ${name}, alias, label })\n`,
   })
   try {
-    const result = await runRename(name, 'AppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    const result = await runRename(name, 'AppStore', { cwd: fx.dir, scope: 'store.ts' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.ts`).href)
@@ -32,7 +32,7 @@ it.each([
     'view.tsx': `export async function render() {\n  const { UseStore } = await import('./store.ts')\n  return ${element}\n}\n`,
   })
   try {
-    const result = await runRename('UseStore', 'UseAppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    const result = await runRename('UseStore', 'UseAppStore', { cwd: fx.dir, scope: 'store.ts' })
     assert.deepEqual(result.regressions, [])
   }
   finally { fx.cleanup() }
@@ -44,7 +44,7 @@ it('rename changes source re-exports and preserves local export aliases beside a
     'load.ts': `import * as store from './store.ts'\nconst { useStore } = store\nexport { useStore } from './store.ts'\nexport { useStore as localStore }\nexport const invoke = () => useStore()\n`,
   })
   try {
-    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.ts`).href)
@@ -67,7 +67,7 @@ it.each([
     'load.ts': `import { useStore } from './store.ts'\n${prefix}export function direct() { return useStore() }\nexport async function load() {\n  ${binding}\n  const alias: typeof useStore = useStore\n  const name: typeof useStore.name = useStore.name\n  const shadow = (useStore: () => number) => useStore()\n  return { useStore, value: useStore(), invoke: () => useStore(), alias, shadow, name, imported: (await import('./store.ts')).useStore() }\n}\nexport async function caller() {\n  const { useStore } = await load()\n  return useStore()\n}\n`,
   })
   try {
-    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts' })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(`${fx.dir}/load.ts`).href)

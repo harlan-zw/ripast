@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
-import { buildDeclarationTree, buildScanGraph, scan } from '@ripast/core'
 import { rgFilesMany } from '@ripast/core/adapter'
 import { it } from 'vitest'
+import { buildDeclarationTree, buildScanGraph, scan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it('scan preserves line breaks in source file names', () => {

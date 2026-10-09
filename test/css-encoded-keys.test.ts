@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { runCssClassRename, runCssClassScan } from '@ripast/core'
 import { describe, expect, it } from 'vitest'
+import { runCssClassRename, runCssClassScan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const cases = [

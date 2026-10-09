@@ -4,11 +4,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, it } from 'vitest'
-import { runMove } from '../packages/core/src/move.ts'
-import { runRenameFile } from '../packages/core/src/rename-file.ts'
-import { runRename } from '../packages/core/src/rename.ts'
-import { scan } from '../packages/core/src/scan.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { runMove, runRename, runRenameFile, scan } from './engine-sdk.ts'
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/nuxt')
 
@@ -133,7 +130,7 @@ describe('nuxt auto-imports', () => {
       fx.write('pages/template-only.vue', `<template><p>{{ format(1) }}</p></template>\n`)
       await assert.rejects(
         () => runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verify: false }),
-        /ripast move: "format" is auto-imported in Nuxt; moving to .*lib\/format\.ts removes it from auto-import scope/,
+        /ripast move: "format" is implicitly imported; moving to .*lib\/format\.ts removes it from auto-import scope/,
       )
     }
     finally { fx.cleanup() }

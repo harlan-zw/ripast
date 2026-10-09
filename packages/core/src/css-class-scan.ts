@@ -1,38 +1,37 @@
+import type { ExtensionOptions } from './adapter.ts'
 import process from 'node:process'
 import { readCssClassSourceFiles, visitCssClassTokensInFile } from './css-class-source.ts'
 
-export interface CssClassScanOptions {
+export interface CssClassScanOptions extends ExtensionOptions {
   cwd?: string
   glob?: string | string[]
   pattern?: string[]
   sort?: CssClassScanSort
 }
-
-export interface CssClassFileScanOptions extends Omit<CssClassScanOptions, 'sort'> {
+export interface CssClassFileScanOptions extends Omit<CssClassScanOptions, 'sort'>, ExtensionOptions {
   sort?: CssClassFileScanSort
 }
-
 export interface CssClassScanHit {
   token: string
   count: number
   files: string[]
 }
-
 export interface CssClassFileScanHit {
   file: string
   unique: number
   count: number
   tokens: string[]
 }
-
 export type CssClassScanSort = 'count-desc' | 'count-asc' | 'token'
 export type CssClassFileScanSort = 'unique-desc' | 'unique-asc' | 'count-desc' | 'count-asc' | 'file'
-
 export function runCssClassScan(opts: CssClassScanOptions = {}): CssClassScanHit[] {
   const cwd = opts.cwd ?? process.cwd()
   const match = compileGlobs(opts.pattern)
-  const counts = new Map<string, { count: number, files: Set<string> }>()
-  for (const file of readCssClassSourceFiles({ cwd, glob: opts.glob })) {
+  const counts = new Map<string, {
+    count: number
+    files: Set<string>
+  }>()
+  for (const file of readCssClassSourceFiles({ cwd, glob: opts.glob, extensions: opts.extensions })) {
     const seen = new Map<string, number>()
     const onToken = (bare: string): void => {
       if (!match(bare))
@@ -55,12 +54,11 @@ export function runCssClassScan(opts: CssClassScanOptions = {}): CssClassScanHit
   hits.sort(resolveSort(opts.sort))
   return hits
 }
-
 export function runCssClassFileScan(opts: CssClassFileScanOptions = {}): CssClassFileScanHit[] {
   const cwd = opts.cwd ?? process.cwd()
   const match = compileGlobs(opts.pattern)
   const hits: CssClassFileScanHit[] = []
-  for (const file of readCssClassSourceFiles({ cwd, glob: opts.glob })) {
+  for (const file of readCssClassSourceFiles({ cwd, glob: opts.glob, extensions: opts.extensions })) {
     const seen = new Map<string, number>()
     const onToken = (bare: string): void => {
       if (!match(bare))
@@ -81,7 +79,6 @@ export function runCssClassFileScan(opts: CssClassFileScanOptions = {}): CssClas
   hits.sort(resolveFileSort(opts.sort))
   return hits
 }
-
 function resolveSort(sort: CssClassScanSort = 'count-desc'): (a: CssClassScanHit, b: CssClassScanHit) => number {
   if (sort === 'count-asc')
     return (a, b) => a.count - b.count || a.files.length - b.files.length || compareToken(a.token, b.token)
@@ -89,11 +86,9 @@ function resolveSort(sort: CssClassScanSort = 'count-desc'): (a: CssClassScanHit
     return (a, b) => compareToken(a.token, b.token)
   return (a, b) => b.count - a.count || compareToken(a.token, b.token)
 }
-
 function compareToken(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0
 }
-
 function resolveFileSort(sort: CssClassFileScanSort = 'unique-desc'): (a: CssClassFileScanHit, b: CssClassFileScanHit) => number {
   if (sort === 'unique-asc')
     return (a, b) => a.unique - b.unique || a.count - b.count || compareToken(a.file, b.file)
@@ -105,7 +100,6 @@ function resolveFileSort(sort: CssClassFileScanSort = 'unique-desc'): (a: CssCla
     return (a, b) => compareToken(a.file, b.file)
   return (a, b) => b.unique - a.unique || b.count - a.count || compareToken(a.file, b.file)
 }
-
 function compileGlobs(patterns: string[] | undefined): (s: string) => boolean {
   if (!patterns || !patterns.length)
     return () => true
@@ -117,13 +111,10 @@ function compileGlobs(patterns: string[] | undefined): (s: string) => boolean {
   })
   return s => matchers.some(m => m(s))
 }
-
 const RE_META_RE = /[.+?^${}()|[\]\\]/g
-
 function escapeRe(s: string): string {
   return s.replace(RE_META_RE, '\\$&')
 }
-
 export function formatScanHits(hits: CssClassScanHit[], json: boolean): string {
   if (json)
     return JSON.stringify(hits, null, 2)
@@ -137,7 +128,6 @@ export function formatScanHits(hits: CssClassScanHit[], json: boolean): string {
   lines.push(`${hits.length} unique tokens across ${new Set(hits.flatMap(h => h.files)).size} files`)
   return lines.join('\n')
 }
-
 export function formatAgentScanHits(hits: CssClassScanHit[], limit: number = 40): string {
   if (!hits.length)
     return 'class-scan tokens=0 files=0'
@@ -150,7 +140,6 @@ export function formatAgentScanHits(hits: CssClassScanHit[], limit: number = 40)
     lines.push(`+${hits.length - shown.length} more`)
   return lines.join('\n')
 }
-
 export function formatFileScanHits(hits: CssClassFileScanHit[], json: boolean): string {
   if (json)
     return JSON.stringify(hits, null, 2)
@@ -164,7 +153,6 @@ export function formatFileScanHits(hits: CssClassFileScanHit[], json: boolean): 
   lines.push(`${hits.length} files with class tokens`)
   return lines.join('\n')
 }
-
 export function formatAgentFileScanHits(hits: CssClassFileScanHit[], limit: number = 40): string {
   if (!hits.length)
     return 'class-files files=0'

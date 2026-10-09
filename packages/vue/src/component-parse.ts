@@ -1,6 +1,6 @@
 import type { PropsResolution } from './components.ts'
 import { readFileSync } from 'node:fs'
-import { parseSourceFile } from '@ripast/core/adapter'
+import { parseSourceFile } from './parse.ts'
 
 export interface PropSig {
   name: string
@@ -8,7 +8,6 @@ export interface PropSig {
   required?: boolean
   hasDefault?: boolean
 }
-
 export interface ParsedComponentShape {
   props: PropSig[]
   emits: string[]
@@ -18,12 +17,10 @@ export interface ParsedComponentShape {
   setup: boolean
   propsResolution: PropsResolution
 }
-
 export function parseComponent(absPath: string): ParsedComponentShape {
   const source = readFileSync(absPath, 'utf8')
   return parseComponentSource(absPath, source)
 }
-
 export function parseComponentSource(absPath: string, source: string): ParsedComponentShape {
   const empty: ParsedComponentShape = {
     props: [],
@@ -48,15 +45,12 @@ export function parseComponentSource(absPath: string, source: string): ParsedCom
     return { ...empty, scriptLang: block.lang, setup: block.setup }
   return walkProgram(program, { ...empty, scriptLang: block.lang, setup: block.setup })
 }
-
 interface ScriptBlock {
   code: string
   lang: 'ts' | 'js'
   setup: boolean
 }
-
 const SCRIPT_TAG_RE = /<script(\s[^>]*)?>([\s\S]*?)<\/script>/gi
-
 function extractScriptBlock(source: string): ScriptBlock | null {
   const blocks: ScriptBlock[] = []
   for (const m of source.matchAll(SCRIPT_TAG_RE)) {
@@ -72,7 +66,6 @@ function extractScriptBlock(source: string): ScriptBlock | null {
     return null
   return blocks.find(b => b.setup) ?? blocks.reduce((a, b) => (b.code.length > a.code.length ? b : a))
 }
-
 function safeParse(path: string, code: string): any | null {
   try {
     return parseSourceFile(path, code).program
@@ -81,7 +74,6 @@ function safeParse(path: string, code: string): any | null {
     return null
   }
 }
-
 function walkProgram(program: any, base: ParsedComponentShape): ParsedComponentShape {
   let propsResolution: PropsResolution = 'literal'
   const props: PropSig[] = []
@@ -89,7 +81,6 @@ function walkProgram(program: any, base: ParsedComponentShape): ParsedComponentS
   const slots: string[] = []
   const exposes: string[] = []
   const withDefaultsKeys = new Set<string>()
-
   walkAst(program, (node: any) => {
     if (node.type === 'CallExpression') {
       const name = calleeName(node)
@@ -98,28 +89,32 @@ function walkProgram(program: any, base: ParsedComponentShape): ParsedComponentS
           const result = extractProps(node)
           if (result.unresolved)
             propsResolution = 'unresolved'
-          for (const p of result.props) props.push(p)
+          for (const p of result.props)
+            props.push(p)
           break
         }
         case 'defineEmits': {
           const result = extractEmits(node)
           if (result.unresolved)
             propsResolution = 'unresolved'
-          for (const e of result.emits) emits.push(e)
+          for (const e of result.emits)
+            emits.push(e)
           break
         }
         case 'defineSlots': {
           const result = extractStringKeyedTypeLiteral(node)
           if (result.unresolved)
             propsResolution = 'unresolved'
-          for (const s of result.keys) slots.push(s)
+          for (const s of result.keys)
+            slots.push(s)
           break
         }
         case 'defineExpose': {
           const result = extractExpose(node)
           if (result.unresolved)
             propsResolution = 'unresolved'
-          for (const e of result.keys) exposes.push(e)
+          for (const e of result.keys)
+            exposes.push(e)
           break
         }
         case 'withDefaults': {
@@ -142,13 +137,15 @@ function walkProgram(program: any, base: ParsedComponentShape): ParsedComponentS
                 const r = extractPropsFromOptionsValue(prop.value)
                 if (r.unresolved)
                   propsResolution = 'unresolved'
-                for (const p of r.props) props.push(p)
+                for (const p of r.props)
+                  props.push(p)
               }
               else if (key === 'emits') {
                 const r = extractEmitsFromValue(prop.value)
                 if (r.unresolved)
                   propsResolution = 'unresolved'
-                for (const e of r.emits) emits.push(e)
+                for (const e of r.emits)
+                  emits.push(e)
               }
             }
           }
@@ -157,12 +154,10 @@ function walkProgram(program: any, base: ParsedComponentShape): ParsedComponentS
       }
     }
   })
-
   for (const p of props) {
     if (withDefaultsKeys.has(p.name))
       p.hasDefault = true
   }
-
   return {
     ...base,
     props: dedupePropsByName(props),
@@ -172,7 +167,6 @@ function walkProgram(program: any, base: ParsedComponentShape): ParsedComponentS
     propsResolution,
   }
 }
-
 function calleeName(node: any): string | null {
   const callee = node.callee
   if (callee?.type === 'Identifier')
@@ -181,7 +175,6 @@ function calleeName(node: any): string | null {
     return callee.property.name
   return null
 }
-
 function propKey(prop: any): string | null {
   if (prop?.type !== 'Property' && prop?.type !== 'ObjectProperty')
     return null
@@ -195,8 +188,10 @@ function propKey(prop: any): string | null {
     return prop.key.value
   return null
 }
-
-function extractProps(callNode: any): { props: PropSig[], unresolved: boolean } {
+function extractProps(callNode: any): {
+  props: PropSig[]
+  unresolved: boolean
+} {
   const typeArg = callNode.typeArguments?.params?.[0] ?? callNode.typeParameters?.params?.[0]
   if (typeArg)
     return propsFromTypeLiteral(typeArg)
@@ -205,8 +200,10 @@ function extractProps(callNode: any): { props: PropSig[], unresolved: boolean } 
     return { props: [], unresolved: false }
   return extractPropsFromOptionsValue(arg)
 }
-
-function extractPropsFromOptionsValue(arg: any): { props: PropSig[], unresolved: boolean } {
+function extractPropsFromOptionsValue(arg: any): {
+  props: PropSig[]
+  unresolved: boolean
+} {
   if (!arg)
     return { props: [], unresolved: false }
   if (arg.type === 'ArrayExpression') {
@@ -245,8 +242,10 @@ function extractPropsFromOptionsValue(arg: any): { props: PropSig[], unresolved:
   }
   return { props: [], unresolved: true }
 }
-
-function propsFromTypeLiteral(typeNode: any): { props: PropSig[], unresolved: boolean } {
+function propsFromTypeLiteral(typeNode: any): {
+  props: PropSig[]
+  unresolved: boolean
+} {
   if (typeNode?.type !== 'TSTypeLiteral')
     return { props: [], unresolved: true }
   const out: PropSig[] = []
@@ -268,8 +267,10 @@ function propsFromTypeLiteral(typeNode: any): { props: PropSig[], unresolved: bo
   }
   return { props: out, unresolved: false }
 }
-
-function extractEmits(callNode: any): { emits: string[], unresolved: boolean } {
+function extractEmits(callNode: any): {
+  emits: string[]
+  unresolved: boolean
+} {
   const typeArg = callNode.typeArguments?.params?.[0] ?? callNode.typeParameters?.params?.[0]
   if (typeArg) {
     if (typeArg.type === 'TSTypeLiteral') {
@@ -297,8 +298,10 @@ function extractEmits(callNode: any): { emits: string[], unresolved: boolean } {
   const arg = callNode.arguments?.[0]
   return extractEmitsFromValue(arg)
 }
-
-function extractEmitsFromValue(arg: any): { emits: string[], unresolved: boolean } {
+function extractEmitsFromValue(arg: any): {
+  emits: string[]
+  unresolved: boolean
+} {
   if (!arg)
     return { emits: [], unresolved: false }
   if (arg.type === 'ArrayExpression') {
@@ -320,8 +323,10 @@ function extractEmitsFromValue(arg: any): { emits: string[], unresolved: boolean
   }
   return { emits: [], unresolved: true }
 }
-
-function extractStringKeyedTypeLiteral(callNode: any): { keys: string[], unresolved: boolean } {
+function extractStringKeyedTypeLiteral(callNode: any): {
+  keys: string[]
+  unresolved: boolean
+} {
   const typeArg = callNode.typeArguments?.params?.[0] ?? callNode.typeParameters?.params?.[0]
   if (typeArg?.type === 'TSTypeLiteral') {
     const out: string[] = []
@@ -337,8 +342,10 @@ function extractStringKeyedTypeLiteral(callNode: any): { keys: string[], unresol
   }
   return { keys: [], unresolved: !!typeArg }
 }
-
-function extractExpose(callNode: any): { keys: string[], unresolved: boolean } {
+function extractExpose(callNode: any): {
+  keys: string[]
+  unresolved: boolean
+} {
   const arg = callNode.arguments?.[0]
   if (arg?.type === 'ObjectExpression') {
     const out: string[] = []
@@ -351,7 +358,6 @@ function extractExpose(callNode: any): { keys: string[], unresolved: boolean } {
   }
   return { keys: [], unresolved: !!arg }
 }
-
 function stringifyTypeNode(node: any): string | undefined {
   if (!node)
     return undefined
@@ -369,7 +375,6 @@ function stringifyTypeNode(node: any): string | undefined {
     return `${stringifyTypeNode(node.elementType) ?? '?'}[]`
   return undefined
 }
-
 function walkAst(node: any, visit: (n: any) => void): void {
   if (!node || typeof node !== 'object')
     return
@@ -380,14 +385,14 @@ function walkAst(node: any, visit: (n: any) => void): void {
       continue
     const value = node[key]
     if (Array.isArray(value)) {
-      for (const child of value) walkAst(child, visit)
+      for (const child of value)
+        walkAst(child, visit)
     }
     else if (value && typeof value === 'object' && typeof value.type === 'string') {
       walkAst(value, visit)
     }
   }
 }
-
 function dedupePropsByName(props: PropSig[]): PropSig[] {
   const out = new Map<string, PropSig>()
   for (const p of props) {

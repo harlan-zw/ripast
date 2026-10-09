@@ -284,7 +284,7 @@ export {}
       expect(list.every(c => !c.shadowed)).toBe(true)
       const names = list.map(c => c.name).sort()
       expect(names).toEqual(['AdminFieldBadge', 'AdminFieldsAdminFieldBadge'])
-      const { buildComponentInventory } = await import('../packages/core/src/components.ts')
+      const { buildComponentInventory } = await import('./engine-sdk.ts')
       const inv = await buildComponentInventory({ cwd: fx.dir })
       expect(inv.duplicates).toHaveLength(0)
     }
@@ -306,7 +306,7 @@ export {}
       'package.json': '{"private": true, "type": "module", "devDependencies": {"nuxt": "^4.0.0"}}',
     }, false)
     try {
-      const { buildComponentDetail } = await import('../packages/core/src/components.ts')
+      const { buildComponentDetail } = await import('./engine-sdk.ts')
       const detail = await buildComponentDetail('AdminFieldBadge', { cwd: fx.dir })
       expect(detail).not.toBeNull()
       expect(detail!.component.registeredName).toBe('AdminFieldBadge')

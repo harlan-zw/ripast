@@ -1,4 +1,4 @@
-import type { DoctorAdapter, DoctorFinding, FrameworkName } from './adapter.ts'
+import type { DoctorAdapter, DoctorFinding, ExtensionOptions, FrameworkName } from './adapter.ts'
 import type { DoctorIndex, DoctorIndexFile } from './doctor-index.ts'
 import type { DeclarationTree, DeclarationTreeFile, ScanOptions } from './scan.ts'
 import type { FileChange } from './util.ts'
@@ -7,21 +7,17 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
-import { detectFrameworks, loadAdapter } from './adapter.ts'
 import { buildDoctorIndex } from './doctor-index.ts'
 import { buildDeclarationTree } from './scan.ts'
 import { parseFile } from './util.ts'
 
 export type DoctorCheck = 'dangling-reexport' | 'stale-reexport' | 'stale-import' | 'duplicate-export' | 'orphan-file' | 'orphan-test' | 'inconsistent-import-path' | 'circular-dep' | string
-
 export type { DoctorFinding } from './adapter.ts'
-
 export interface DoctorReport {
   findings: DoctorFinding[]
   filesScanned: number
 }
-
-export interface DoctorOptions extends ScanOptions {
+export interface DoctorOptions extends ScanOptions, ExtensionOptions {
   checks?: DoctorCheck[]
   entry?: string[]
   /** Frameworks to load doctor adapters from. Defaults to autodetect. */
@@ -35,13 +31,11 @@ export interface DoctorOptions extends ScanOptions {
    */
   changedFiles?: string[]
 }
-
-export interface ChangedFilesOptions {
+export interface ChangedFilesOptions extends ExtensionOptions {
   cwd?: string
   /** Git ref to diff against. If omitted, returns the dirty working tree set. */
   ref?: string
 }
-
 /**
  * Resolve the set of "changed" files relative to cwd. With a ref, returns
  * `git diff --name-only <ref>...HEAD` plus untracked. Without, returns the
@@ -81,16 +75,13 @@ export function getChangedFiles(opts: ChangedFilesOptions = {}): string[] {
   }
   return [...out]
 }
-
-const RESOLVE_EXTS = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '/index.ts', '/index.tsx', '/index.js']
-
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '/index.ts', '/index.tsx', '/index.js']
 function resolveRelative(fromFile: string, specifier: string, cwd: string): string | null {
   if (!specifier.startsWith('.'))
     return null
   const base = resolve(dirname(resolve(cwd, fromFile)), specifier)
   return tryExts(base)
 }
-
 function tryExts(base: string): string | null {
   for (const ext of RESOLVE_EXTS) {
     const candidate = base + ext
@@ -100,37 +91,26 @@ function tryExts(base: string): string | null {
       if (statSync(candidate).isFile())
         return candidate
     }
-    catch {}
+    catch { }
   }
   return null
 }
-
 /**
  * Alias map built from project tsconfigs. Each entry maps a glob (e.g.
  * `#sitemap/*`) to an array of absolute target patterns (e.g.
  * `/abs/src/runtime/*`). Patterns may or may not contain `*`.
  */
 type AliasMap = Map<string, string[]>
-
 function stripJsonComments(src: string): string {
-  // Tolerant strip of // and /* */ comments and trailing commas. .nuxt/tsconfig
-  // is clean JSON; user tsconfigs may be JSONC.
+  // User tsconfigs may contain comments.
   return src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
     .replace(/,(\s*[}\]])/g, '$1')
 }
-
-function loadAliasMap(cwd: string): AliasMap {
+function loadAliasMap(cwd: string, extensions: ExtensionOptions['extensions'] = []): AliasMap {
   const map: AliasMap = new Map()
-  const candidates = [
-    'tsconfig.json',
-    '.nuxt/tsconfig.json',
-    '.nuxt/tsconfig.app.json',
-    '.nuxt/tsconfig.server.json',
-    '.nuxt/tsconfig.shared.json',
-    '.nuxt/tsconfig.node.json',
-  ]
+  const candidates = ['tsconfig.json', ...extensions.flatMap(extension => extension.configFiles?.(cwd) ?? [])]
   for (const rel of candidates) {
     const abs = resolve(cwd, rel)
     if (!existsSync(abs))
@@ -169,7 +149,6 @@ function loadAliasMap(cwd: string): AliasMap {
   }
   return map
 }
-
 function resolveAlias(specifier: string, aliases: AliasMap): string | null {
   for (const [glob, targets] of aliases) {
     if (glob.includes('*')) {
@@ -195,7 +174,6 @@ function resolveAlias(specifier: string, aliases: AliasMap): string | null {
   }
   return null
 }
-
 function findDanglingReexports(index: DoctorIndex, cwd: string): DoctorFinding[] {
   const out: DoctorFinding[] = []
   const seen = new Set<string>()
@@ -220,9 +198,11 @@ function findDanglingReexports(index: DoctorIndex, cwd: string): DoctorFinding[]
   }
   return out
 }
-
 function findDuplicateExports(tree: DeclarationTree): DoctorFinding[] {
-  const byName = new Map<string, { file: DeclarationTreeFile, line: number }[]>()
+  const byName = new Map<string, {
+    file: DeclarationTreeFile
+    line: number
+  }[]>()
   for (const file of tree.files) {
     for (const decl of file.declarations) {
       if (!decl.exported)
@@ -258,7 +238,6 @@ function findDuplicateExports(tree: DeclarationTree): DoctorFinding[] {
   }
   return out
 }
-
 // Files that are conventionally entry points to build tooling rather than
 // imported by source code. Universally true across TS projects.
 const CONFIG_BASENAME_RE = /^[a-z][a-z0-9-]*\.config(?:\.[a-z0-9-]+)?\.[mc]?[jt]sx?$/i
@@ -292,12 +271,10 @@ const ENTRY_BASENAMES = new Set([
   'tsconfig.json',
 ])
 const SKIP_DIR_RE = /(?:^|\/)(?:examples?|playground|sandbox|fixtures?|__fixtures__)(?:\/|$)/
-
 function basenameOf(p: string): string {
   const i = p.lastIndexOf('/')
   return i < 0 ? p : p.slice(i + 1)
 }
-
 function isConventionalEntry(rel: string): boolean {
   const base = basenameOf(rel)
   if (ENTRY_BASENAMES.has(base))
@@ -310,7 +287,6 @@ function isConventionalEntry(rel: string): boolean {
     return true
   return false
 }
-
 function collectPackageJsonEntries(cwd: string): Set<string> {
   const out = new Set<string>()
   const seen = new Set<string>()
@@ -367,11 +343,11 @@ function collectPackageJsonEntries(cwd: string): Set<string> {
         continue
       const abs = resolve(cwd, dir, c)
       out.add(relative(cwd, abs))
-      // Source counterpart of dist artifact: ./dist/foo.mjs → ./src/foo.ts, .tsx, .vue, /index.ts.
+      // Source counterpart of dist artifact: ./dist/foo.mjs → ./src/foo.ts, .tsx , /index.ts.
       const distMatch = c.match(/^\.\/dist\/(.+?)\.(?:mjs|cjs|js|d\.[mc]?ts)$/)
       if (distMatch) {
         const stem = distMatch[1]!
-        for (const srcCandidate of [`./src/${stem}.ts`, `./src/${stem}.tsx`, `./src/${stem}.vue`, `./src/${stem}/index.ts`, `./src/${stem}/index.tsx`]) {
+        for (const srcCandidate of [`./src/${stem}.ts`, `./src/${stem}.tsx`, `./src/${stem}/index.ts`, `./src/${stem}/index.tsx`]) {
           const srcAbs = resolve(cwd, dir, srcCandidate)
           if (existsSync(srcAbs))
             out.add(relative(cwd, srcAbs))
@@ -394,10 +370,9 @@ function collectPackageJsonEntries(cwd: string): Set<string> {
   }
   return out
 }
-
-function findOrphanFiles(tree: DeclarationTree, cwd: string, entries: Set<string>): DoctorFinding[] {
+function findOrphanFiles(tree: DeclarationTree, cwd: string, entries: Set<string>, extensions: ExtensionOptions['extensions']): DoctorFinding[] {
   const inbound = new Set<string>()
-  const aliases = loadAliasMap(cwd)
+  const aliases = loadAliasMap(cwd, extensions)
   for (const file of tree.files) {
     for (const spec of [...file.imports, ...file.reexports]) {
       const resolved = resolveRelative(file.file, spec, cwd) ?? resolveAlias(spec, aliases)
@@ -426,7 +401,6 @@ function findOrphanFiles(tree: DeclarationTree, cwd: string, entries: Set<string
   }
   return out
 }
-
 function findStaleReexports(index: DoctorIndex, cwd: string): DoctorFinding[] {
   const exports = buildTransitiveExports(index, cwd)
   const out: DoctorFinding[] = []
@@ -456,7 +430,6 @@ function findStaleReexports(index: DoctorIndex, cwd: string): DoctorFinding[] {
   }
   return out
 }
-
 function buildTransitiveExports(index: DoctorIndex, cwd: string) {
   const byRel = new Map<string, DoctorIndexFile>()
   for (const f of index.files)
@@ -496,7 +469,6 @@ function buildTransitiveExports(index: DoctorIndex, cwd: string) {
   }
   return { get: (rel: string) => get(rel, new Set()) }
 }
-
 function findStaleImports(index: DoctorIndex, cwd: string): DoctorFinding[] {
   const exports = buildTransitiveExports(index, cwd)
   const out: DoctorFinding[] = []
@@ -531,7 +503,6 @@ function findStaleImports(index: DoctorIndex, cwd: string): DoctorFinding[] {
   }
   return out
 }
-
 function findCircularDeps(index: DoctorIndex, cwd: string): DoctorFinding[] {
   const adj = new Map<string, string[]>()
   for (const file of index.files) {
@@ -613,10 +584,9 @@ function findCircularDeps(index: DoctorIndex, cwd: string): DoctorFinding[] {
   }
   return out
 }
-
 function findOrphanTests(tree: DeclarationTree, _cwd: string): DoctorFinding[] {
   const all = new Set(tree.files.map(f => f.file))
-  const SUBJECT_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
+  const SUBJECT_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
   const TEST_RE = /^(.+?)\.(?:test|spec)\.([cm]?[jt]sx?)$/
   const out: DoctorFinding[] = []
   for (const file of tree.files) {
@@ -638,20 +608,25 @@ function findOrphanTests(tree: DeclarationTree, _cwd: string): DoctorFinding[] {
     out.push({
       check: 'orphan-test',
       file: file.file,
-      message: `test file has no sibling source (looked for ${stem}.{ts,tsx,vue,...})`,
+      message: `test file has no sibling source (looked for ${stem}.{ts,tsx,...})`,
       detail: { stem },
     })
   }
   return out
 }
-
 function findInconsistentImportPaths(index: DoctorIndex, cwd: string): DoctorFinding[] {
   // For each (target, file) pair record the actual specifier used. To classify
   // each usage, we collapse it to a style flavour that's invariant under file
   // depth: 'alias' (non-relative bare/aliased), 'relative-ext' (relative with
   // explicit extension), or 'relative' (relative without extension). Flag a
   // file when its flavour is in the minority.
-  const usages = new Map<string, { file: string, spec: string, flavour: ImportFlavour, hasExt: boolean, line: number }[]>()
+  const usages = new Map<string, {
+    file: string
+    spec: string
+    flavour: ImportFlavour
+    hasExt: boolean
+    line: number
+  }[]>()
   for (const file of index.files) {
     const seen = new Set<string>()
     for (const imp of file.imports) {
@@ -709,33 +684,23 @@ function findInconsistentImportPaths(index: DoctorIndex, cwd: string): DoctorFin
   }
   return out
 }
-
 type ImportFlavour = 'alias' | 'relative' | 'relative-ext'
-
 async function loadDoctorAdapters(cwd: string, opts: DoctorOptions): Promise<DoctorAdapter[]> {
   if (opts.noAdapters)
     return []
-  const names = opts.frameworks ?? detectFrameworks(cwd)
   const adapters: DoctorAdapter[] = []
-  const seen = new Set<DoctorAdapter>()
-  for (const name of names) {
-    const adapter = await loadAdapter(name)
-    if (!adapter?.doctor)
-      continue
-    if (seen.has(adapter.doctor))
-      continue
-    seen.add(adapter.doctor)
-    adapters.push(adapter.doctor)
+  for (const extension of opts.extensions ?? []) {
+    if (extension.doctor && !adapters.includes(extension.doctor))
+      adapters.push(extension.doctor)
   }
   return adapters
 }
-
 export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
   const cwd = opts.cwd ?? process.cwd()
   const checks = new Set<DoctorCheck>(opts.checks ?? ['dangling-reexport', 'stale-reexport', 'stale-import', 'duplicate-export', 'orphan-file', 'orphan-test', 'inconsistent-import-path', 'circular-dep'])
   const tree = buildDeclarationTree({ cwd, glob: opts.glob, exports: 'all' })
   const needsIndex = checks.has('dangling-reexport') || checks.has('stale-reexport') || checks.has('stale-import') || checks.has('inconsistent-import-path') || checks.has('circular-dep')
-  const index = needsIndex ? buildDoctorIndex({ cwd, glob: opts.glob }) : null
+  const index = needsIndex ? buildDoctorIndex({ cwd, glob: opts.glob, extensions: opts.extensions }) : null
   const adapters = await loadDoctorAdapters(cwd, opts)
   const entries = new Set((opts.entry ?? []).map(file => relative(cwd, resolve(cwd, file))))
   for (const adapter of adapters) {
@@ -752,14 +717,14 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
   if (checks.has('duplicate-export'))
     findings.push(...findDuplicateExports(tree))
   if (checks.has('orphan-file'))
-    findings.push(...findOrphanFiles(tree, cwd, entries))
+    findings.push(...findOrphanFiles(tree, cwd, entries, opts.extensions))
   if (checks.has('orphan-test'))
     findings.push(...findOrphanTests(tree, cwd))
   if (checks.has('inconsistent-import-path') && index)
     findings.push(...findInconsistentImportPaths(index, cwd))
   if (checks.has('circular-dep') && index)
     findings.push(...findCircularDeps(index, cwd))
-  const adapterIndex = index ?? (adapters.some(a => a.extraFindings) ? buildDoctorIndex({ cwd, glob: opts.glob }) : null)
+  const adapterIndex = index ?? (adapters.some(a => a.extraFindings) ? buildDoctorIndex({ cwd, glob: opts.glob, extensions: opts.extensions }) : null)
   for (const adapter of adapters)
     findings.push(...adapter.extraFindings?.(cwd, adapterIndex ? { index: adapterIndex } : undefined) ?? [])
   const ignores = buildIgnoreIndex(cwd, findings)
@@ -778,14 +743,12 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
   filtered.sort((a, b) => a.file.localeCompare(b.file) || a.check.localeCompare(b.check))
   return { findings: filtered, filesScanned: tree.files.length }
 }
-
 interface FileIgnore {
   all: boolean
   checks: Set<string>
   /** Map 1-based line -> set of checks to ignore on that line ('*' = all). */
   perLine: Map<number, Set<string>>
 }
-
 function buildIgnoreIndex(cwd: string, findings: DoctorFinding[]): Map<string, FileIgnore> {
   const byFile = new Map<string, FileIgnore>()
   const seenFiles = new Set<string>()
@@ -837,7 +800,6 @@ function buildIgnoreIndex(cwd: string, findings: DoctorFinding[]): Map<string, F
   }
   return byFile
 }
-
 function isIgnored(ignores: Map<string, FileIgnore>, finding: DoctorFinding): boolean {
   const entry = ignores.get(finding.file)
   if (!entry)
@@ -853,25 +815,29 @@ function isIgnored(ignores: Map<string, FileIgnore>, finding: DoctorFinding): bo
   }
   return false
 }
-
 export type FixableCheck = 'inconsistent-import-path' | 'dangling-reexport' | 'stale-import'
 const FIXABLE: ReadonlySet<string> = new Set<FixableCheck>(['inconsistent-import-path', 'dangling-reexport', 'stale-import'])
-
 export interface DoctorFixResult {
   changes: FileChange[]
   fixed: DoctorFinding[]
   skipped: DoctorFinding[]
 }
-
 export function buildDoctorFixes(report: DoctorReport, cwd: string = process.cwd()): DoctorFixResult {
   const fixed: DoctorFinding[] = []
   const skipped: DoctorFinding[] = []
   interface Slot {
     abs: string
     rel: string
-    textualEdits: { from: string, to: string }[]
+    textualEdits: {
+      from: string
+      to: string
+    }[]
     deleteLines: string[]
-    staleImports: { source: string, imported: string, finding: DoctorFinding }[]
+    staleImports: {
+      source: string
+      imported: string
+      finding: DoctorFinding
+    }[]
   }
   const editsByFile = new Map<string, Slot>()
   const slotFor = (finding: DoctorFinding): Slot => {
@@ -954,12 +920,15 @@ export function buildDoctorFixes(report: DoctorReport, cwd: string = process.cwd
   }
   return { changes, fixed, skipped }
 }
-
-function removeStaleImportSpecifiers(
-  abs: string,
-  source: string,
-  removals: { source: string, imported: string, finding: DoctorFinding }[],
-): { source: string, fixed: DoctorFinding[], skipped: DoctorFinding[] } {
+function removeStaleImportSpecifiers(abs: string, source: string, removals: {
+  source: string
+  imported: string
+  finding: DoctorFinding
+}[]): {
+  source: string
+  fixed: DoctorFinding[]
+  skipped: DoctorFinding[]
+} {
   const fixed: DoctorFinding[] = []
   const skipped: DoctorFinding[] = []
   const parsed = parseFile(abs)
@@ -1055,7 +1024,6 @@ function removeStaleImportSpecifiers(
         referenced.add(node.name)
     },
   })
-
   // Sort candidates so we splice from the end backwards (preserve offsets).
   candidates.sort((a, b) => b.specStart - a.specStart)
   let next = source
@@ -1097,15 +1065,12 @@ function removeStaleImportSpecifiers(
   }
   return { source: next, fixed, skipped }
 }
-
 function rewriteImportSpecifier(source: string, oldSpec: string, newSpec: string): string {
   const escaped = oldSpec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const re = new RegExp(`((?:from|import)\\s*\\(?\\s*)(['"\`])${escaped}\\2`, 'g')
   return source.replace(re, (_m, prefix, quote) => `${prefix}${quote}${newSpec}${quote}`)
 }
-
-const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs|vue)$/
-
+const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
 function relativeSpecifier(fromRel: string, targetRel: string, keepExt: boolean): string {
   const fromDir = dirname(fromRel)
   let rel = relative(fromDir, targetRel).replace(/\\/g, '/')
@@ -1115,7 +1080,6 @@ function relativeSpecifier(fromRel: string, targetRel: string, keepExt: boolean)
     rel = `./${rel}`
   return rel
 }
-
 function deleteExportLine(source: string, specifier: string): string {
   const lines = source.split('\n')
   const escaped = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -1123,7 +1087,6 @@ function deleteExportLine(source: string, specifier: string): string {
   const kept = lines.filter(line => !re.test(line))
   return kept.join('\n')
 }
-
 export function formatDoctorReport(report: DoctorReport, json = false): string {
   if (json)
     return JSON.stringify(report, null, 2)
@@ -1145,7 +1108,6 @@ export function formatDoctorReport(report: DoctorReport, json = false): string {
   lines.push(`${report.findings.length} finding(s) across ${report.filesScanned} files`)
   return `${lines.join('\n')}\n`
 }
-
 export function formatAgentDoctorReport(report: DoctorReport): string {
   const counts = new Map<DoctorCheck, number>()
   for (const f of report.findings)

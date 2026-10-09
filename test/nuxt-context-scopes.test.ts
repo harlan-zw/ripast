@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
-import { runRename, writeChanges } from '@ripast/core'
 import { it } from 'vitest'
+import { runRename, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const cases = [

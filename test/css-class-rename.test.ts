@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { rewriteClassString, rewriteToken, runCssClassRename } from '../packages/core/src/css-class-rename.ts'
+import { rewriteClassString, rewriteToken, runCssClassRename } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 function map(pairs: Record<string, string>): Map<string, string> {

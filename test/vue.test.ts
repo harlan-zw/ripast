@@ -3,9 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, it } from 'vitest'
-import { runMove } from '../packages/core/src/move.ts'
-import { runRename } from '../packages/core/src/rename.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { createEngine, runMove, runRename } from './engine-sdk.ts'
 
 const VUE_TSCONFIG = JSON.stringify({
   compilerOptions: {
@@ -75,16 +74,15 @@ describe('vue sfc rename', () => {
     finally { fx.cleanup() }
   })
 
-  it('--no-vue (vue: false) skips Volar pass and leaves .vue untouched', async () => {
+  it('refuses an unsafe rename when the SDK omits required Vue support', async () => {
     const fx = makeVueFixture({
       'src/utils.ts': 'export function greet() { return \'hi\' }\n',
       'src/Comp.vue': `<script setup lang="ts">\nimport { greet } from './utils.ts'\nconst v = greet()\n</script>\n<template>{{ v }}</template>\n`,
     })
     try {
-      const r = await runRename('greet', 'salute', { cwd: fx.dir, verify: false, vue: false })
-      writeChanges(r.changes)
-      assert.match(fx.read('src/utils.ts'), /export function salute/)
-      assert.match(fx.read('src/Comp.vue'), /import \{ greet \} from/, 'vue untouched when --no-vue')
+      await assert.rejects(createEngine().runRename('greet', 'salute', { cwd: fx.dir, verify: false }), /Required extension is missing/)
+      assert.match(fx.read('src/utils.ts'), /export function greet/)
+      assert.match(fx.read('src/Comp.vue'), /import \{ greet \} from/)
     }
     finally { fx.cleanup() }
   })

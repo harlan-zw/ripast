@@ -1,9 +1,10 @@
 import type { AutoImportRenamePlan, FrameworkAdapter, TextEdit } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { applyTextEdits, rgFiles } from '@ripast/core/adapter'
+import { applyTextEdits } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
 import { compileScript, compileTemplate, parse, registerTS } from '@vue/compiler-sfc'
+import { rgFiles } from './discovery.ts'
 import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { inspectScript, inspectSetup } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath } from './nuxt-paths.ts'
@@ -17,9 +18,12 @@ interface Reference {
   shorthand: boolean
   vBindShorthand: boolean
 }
-
 export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImportRename']> = ({ cwd, from, to, sites }) => {
-  const plans = new Map<string, { before: string, references: Reference[], edits: TextEdit[] }>()
+  const plans = new Map<string, {
+    before: string
+    references: Reference[]
+    edits: TextEdit[]
+  }>()
   const changes: AutoImportRenamePlan['changes'] = []
   const unrelatedGeneratedImports = new Set<string>()
   const providers = new Set(sites.map(site => site.filePath))
@@ -99,10 +103,13 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
     },
   }
 }
-
 /** Keep local aliases stable when the generated barrel exports a renamed provider. */
-function generatedImportEdits(path: string, source: string, from: string, to: string): (TextEdit & { targetOffset: number })[] {
-  const out: (TextEdit & { targetOffset: number })[] = []
+function generatedImportEdits(path: string, source: string, from: string, to: string): (TextEdit & {
+  targetOffset: number
+})[] {
+  const out: (TextEdit & {
+    targetOffset: number
+  })[] = []
   const inspect = (content: string, offset: number): void => {
     const file = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true)
     for (const statement of file.statements) {
@@ -137,7 +144,6 @@ function generatedImportEdits(path: string, source: string, from: string, to: st
   }
   return out
 }
-
 function hasLibraryValue(name: string): boolean {
   const path = '/__ripast_globals__.ts'
   const options: ts.CompilerOptions = { target: ts.ScriptTarget.Latest, types: [] }
@@ -149,7 +155,6 @@ function hasLibraryValue(name: string): boolean {
   const checker = ts.createProgram([path], options, host).getTypeChecker()
   return Boolean(checker.resolveName(name, undefined, ts.SymbolFlags.Value, false))
 }
-
 function renameReferences(path: string, source: string, names: Set<string>): Reference[] {
   const out: Reference[] = []
   const inspect = (file: ts.SourceFile, checker: ts.TypeChecker, root: ts.Node, offset: number): void => {
@@ -255,7 +260,6 @@ function renameReferences(path: string, source: string, names: Set<string>): Ref
   out.push(...templateReferences.values())
   return out.sort((a, b) => a.start - b.start)
 }
-
 function isGeneratedImportBinding(binding: ts.Symbol | undefined): boolean {
   return binding?.declarations?.some((declaration) => {
     if (!ts.isImportSpecifier(declaration))
@@ -264,7 +268,6 @@ function isGeneratedImportBinding(binding: ts.Symbol | undefined): boolean {
     return ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text === '#imports'
   }) ?? false
 }
-
 function hasGeneratedName(cwd: string, name: string, consumerPath: string): boolean {
   for (const path of nuxtImportMetadataPaths(cwd, consumerPath)) {
     const file = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)

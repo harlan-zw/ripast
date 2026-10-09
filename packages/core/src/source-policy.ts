@@ -1,6 +1,6 @@
 /**
  * Generic auto-import scope check. The adapter supplies the scope set
- * (e.g. Nuxt's composables/, utils/ resolved to absolute dirs); this just
+ * resolved to absolute directories; this just
  * tests whether `filePath` falls under any of them.
  */
 export function isInsideAutoImportScope(filePath: string, scopes: Set<string>): boolean {

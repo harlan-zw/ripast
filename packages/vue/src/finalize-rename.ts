@@ -1,39 +1,28 @@
 import type { FileChange } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { basename, relative } from 'node:path'
-import {
-  hyphenateVueName,
-  isInsideAutoImportScope,
-  rgFiles,
-  scan,
-} from '@ripast/core/adapter'
+import { isInsideAutoImportScope } from '@ripast/core/adapter'
+import { rgFiles, scan } from './discovery.ts'
 import { addNuxtExplicitImports, extractTopLevelExportNames } from './nuxt-imports.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
+import { hyphenateVueName } from './vue-template.ts'
 
 const TS_LIKE_RE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
-
-export async function finalizeVueFileRename(
-  cwd: string,
-  oldAbs: string,
-  newAbs: string,
-  existingChanges: FileChange[],
-  autoImportScopes: Set<string>,
-): Promise<{ changes: FileChange[], warnings: string[] }> {
+export async function finalizeVueFileRename(cwd: string, oldAbs: string, newAbs: string, existingChanges: FileChange[], autoImportScopes: Set<string>): Promise<{
+  changes: FileChange[]
+  warnings: string[]
+}> {
   const changes: FileChange[] = []
   const warnings: string[] = []
-
   if (oldAbs.endsWith('.vue') && newAbs.endsWith('.vue')) {
     const oldName = basename(oldAbs, '.vue')
     const newName = basename(newAbs, '.vue')
-
     const resolveCompEdits = rewriteResolveComponentSites(cwd, oldName, newName, existingChanges, oldAbs, newAbs, warnings)
     mergeIntoChanges(changes, resolveCompEdits)
-
     if (oldName !== newName) {
       const isEdits = rewriteIsAttributeSites(cwd, oldName, newName, mergeView(existingChanges, changes), oldAbs, newAbs, warnings)
       mergeIntoChanges(changes, isEdits)
     }
-
     if (autoImportScopes.size && isInsideAutoImportScope(oldAbs, autoImportScopes) && !isInsideAutoImportScope(newAbs, autoImportScopes)) {
       const merged = mergeView(existingChanges, changes)
       const explicit = addExplicitComponentImports(cwd, oldName, newName, newAbs, merged, oldAbs)
@@ -41,14 +30,11 @@ export async function finalizeVueFileRename(
     }
     return { changes, warnings }
   }
-
-  if (
-    TS_LIKE_RE.test(oldAbs)
+  if (TS_LIKE_RE.test(oldAbs)
     && TS_LIKE_RE.test(newAbs)
     && autoImportScopes.size
     && isInsideAutoImportScope(oldAbs, autoImportScopes)
-    && !isInsideAutoImportScope(newAbs, autoImportScopes)
-  ) {
+    && !isInsideAutoImportScope(newAbs, autoImportScopes)) {
     const movedSource = readMovedSource(oldAbs, newAbs, existingChanges)
     const symbols = movedSource ? extractTopLevelExportNames(movedSource) : []
     if (symbols.length) {
@@ -59,19 +45,15 @@ export async function finalizeVueFileRename(
         fromAbs: oldAbs,
         existingChanges: mergeView(existingChanges, changes),
         scan,
-        noScriptError: name => new Error(
-          `ripast rename-file: "${name}" is auto-imported in Nuxt; moving ${basename(oldAbs)} to ${newAbs}`
+        noScriptError: name => new Error(`ripast rename-file: "${name}" is auto-imported in Nuxt; moving ${basename(oldAbs)} to ${newAbs}`
           + ` takes it out of auto-import scope but a consumer has no <script> block to receive an explicit import.`
-          + ` Add a <script setup> block first, or keep the file in composables/utils.`,
-        ),
+          + ` Add a <script setup> block first, or keep the file in composables/utils.`),
       })
       mergeIntoChanges(changes, explicit)
     }
   }
-
   return { changes, warnings }
 }
-
 function readMovedSource(oldAbs: string, newAbs: string, existingChanges: FileChange[]): string | null {
   const self = existingChanges.find(c => c.path === oldAbs || c.path === newAbs)
   if (self)
@@ -83,14 +65,14 @@ function readMovedSource(oldAbs: string, newAbs: string, existingChanges: FileCh
     return null
   }
 }
-
 function mergeView(a: FileChange[], b: FileChange[]): FileChange[] {
   const map = new Map<string, FileChange>()
-  for (const c of a) map.set(c.path, c)
-  for (const c of b) map.set(c.path, c)
+  for (const c of a)
+    map.set(c.path, c)
+  for (const c of b)
+    map.set(c.path, c)
   return [...map.values()]
 }
-
 function mergeIntoChanges(target: FileChange[], incoming: FileChange[]): void {
   for (const change of incoming) {
     const existing = target.find(c => c.path === change.path)
@@ -100,16 +82,7 @@ function mergeIntoChanges(target: FileChange[], incoming: FileChange[]): void {
       target.push(change)
   }
 }
-
-function rewriteResolveComponentSites(
-  cwd: string,
-  oldName: string,
-  newName: string,
-  changes: FileChange[],
-  oldAbs: string,
-  newAbs: string,
-  warnings: string[],
-): FileChange[] {
+function rewriteResolveComponentSites(cwd: string, oldName: string, newName: string, changes: FileChange[], oldAbs: string, newAbs: string, warnings: string[]): FileChange[] {
   const candidates = new Set(rgFiles('resolveComponent', { cwd }))
   if (!candidates.size)
     return []
@@ -136,23 +109,13 @@ function rewriteResolveComponentSites(
     out.push({ path, rel: relative(cwd, path), before, after })
   }
   if (warnFiles.length) {
-    warnings.push(
-      `rename-file: "${oldName}" is referenced via resolveComponent() in ${warnFiles.length} file(s) `
+    warnings.push(`rename-file: "${oldName}" is referenced via resolveComponent() in ${warnFiles.length} file(s) `
       + `[${warnFiles.join(', ')}]. The component must stay globally registered for these sites to resolve `
-      + `(plugin app.component(...) or Nuxt components dir).`,
-    )
+      + `(plugin app.component(...) or Nuxt components dir).`)
   }
   return out
 }
-
-function addExplicitComponentImports(
-  cwd: string,
-  oldName: string,
-  newName: string,
-  newAbs: string,
-  changes: FileChange[],
-  oldAbs: string,
-): FileChange[] {
+function addExplicitComponentImports(cwd: string, oldName: string, newName: string, newAbs: string, changes: FileChange[], oldAbs: string): FileChange[] {
   const tokens = new Set([oldName, newName, hyphenateVueName(oldName), hyphenateVueName(newName)])
   const candidates = new Set<string>()
   for (const token of tokens) {
@@ -182,20 +145,10 @@ function addExplicitComponentImports(
   }
   return out
 }
-
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
-
-function rewriteIsAttributeSites(
-  cwd: string,
-  oldName: string,
-  newName: string,
-  changes: FileChange[],
-  oldAbs: string,
-  newAbs: string,
-  warnings: string[],
-): FileChange[] {
+function rewriteIsAttributeSites(cwd: string, oldName: string, newName: string, changes: FileChange[], oldAbs: string, newAbs: string, warnings: string[]): FileChange[] {
   const oldKebab = hyphenateVueName(oldName)
   const newKebab = hyphenateVueName(newName)
   const candidates = new Set([
@@ -207,10 +160,7 @@ function rewriteIsAttributeSites(
   const byPath = new Map(changes.map(change => [change.path, change]))
   const oldRe = `${escapeRe(oldName)}|${escapeRe(oldKebab)}`
   // :is="'Name'" string-literal binding. Handles both nested-quote shapes.
-  const isStringLiteralRe = new RegExp(
-    `(:is\\s*=\\s*)(?:"\\s*'(${oldRe})'\\s*"|'\\s*"(${oldRe})"\\s*')`,
-    'g',
-  )
+  const isStringLiteralRe = new RegExp(`(:is\\s*=\\s*)(?:"\\s*'(${oldRe})'\\s*"|'\\s*"(${oldRe})"\\s*')`, 'g')
   // is="Name" static attribute (resolves like a tag).
   const isStaticRe = new RegExp(`(\\bis\\s*=\\s*)(['"])(${oldRe})\\2`, 'g')
   const dynamicBindingRe = /:is\s*=\s*"\s*([A-Za-z_$][\w$]*)\s*"/g
@@ -238,27 +188,21 @@ function rewriteIsAttributeSites(
     out.push({ path, rel: relative(cwd, path), before, after: current })
   }
   if (dynamicBindingWarn.length) {
-    warnings.push(
-      `rename-file: "${oldName}" may be referenced via dynamic <component :is="ref"> in `
+    warnings.push(`rename-file: "${oldName}" may be referenced via dynamic <component :is="ref"> in `
       + `${dynamicBindingWarn.length} file(s) [${dynamicBindingWarn.join(', ')}]. These cannot be `
-      + `auto-rewritten; inspect and update manually.`,
-    )
+      + `auto-rewritten; inspect and update manually.`)
   }
   return out
 }
-
 function hasDefaultImportFromVue(source: string, name: string): boolean {
   const re = new RegExp(`\\bimport\\s+${escapeRe(name)}\\s+from\\s+['"\`][^'"\`]+\\.vue['"\`]`)
   return re.test(source)
 }
-
 function insertVueComponentImport(source: string, name: string, specifier: string): string {
   const match = source.match(/<script(?:\s[^>]*)?>/)
   if (!match || match.index === undefined) {
-    throw new Error(
-      `ripast rename-file: "${name}" is auto-imported in Nuxt; the new path falls outside auto-import scope `
-      + `but a consumer has no <script> block to receive an explicit import. Add a <script setup> block first.`,
-    )
+    throw new Error(`ripast rename-file: "${name}" is auto-imported in Nuxt; the new path falls outside auto-import scope `
+      + `but a consumer has no <script> block to receive an explicit import. Add a <script setup> block first.`)
   }
   const insertAt = match.index + match[0].length
   const importLine = `\nimport ${name} from '${specifier}'`

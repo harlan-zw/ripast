@@ -1,8 +1,8 @@
 /* eslint-disable no-new-func -- Evaluate only the fixed fixture expressions to verify preserved runtime behavior. */
 import assert from 'node:assert/strict'
-import { rewriteClassString, runCssClassRename, runCssClassScan } from '@ripast/core'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { describe, it } from 'vitest'
+import { rewriteClassString, runCssClassRename, runCssClassScan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('css class edge cases', () => {

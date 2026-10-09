@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { runInNewContext } from 'node:vm'
-import { runDelete, runMove, runRename, runRenameFile } from '@ripast/core'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { runDelete, runMove, runRename, runRenameFile } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 function fixture() {

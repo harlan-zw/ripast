@@ -1,3 +1,4 @@
+import type { ExtensionOptions } from './adapter.ts'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { parseFile, posToLineCol, rgFiles } from './util.ts'
@@ -13,7 +14,6 @@ export interface NamedReexport {
   /** 1-based line in the file's full source (post-SFC-offset). */
   line: number
 }
-
 export interface NamedImport {
   imported: string
   local: string
@@ -22,7 +22,6 @@ export interface NamedImport {
   /** 1-based line in the file's full source (post-SFC-offset). */
   line: number
 }
-
 export interface DoctorIndexFile {
   file: string
   /** Top-level exported names declared in this file (excludes `default`). */
@@ -32,30 +31,30 @@ export interface DoctorIndexFile {
   /** Imports with specifiers (for inconsistent-import-path check). */
   imports: NamedImport[]
 }
-
 export interface DoctorIndex {
   files: DoctorIndexFile[]
 }
-
-export function buildDoctorIndex(opts: { cwd?: string, glob?: string | string[] } = {}): DoctorIndex {
+export function buildDoctorIndex(opts: {
+  cwd?: string
+  glob?: string | string[]
+  extensions?: ExtensionOptions['extensions']
+} = {}): DoctorIndex {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+  const files = rgFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true, extensions: opts.extensions })
   const out: DoctorIndexFile[] = []
   for (const abs of files) {
-    const file = parseFile(abs, cwd)
+    const file = parseFile(abs, cwd, opts.extensions)
     if (!file.program)
       continue
     out.push(extractFileIndex(file.rel, file.program, file.fullSource, file.scriptStart))
   }
   return { files: out }
 }
-
 function extractFileIndex(rel: string, program: any, fullSource: string, scriptStart: number): DoctorIndexFile {
   const exportedNames = new Set<string>()
   const namedReexports: NamedReexport[] = []
   const imports: NamedImport[] = []
   const lineOf = (start: number): number => posToLineCol(fullSource, scriptStart + start).line
-
   for (const node of program?.body ?? []) {
     if (node.type === 'ImportDeclaration') {
       const source = node.source?.value
@@ -84,7 +83,6 @@ function extractFileIndex(rel: string, program: any, fullSource: string, scriptS
         imports.push({ imported: '', local: '', source, typeOnly, line })
       continue
     }
-
     if (node.type === 'ExportAllDeclaration') {
       const source = node.source?.value
       if (typeof source !== 'string')
@@ -99,7 +97,6 @@ function extractFileIndex(rel: string, program: any, fullSource: string, scriptS
       })
       continue
     }
-
     if (node.type === 'ExportNamedDeclaration') {
       const source = node.source?.value
       const typeOnly = node.exportKind === 'type'
@@ -135,11 +132,9 @@ function extractFileIndex(rel: string, program: any, fullSource: string, scriptS
       }
       continue
     }
-
     if (node.type === 'ExportDefaultDeclaration')
       exportedNames.add('default')
   }
-
   // Catch dynamic imports too for import-path consistency
   walk(program, {
     enter(node: any) {
@@ -148,10 +143,8 @@ function extractFileIndex(rel: string, program: any, fullSource: string, scriptS
       }
     },
   })
-
   return { file: rel, exportedNames, namedReexports, imports }
 }
-
 function collectDeclarationNames(decl: any, out: Set<string>): void {
   if (!decl)
     return

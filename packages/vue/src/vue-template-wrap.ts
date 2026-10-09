@@ -1,8 +1,10 @@
-import type { FileChange } from './util.ts'
+import type { FileChange } from '@ripast/core/adapter'
+
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { rgFiles } from './util.ts'
+import { rgFiles } from './discovery.ts'
+
 import { hyphenateVueName, parseTemplateSelector, parseTemplateWrapper, unwrapTemplateElements, wrapTemplateElements } from './vue-template.ts'
 
 export interface VueTemplateWrapOptions {

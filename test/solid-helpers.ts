@@ -7,7 +7,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { transformSync } from '@babel/core'
 import ts from 'typescript'
-import { resolveNativeTsc } from '../packages/core/src/index.ts'
+import { resolveNativeTsc } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const require = createRequire(import.meta.url)

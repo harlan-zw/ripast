@@ -4,8 +4,8 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
-import { runRename, writeChanges } from '@ripast/core'
 import { it } from 'vitest'
+import { runRename, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 function fixture(directory: string) {

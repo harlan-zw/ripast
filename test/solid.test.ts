@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { renameSync } from 'node:fs'
 import { describe, it } from 'vitest'
-import { runCssClassRename, runCssClassScan, runMove, runRename, runRenameFile, scan, writeChanges } from '../packages/core/src/index.ts'
+import { runCssClassRename, runCssClassScan, runMove, runRename, runRenameFile, scan, writeChanges } from './engine-sdk.ts'
 import { assertSolidDiagnostics, makeSolidFixture, renderSolidFixture, solidModuleValue, solidSyntax } from './solid-helpers.ts'
 
-const options = { vue: false, verify: 'project' as const }
+const options = { verify: 'project' as const }
 
 describe('solid TSX refactors', () => {
   it('renames components while preserving consumer aliases and control flow', async () => {

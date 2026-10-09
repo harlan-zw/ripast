@@ -2,8 +2,8 @@ import type { FileChange, ScanFn } from '@ripast/core/adapter'
 import type { PathAlias } from './nuxt-paths.ts'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { rgFiles } from '@ripast/core/adapter'
 import { parse } from '@vue/compiler-sfc'
+import { rgFiles } from './discovery.ts'
 import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
@@ -17,7 +17,6 @@ export interface ExplicitImportContext {
   scan: ScanFn
   noScriptError: (symbol: string) => Error
 }
-
 /**
  * Walk every consumer file that references one of `symbols` (via rg scan) and
  * insert an explicit named import from `toAbs`.
@@ -94,14 +93,7 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
   }
   return out
 }
-
-export function insertVueScriptImport(
-  source: string,
-  symbol: string,
-  specifier: string,
-  noScriptError: (symbol: string) => Error,
-  target?: 'script' | 'scriptSetup',
-): string {
+export function insertVueScriptImport(source: string, symbol: string, specifier: string, noScriptError: (symbol: string) => Error, target?: 'script' | 'scriptSetup'): string {
   const { descriptor } = parse(source)
   const block = target ? descriptor[target] : descriptor.scriptSetup ?? descriptor.script
   if (!block || block.src)
@@ -115,7 +107,6 @@ export function insertVueScriptImport(
   const rest = source[insertAt] === '\n' ? source.slice(insertAt + 1) : source.slice(insertAt)
   return `${source.slice(0, insertAt)}\nimport { ${symbol} } from '${specifier}'\n${rest}`
 }
-
 export function insertTopLevelImport(source: string, symbol: string, specifier: string): string {
   const merged = mergeNamedImport(source, symbol, specifier)
   if (merged !== source)
@@ -128,7 +119,6 @@ export function insertTopLevelImport(source: string, symbol: string, specifier: 
   }
   return `${importLine}${source}`
 }
-
 export function mergeNamedImport(source: string, symbol: string, specifier: string): string {
   const spec = specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const importRe = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*(['"])${spec}\\2`)
@@ -141,10 +131,8 @@ export function mergeNamedImport(source: string, symbol: string, specifier: stri
   const replacement = `import { ${[...names, symbol].join(', ')} } from ${match[2]}${specifier}${match[2]}`
   return `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match[0].length)}`
 }
-
 const EXPORT_DECL_RE = /^\s*export\s+(?:async\s+)?(?:function|class|interface|type|enum|const|let|var)\s+([A-Za-z_$][\w$]*)/gm
 const EXPORT_LIST_RE = /^\s*export\s*\{([^}]+)\}/gm
-
 export function extractTopLevelExportNames(source: string): string[] {
   const out = new Set<string>()
   for (const match of source.matchAll(EXPORT_DECL_RE))

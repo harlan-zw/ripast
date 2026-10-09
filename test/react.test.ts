@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { runCssClassRename, runCssClassScan, runMove, runRename, runReplace, scan, writeChanges } from '../packages/core/src/index.ts'
+import { runCssClassRename, runCssClassScan, runMove, runRename, runReplace, scan, writeChanges } from './engine-sdk.ts'
 import { makeReactFixture, reactDiagnostics, renderReactFixture } from './react-helpers.ts'
 
 const fixtures: ReturnType<typeof makeReactFixture>[] = []

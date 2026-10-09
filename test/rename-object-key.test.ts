@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { runRename } from '../packages/core/src/index.ts'
+import { runRename } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([
@@ -20,7 +20,7 @@ vi.mock('@/store', async (importOriginal) => {
     'src/mock.ts': before,
   })
   try {
-    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'src/store.ts', vue: false })
+    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'src/store.ts' })
     assert.equal(result.changes.find(change => change.rel === 'src/mock.ts')?.after, before.replaceAll('actual.useStore', 'actual.useAppStore'))
     assert.deepEqual(result.regressions, [])
   }
@@ -46,7 +46,7 @@ function local() {
     'mock.ts': before,
   })
   try {
-    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts', vue: false })
+    const result = await runRename('useStore', 'useAppStore', { cwd: fx.dir, scope: 'store.ts' })
     assert.equal(result.changes.find(change => change.rel === 'mock.ts')?.after, before.replace('actual.useStore()', 'actual.useAppStore()'))
     assert.equal(result.changes.some(change => change.rel === 'other.ts'), false)
     assert.deepEqual(result.regressions, [])

@@ -11,19 +11,20 @@ export interface Regression {
   code: number
   message: string
 }
-
-/** Project verification includes Vue consumers even when only scripts change. */
-export async function findVueRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, loadVueAdapter: () => Promise<FrameworkAdapter | null>): Promise<Regression[]> {
-  if (!changes.length || !rgFiles('', { cwd, glob: '*.vue', listAll: true }).length)
+/** Extension verification runs in injection order without writing files. */
+export async function findExtensionRegressions(cwd: string, changes: FileChange[], tsconfigPath: string | null, extensions: readonly FrameworkAdapter[] = []): Promise<Regression[]> {
+  if (!changes.length)
     return []
-  if (!tsconfigPath)
-    throw new Error('ripast: Vue verification requires a tsconfig. Prepare the project before applying changes.')
-  const adapter = await loadVueAdapter()
-  if (!adapter)
-    throw new Error('ripast: Vue verification requires @ripast/vue. Install the adapter before applying changes.')
-  return adapter.regressions(tsconfigPath, cwd, changes)
+  const regressions: Regression[] = []
+  for (const extension of extensions) {
+    if (!rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
+      continue
+    if (!tsconfigPath || !extension.regressions)
+      throw new Error(`Extension verification requires a tsconfig and semantic service: ${extension.name}`)
+    regressions.push(...await extension.regressions(tsconfigPath, cwd, changes))
+  }
+  return regressions
 }
-
 /**
  * Diagnostics-based regression check against the native TypeScript server.
  * Opens every change with its `before` text (so files that do not exist on
@@ -43,10 +44,8 @@ export async function findRegressions(server: TsServer, changes: FileChange[], f
       baseline.set(key, (baseline.get(key) ?? 0) + 1)
     }
   }
-
   for (const change of changes)
     server.open(change.path, change.after)
-
   const after = await server.diagnostics(scope)
   const seen = new Map<string, number>()
   const out: Regression[] = []
@@ -68,11 +67,9 @@ export async function findRegressions(server: TsServer, changes: FileChange[], f
   }
   return out
 }
-
 function diagnosticKey(path: string, d: LspDiagnostic): string {
   return `${path}::${d.code ?? ''}::${d.message}`
 }
-
 export function formatRegressions(regressions: Regression[], cwd: string): string {
   const lines = [`${regressions.length} new type diagnostic${regressions.length === 1 ? '' : 's'} introduced:`]
   for (const r of regressions) {

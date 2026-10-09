@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { runCssClassRename, runCssClassScan } from '@ripast/core'
 import { parse } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
+import { runCssClassRename, runCssClassScan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 function classValue(source: string): string {

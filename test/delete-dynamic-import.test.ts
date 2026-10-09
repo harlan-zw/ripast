@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { runDelete } from '../packages/core/src/index.ts'
+import { runDelete } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it('delete refuses reflective dynamic imports of the declaration module', async () => {

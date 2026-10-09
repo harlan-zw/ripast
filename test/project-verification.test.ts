@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { it } from 'vitest'
-import { runReplace } from '../packages/core/src/index.ts'
+import { runReplace } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const cli = resolve('packages/cli/src/cli.ts')

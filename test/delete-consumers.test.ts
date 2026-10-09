@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
-import { runDelete, writeChanges } from '../packages/core/src/index.ts'
+import { runDelete, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([

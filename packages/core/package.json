@@ -2,7 +2,7 @@
   "name": "@ripast/core",
   "type": "module",
   "version": "0.6.1",
-  "description": "AST refactor engine for AI coding agents. Deterministic rename, move, find-usages, and tailwind/CSS class migration across TypeScript. Framework adapters loaded via @ripast/<framework> packages.",
+  "description": "Typed refactoring engine for TypeScript and JavaScript with explicit optional extensions.",
   "author": {
     "name": "Harlan Wilton",
     "email": "harlan@harlanzw.com",
@@ -53,8 +53,8 @@
     "dev:prepare": "obuild --stub"
   },
   "dependencies": {
-    "@vue/compiler-sfc": "^3.5.43",
     "diff": "^9.0.0",
+    "hookable": "^6.1.2",
     "html-entities": "^2.6.0",
     "ignore": "^7.0.12",
     "magic-string": "^1.4.3",

@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createSourceFile, isFunctionDeclaration, ScriptTarget } from 'typescript'
 import { it } from 'vitest'
-import { runRename, runReplace, writeChanges } from '../packages/core/src/index.ts'
+import { runRename, runReplace, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it('replace preserves object shorthand keys', async () => {
@@ -25,7 +25,7 @@ it('rename finds destructured local declarations', async () => {
     'consumer.ts': 'export function run() { const { old } = { old: 3 }; return old }\n',
   })
   try {
-    const result = await runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runRename('old', 'better', { cwd: fx.dir, verify: false })
     assert.equal(result.changes.length, 1)
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
@@ -39,7 +39,7 @@ it('rename finds function parameters', async () => {
     'consumer.ts': 'export function run(old: number) { return old + 1 }\n',
   })
   try {
-    const result = await runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runRename('old', 'better', { cwd: fx.dir, verify: false })
     assert.equal(result.changes.length, 1)
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
@@ -68,7 +68,7 @@ it('rename finds top-level destructured declarations', async () => {
     'consumer.ts': 'export const { old } = { old: 3 }\n',
   })
   try {
-    writeChanges((await runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false })).changes)
+    writeChanges((await runRename('old', 'better', { cwd: fx.dir, verify: false })).changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.equal(consumer.better, 3)
   }
@@ -85,7 +85,7 @@ it.each([
 ])('rename supports %s bindings', async (_name, source) => {
   const fx = makeFixture({ 'consumer.ts': source })
   try {
-    const result = await runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runRename('old', 'better', { cwd: fx.dir, verify: false })
     assert.equal(result.changes.length, 1)
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
@@ -103,7 +103,7 @@ it.each([
     'consumer.ts': `import { Old } from "./old.ts"\n${consumerSource}`,
   })
   try {
-    const result = await runRename('Old', 'Better', { cwd: fx.dir, vue: false })
+    const result = await runRename('Old', 'Better', { cwd: fx.dir })
     assert.equal(result.changes.length, 2)
     assert.deepEqual(result.regressions, [])
   }
@@ -161,7 +161,7 @@ it('rename all includes parameters beside local variable declarations', async ()
     'consumer.ts': 'export function first(old: number) { return old }\nexport function second() { const old = 2; return old }\n',
   })
   try {
-    const result = await runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false, allowMultiple: true })
+    const result = await runRename('old', 'better', { cwd: fx.dir, verify: false, allowMultiple: true })
     const program = createSourceFile('consumer.ts', result.changes[0].after, ScriptTarget.Latest, true)
     const first = program.statements.find(isFunctionDeclaration)!
     assert.equal(first.parameters[0].name.getText(program), 'better')
@@ -191,9 +191,9 @@ it('rename refuses an escaped declaration when TypeScript returns no edits', asy
   const source = 'export const \\u006fld = 3\n'
   const fx = makeFixture({ 'consumer.ts': source })
   try {
-    await assert.rejects(runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false }), /could not rename declaration/)
+    await assert.rejects(runRename('old', 'better', { cwd: fx.dir, verify: false }), /could not rename declaration/)
     assert.equal(fx.read('consumer.ts'), source)
-    const unchanged = await runRename('old', 'old', { cwd: fx.dir, verify: false, vue: false })
+    const unchanged = await runRename('old', 'old', { cwd: fx.dir, verify: false })
     assert.deepEqual(unchanged.changes, [])
   }
   finally { fx.cleanup() }
@@ -203,7 +203,7 @@ it('rename refuses escaped consumers before returning incomplete changes', async
   const source = 'import { old } from "./old.ts"\nexport const result = \\u006fld\n'
   const fx = makeFixture({ 'old.ts': 'export const old = 3\n', 'consumer.ts': source })
   try {
-    await assert.rejects(runRename('old', 'better', { cwd: fx.dir, verify: false, vue: false }), /cannot resolve escaped references/)
+    await assert.rejects(runRename('old', 'better', { cwd: fx.dir, verify: false }), /cannot resolve escaped references/)
     assert.equal(fx.read('consumer.ts'), source)
     assert.equal(fx.read('old.ts'), 'export const old = 3\n')
   }

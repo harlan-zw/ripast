@@ -1,8 +1,10 @@
 import type { DoctorAdapter, DoctorContext, DoctorFinding } from '@ripast/core/adapter'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { hyphenateVueName, parseVueTemplateAst, posToLineCol, rgFiles } from '@ripast/core/adapter'
+import { posToLineCol } from '@ripast/core/adapter'
 import { listComponents } from './components.ts'
+import { rgFiles } from './discovery.ts'
+import { hyphenateVueName, parseVueTemplateAst } from './vue-template.ts'
 
 const NUXT_ENTRY_PATTERNS = [
   'nuxt.config.ts',
@@ -15,7 +17,6 @@ const NUXT_ENTRY_PATTERNS = [
   'vitest.config.ts',
   'vitest.config.mts',
 ]
-
 const NUXT_ENTRY_DIRS = [
   'pages',
   'layouts',
@@ -28,7 +29,6 @@ const NUXT_ENTRY_DIRS = [
   'app/pages',
   'app/layouts',
 ]
-
 const NUXT_AUTOIMPORT_DIRS = [
   'components',
   'composables',
@@ -43,9 +43,7 @@ const NUXT_AUTOIMPORT_DIRS = [
   'app/composables',
   'app/utils',
 ]
-
 const ENTRY_EXTS = ['.ts', '.tsx', '.js', '.mjs', '.cjs', '.vue']
-
 function isNuxtProject(cwd: string): boolean {
   for (const p of NUXT_ENTRY_PATTERNS) {
     if (p.startsWith('nuxt.config') && existsSync(join(cwd, p)))
@@ -65,7 +63,6 @@ function isNuxtProject(cwd: string): boolean {
     return false
   }
 }
-
 function listLayerRoots(cwd: string): string[] {
   const roots = [cwd]
   for (const parent of ['layers', 'apps', 'packages']) {
@@ -78,12 +75,11 @@ function listLayerRoots(cwd: string): string[] {
         if (statSync(abs).isDirectory())
           roots.push(abs)
       }
-      catch {}
+      catch { }
     }
   }
   return roots
 }
-
 const ROOT_CONFIG_FILES = [
   'eslint.config.js',
   'eslint.config.ts',
@@ -99,7 +95,6 @@ const ROOT_CONFIG_FILES = [
   'app.config.ts',
 ]
 const CONFIG_FILE_RE = /(?:^|\/)(?:eslint\.config\.[mc]?[jt]s|drizzle\.config\.[mc]?[jt]s|tailwind\.config\.[mc]?[jt]s|content\.config\.[mc]?[jt]s|mdc\.config\.[mc]?[jt]s|router\.options\.[mc]?[jt]s|vitest\.config(?:\.\w+)?\.[mc]?[jt]s|app\.config\.[mc]?[jt]s|.*\.d\.ts)$/
-
 function walkDir(dir: string, out: string[]): void {
   let entries: string[]
   try {
@@ -125,7 +120,6 @@ function walkDir(dir: string, out: string[]): void {
       out.push(abs)
   }
 }
-
 function isNuxtModulePackage(root: string): boolean {
   const moduleTs = join(root, 'src', 'module.ts')
   if (!existsSync(moduleTs))
@@ -138,7 +132,6 @@ function isNuxtModulePackage(root: string): boolean {
     return false
   }
 }
-
 function collectEntries(cwd: string): string[] {
   const abs: string[] = []
   for (const root of listLayerRoots(cwd)) {
@@ -163,7 +156,6 @@ function collectEntries(cwd: string): string[] {
   }
   return [...new Set(abs.map(p => relative(cwd, p)))]
 }
-
 function isAutoImportRel(rel: string): boolean {
   rel = rel.replace(/\\/g, '/')
   return NUXT_AUTOIMPORT_DIRS.some(d => rel.includes(`/${d}/`) || rel.startsWith(`${d}/`))
@@ -179,14 +171,12 @@ function isAutoImportRel(rel: string): boolean {
     || rel.endsWith('app.vue')
     || rel.endsWith('error.vue')
 }
-
 export const doctor: DoctorAdapter = {
   entryFiles(cwd) {
     if (!isNuxtProject(cwd))
       return []
     return collectEntries(cwd)
   },
-
   filterFinding(_cwd, finding) {
     // Orphan check noise: Nuxt convention files are entries by design; if they
     // still look orphan, the entry list missed them. Drop, don't flag.
@@ -194,7 +184,6 @@ export const doctor: DoctorAdapter = {
       return false
     return true
   },
-
   extraFindings(cwd, ctx) {
     if (!isNuxtProject(cwd))
       return []
@@ -223,25 +212,24 @@ export const doctor: DoctorAdapter = {
         }
       }
     }
-    catch {}
+    catch { }
     try {
       out.push(...findPhantomComponents(cwd))
     }
-    catch {}
+    catch { }
     if (ctx) {
       try {
         out.push(...findCrossRealmImports(cwd, ctx))
       }
-      catch {}
+      catch { }
     }
     try {
       out.push(...findStaleNuxtConfigRefs(cwd))
     }
-    catch {}
+    catch { }
     return out
   },
 }
-
 const VUE_BUILTINS = new Set([
   'Transition',
   'TransitionGroup',
@@ -282,7 +270,6 @@ const NUXT_BUILTINS = new Set([
 ])
 const PASCAL = /^[A-Z][A-Z0-9a-z]*$/
 const NODE_ELEMENT = 1
-
 function listAppRoots(cwd: string): string[] {
   // Per-app roots: each apps/* is its own Nuxt scope (own .nuxt, own
   // components.dirs, own extends). Resolving auto-import scope at the
@@ -303,11 +290,10 @@ function listAppRoots(cwd: string): string[] {
       if (statSync(abs).isDirectory() && existsSync(join(abs, '.nuxt', 'components.d.ts')))
         roots.push(abs)
     }
-    catch {}
+    catch { }
   }
   return roots
 }
-
 function scopeForFile(abs: string, roots: string[], cwd: string): string {
   let best = cwd
   let bestLen = -1
@@ -320,22 +306,20 @@ function scopeForFile(abs: string, roots: string[], cwd: string): string {
   }
   return best
 }
-
 function buildKnownSet(root: string): Set<string> {
   const known = new Set<string>([...VUE_BUILTINS, ...NUXT_BUILTINS])
-  for (const c of listComponents(root, { source: 'auto', warn: () => {} })) {
+  for (const c of listComponents(root, { source: 'auto', warn: () => { } })) {
     known.add(c.name)
     for (const alias of c.aliases ?? [])
       known.add(alias)
   }
   return known
 }
-
 function buildUnionKnownSet(roots: string[], cwd: string): Set<string> {
   const known = new Set<string>([...VUE_BUILTINS, ...NUXT_BUILTINS])
   const sources = roots.length ? roots : [cwd]
   for (const root of sources) {
-    for (const c of listComponents(root, { source: 'auto', warn: () => {} })) {
+    for (const c of listComponents(root, { source: 'auto', warn: () => { } })) {
       known.add(c.name)
       for (const alias of c.aliases ?? [])
         known.add(alias)
@@ -343,7 +327,6 @@ function buildUnionKnownSet(roots: string[], cwd: string): Set<string> {
   }
   return known
 }
-
 function findPhantomComponents(cwd: string): DoctorFinding[] {
   const files = rgFiles('', { cwd, glob: ['*.vue'], listAll: true })
   const appRoots = listAppRoots(cwd)
@@ -399,7 +382,6 @@ function findPhantomComponents(cwd: string): DoctorFinding[] {
   }
   return out
 }
-
 function walkTpl(node: any, visit: (n: any) => void): void {
   if (!node || typeof node !== 'object')
     return
@@ -408,7 +390,6 @@ function walkTpl(node: any, visit: (n: any) => void): void {
   for (const child of node.children ?? [])
     walkTpl(child, visit)
 }
-
 function collectLocalImports(source: string): Set<string> {
   const out = new Set<string>()
   const scriptMatch = source.match(/<script[^>]*>([\s\S]*?)<\/script>/g)
@@ -433,15 +414,11 @@ function collectLocalImports(source: string): Set<string> {
   }
   return out
 }
-
 // --- Cross-realm (server <-> client) boundary check ---
-
 const APP_DIR_RE = /(?:^|\/)(?:app|pages|layouts|components|composables|middleware|plugins)(?:\/|$)/
 const SERVER_DIR_RE = /(?:^|\/)server(?:\/|$)/
-
 const SERVER_SUFFIX_RE = /\.server\.(?:[mc]?[jt]sx?|vue)$/
 const CLIENT_SUFFIX_RE = /\.client\.(?:[mc]?[jt]sx?|vue)$/
-
 function fileRealm(rel: string): 'app' | 'server' | 'shared' | null {
   rel = rel.replace(/\\/g, '/')
   // Filename conventions override directory classification.
@@ -455,7 +432,6 @@ function fileRealm(rel: string): 'app' | 'server' | 'shared' | null {
     return 'app'
   return null
 }
-
 function findCrossRealmImports(cwd: string, ctx: DoctorContext): DoctorFinding[] {
   const out: DoctorFinding[] = []
   for (const file of ctx.index.files) {
@@ -489,9 +465,7 @@ function findCrossRealmImports(cwd: string, ctx: DoctorContext): DoctorFinding[]
   }
   return out
 }
-
 const RESOLVE_EXTS = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '/index.ts', '/index.tsx', '/index.js']
-
 function resolveRelativeFs(fromRel: string, specifier: string, cwd: string): string | null {
   if (!specifier.startsWith('.'))
     return null
@@ -503,15 +477,12 @@ function resolveRelativeFs(fromRel: string, specifier: string, cwd: string): str
   }
   return null
 }
-
 // --- Stale Nuxt config refs ---
-
 const CONFIG_NAMES = ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mjs', 'nuxt.config.mts']
 const STRING_FIELDS = ['extends', 'modules', 'css']
 const COMPONENT_PATH_RE = /\{\s*path\s*:\s*['"]([^'"]+)['"]/g
 const ARRAY_FIELD_RE = (field: string) => new RegExp(`\\b${field}\\s*:\\s*\\[([\\s\\S]*?)\\]`)
 const IMPORT_DIRS_RE = /\bimports\s*:\s*\{[\s\S]*?\bdirs\s*:\s*\[([\s\S]*?)\]/
-
 function findStaleNuxtConfigRefs(cwd: string): DoctorFinding[] {
   const out: DoctorFinding[] = []
   for (const root of listLayerRoots(cwd)) {

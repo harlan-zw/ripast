@@ -3,10 +3,10 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove, runRename, runRenameFile } from '@ripast/core'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { runMove, runRename, runRenameFile } from './engine-sdk.ts'
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-provider-'))

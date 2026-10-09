@@ -1,3 +1,4 @@
+export type { EngineHooks, FrameworkAdapter, OperationContext, OperationName } from './adapter.ts'
 export { buildComponentDetail, buildComponentInventory, formatAgentInventory, formatDetail, formatInventory } from './components.ts'
 export type { ComponentDetail, ComponentInventory, ComponentsListOptions, DuplicateGroup } from './components.ts'
 export { rewriteClassString, rewriteToken, runCssClassRename } from './css-class-rename.ts'
@@ -7,6 +8,8 @@ export { runDelete } from './delete.ts'
 export type { DeleteOptions, DeleteReference, DeleteResult } from './delete.ts'
 export { buildDoctorFixes, formatAgentDoctorReport, formatDoctorReport, getChangedFiles, runDoctor } from './doctor.ts'
 export type { ChangedFilesOptions, DoctorCheck, DoctorFinding, DoctorFixResult, DoctorOptions, DoctorReport, FixableCheck } from './doctor.ts'
+export { createEngine } from './engine.ts'
+export type { Engine, EngineOptions } from './engine.ts'
 export { runMove } from './move.ts'
 export type { MoveOptions, MoveResult } from './move.ts'
 export type { ProfileEvent, ProfileSink } from './profile.ts'
@@ -18,36 +21,11 @@ export { runRename } from './rename.ts'
 export type { RenameOptions, RenameResult } from './rename.ts'
 export { runReplace } from './replace.ts'
 export type { ReplaceOptions, ReplaceResult } from './replace.ts'
-export {
-  buildDeclarationTree,
-  buildScanGraph,
-  buildUnusedDeclarations,
-  formatAgentDeclarationTree,
-  formatAgentHits,
-  formatDeclarationTree,
-  formatHits,
-  formatScanGraph,
-  formatUnusedDeclarations,
-  scan,
-} from './scan.ts'
-export type {
-  DeclarationTree,
-  DeclarationTreeFile,
-  DeclarationTreeItem,
-  ExportFilter,
-  ScanGraph,
-  ScanGraphEdge,
-  ScanGraphNode,
-  ScanHit,
-  ScanOptions,
-  UnusedDeclarationFile,
-  UnusedDeclarations,
-} from './scan.ts'
+export { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, formatAgentDeclarationTree, formatAgentHits, formatDeclarationTree, formatHits, formatScanGraph, formatUnusedDeclarations, scan } from './scan.ts'
+export type { DeclarationTree, DeclarationTreeFile, DeclarationTreeItem, ExportFilter, ScanGraph, ScanGraphEdge, ScanGraphNode, ScanHit, ScanOptions, UnusedDeclarationFile, UnusedDeclarations } from './scan.ts'
 export { applyLspEdits, offsetOfPosition, resolveNativeTsc, startTsServer } from './ts-server.ts'
 export type { LspDiagnostic, LspLocation, LspTextEdit, SourceSite, TsServer, TsServerOptions } from './ts-server.ts'
 export { printDiffs, summarize, writeChanges } from './util.ts'
 export type { FileChange } from './util.ts'
 export { findRegressions, formatRegressions } from './verify.ts'
 export type { Regression } from './verify.ts'
-export { runVueTemplateUnwrap, runVueTemplateWrap } from './vue-template-wrap.ts'
-export type { VueTemplateWrapOptions, VueTemplateWrapResult } from './vue-template-wrap.ts'

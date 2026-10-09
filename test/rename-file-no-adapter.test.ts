@@ -2,16 +2,10 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { describe, it, vi } from 'vitest'
+import { describe, it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
-// Simulate `npx @ripast/cli` with no @ripast/vue installed: no framework
-// adapter resolves. A pure-TS rename-file must still work.
-vi.mock('../packages/core/src/adapter.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../packages/core/src/adapter.ts')>()
-  return { ...actual, loadAdapter: async () => null }
-})
-
+// A core-only SDK instance must rewrite ordinary script consumers.
 const { runMove, runRename, runRenameFile } = await import('../packages/core/src/index.ts')
 const { parseSourceFile } = await import('@ripast/core/adapter')
 const { writeChanges } = await import('../packages/core/src/util.ts')
@@ -56,7 +50,7 @@ describe('rename-file without a framework adapter', () => {
       const imported = program.body.find((statement: any) => statement.type === 'ImportDeclaration')
       assert.equal(imported?.source.value, '../legacy/data/aggregate.mjs')
       assert.deepEqual(result.regressions, [])
-      assert.ok(!result.changes.some(change => change.rel.includes('.nuxt/')), 'generated configs must stay unchanged')
+      assert.ok(!result.changes.some(change => change.path === join(fx.dir, tsconfig)), 'selected configs must stay unchanged')
     }
     finally { fx.cleanup() }
   })
@@ -72,7 +66,7 @@ describe('rename-file without a framework adapter', () => {
       'deck/consumer.ts': 'import { amount } from \'../data/aggregate.mjs\'\nexport const total = amount + 1\n',
     }, false)
     try {
-      const options = { cwd: fx.dir, tsconfig, vue: false }
+      const options = { cwd: fx.dir, tsconfig }
       const result = operation === 'rename'
         ? await runRename('amount', 'totalAmount', options)
         : await runMove('amount', 'data/aggregate.mjs', 'data/target.mjs', options)
@@ -108,7 +102,7 @@ describe('rename-file without a framework adapter', () => {
     try {
       await assert.rejects(
         runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verify: 'none' }),
-        /requires the Vue adapter/,
+        /Required extension is missing/,
       )
     }
     finally { fx.cleanup() }

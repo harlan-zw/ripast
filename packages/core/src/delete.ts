@@ -1,109 +1,89 @@
+import type { ExtensionOptions } from './adapter.ts'
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { parse } from '@vue/compiler-sfc'
 import { walk } from 'oxc-walker'
-import { detectFrameworks, loadAdapter } from './adapter.ts'
+import { composeAdapters } from './adapter.ts'
+import { assertOperationSupport } from './capabilities.ts'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
-import { isInsideAutoImportScope } from './nuxt.ts'
-import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { isInsideAutoImportScope } from './source-policy.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
-import { findRegressions, findVueRegressions } from './verify.ts'
+import { findExtensionRegressions, findRegressions } from './verify.ts'
 
-export interface DeleteOptions {
+export interface DeleteOptions extends ExtensionOptions {
   cwd?: string
   verify?: boolean | VerifyMode
 }
-
 export interface DeleteReference {
   file: string
   line: number
   col: number
 }
-
 export interface DeleteResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
 }
-
 export async function runDelete(symbol: string, fromPath: string, opts: DeleteOptions = {}): Promise<DeleteResult> {
   const cwd = opts.cwd ?? process.cwd()
+  assertOperationSupport('delete', cwd, opts.extensions)
   const verifyMode = resolveVerifyMode(opts.verify)
   const fromAbs = resolve(cwd, fromPath)
   // Escaped identifiers and namespace use need not contain the symbol's text.
-  const candidatePaths = rgFiles('', { cwd, listAll: true })
-
+  const candidatePaths = rgFiles('', { cwd, listAll: true, extensions: opts.extensions })
   const before = readFileSync(fromAbs, 'utf8')
   const parsed = parseSource(fromAbs, before)
-  const decl = listTopLevelDeclarations(parsed.program).find(d =>
-    d.name === symbol && !d.isDefault && (d.kind !== 'variable' || d.declaratorCount === 1),
-  )
+  const decl = listTopLevelDeclarations(parsed.program).find(d => d.name === symbol && !d.isDefault && (d.kind !== 'variable' || d.declaratorCount === 1))
   if (!decl) {
-    throw new Error(
-      `ripast delete: no top-level declaration named "${symbol}" in ${fromPath} `
-      + `(supported: function, class, interface, type, enum, const/let/var with single declarator)`,
-    )
+    throw new Error(`ripast delete: no top-level declaration named "${symbol}" in ${fromPath} `
+      + `(supported: function, class, interface, type, enum, const/let/var with single declarator)`)
   }
-
-  const nuxt = decl.exported && (detectFrameworks(cwd).includes('nuxt')
-    || ['.nuxt', 'nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mts', 'nuxt.config.mjs'].some(path => existsSync(join(cwd, path))))
-  const nuxtAdapter = nuxt ? await loadAdapter('nuxt') : null
+  const adapter = composeAdapters(opts.extensions)
+  const implicit = decl.exported && Boolean(adapter?.autoImportScopes?.(cwd).size)
   let inspectedScopes = false
-  if (nuxt) {
-    if (!nuxtAdapter?.autoImportScopes || !nuxtAdapter.inspectAutoImportConsumers)
-      throw new Error('ripast delete: cannot inspect Nuxt auto-imports without @ripast/vue. Install @ripast/vue before deleting exported declarations.')
-    const scopes = nuxtAdapter.autoImportScopes(cwd)
+  if (implicit) {
+    if (!adapter?.autoImportScopes || !adapter.inspectAutoImportConsumers)
+      throw new Error('ripast delete: cannot inspect implicit imports without an extension. Inject the extension before deleting exported declarations.')
+    const scopes = adapter.autoImportScopes(cwd)
     inspectedScopes = isInsideAutoImportScope(fromAbs, scopes)
     if (inspectedScopes) {
-      const consumers = nuxtAdapter.inspectAutoImportConsumers({ cwd, symbol, fromAbs, files: candidatePaths, scopes })
+      const consumers = adapter.inspectAutoImportConsumers({ cwd, symbol, fromAbs, files: candidatePaths, scopes })
       if (consumers.length)
-        throw new Error(`ripast delete: cannot prove "${symbol}" is unused through Nuxt auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
+        throw new Error(`ripast delete: cannot prove "${symbol}" is unused through auto-imports in ${consumers.join(', ')}. Use explicit imports first.`)
     }
   }
-
   const server = await startTsServer(cwd)
   try {
-    const vueScripts = new Map<string, string>()
-    const scripts: { path: string, source: string, script: string, imports: ReturnType<typeof listImports> }[] = []
+    const extensionScripts = new Map<string, string>()
+    const scripts: {
+      path: string
+      source: string
+      script: string
+      imports: ReturnType<typeof listImports>
+    }[] = []
     for (const path of candidatePaths) {
       const source = readFileSync(path, 'utf8')
       let script = source
       let scriptPath = path
-      if (!isVuePath(path)) {
+      const extension = opts.extensions?.find(extension => extension.suffixes.some(suffix => path.endsWith(suffix)))
+      if (!extension) {
         server.open(path, source)
       }
       else {
-        const { descriptor, errors } = parse(source, { filename: path })
-        if (errors.length) {
-          const failure = errors[0]!
-          const position = 'loc' in failure ? failure.loc?.start : undefined
-          throw new Error(`ripast delete: cannot inspect ${relative(cwd, path)}:${position?.line ?? 1}:${position?.column ?? 1} because its Vue source has parse errors.`)
-        }
-        const blocks = [descriptor.script, descriptor.scriptSetup].filter(block => block !== null)
-        for (const block of blocks) {
-          const location = `${relative(cwd, path)}:${block.loc.start.line}:${block.loc.start.column}`
-          if (block.src)
-            throw new Error(`ripast delete: cannot inspect an external script at ${location}. Use an inline script first.`)
-          if (block.lang && !['ts', 'tsx', 'js', 'jsx'].includes(block.lang))
-            throw new Error(`ripast delete: cannot inspect the script language at ${location}. Use JavaScript or TypeScript first.`)
-        }
-        const extension = blocks.some(block => block.lang === 'tsx' || block.lang === 'jsx') ? 'tsx' : 'ts'
-        scriptPath = inspectionPath(path, extension)
-        const text = source.replace(/[^\r\n]/g, ' ').split('')
-        for (const block of blocks) {
-          for (let i = 0; i < block.content.length; i++)
-            text[block.loc.start.offset + i] = block.content[i]!
-        }
-        script = text.join('')
+        if (!extension.inspectionSource)
+          throw new Error(`Extension cannot inspect delete consumers: ${extension.name}`)
+        const inspected = extension.inspectionSource(path, source)
+        scriptPath = inspectionPath(path, inspected.extension)
+        script = inspected.source
         server.open(scriptPath, script)
-        vueScripts.set(scriptPath, path)
+        extensionScripts.set(scriptPath, path)
       }
       const imports = decl.exported ? listImports(script, scriptPath).filter(imp => imp.namespaceImport) : []
       if (decl.exported)
@@ -114,8 +94,8 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     const inspectedNamespaces = new Set<string>()
     for (const { path, source, script, imports } of scripts) {
       const dynamicImports: any[] = []
-      // Generated Nuxt metadata uses the consumer proof and reference checks below.
-      if (!nuxtAdapter?.isGeneratedPath?.(cwd, path)) {
+      // Generated metadata uses the consumer proof and reference checks below.
+      if (!adapter?.isGeneratedPath?.(cwd, path)) {
         walk(parseSource(path, script).program, {
           enter(node: any) {
             if (node.type === 'ImportExpression' || node.type === 'TSImportType')
@@ -180,11 +160,11 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     const references: DeleteReference[] = []
     for (const ref of await server.references(fromAbs, decl.nameStart)) {
       // Generated references stay live evidence unless consumer inspection already proved the provider unused.
-      if (nuxtAdapter?.isGeneratedPath?.(cwd, ref.path) && inspectedScopes)
+      if (adapter?.isGeneratedPath?.(cwd, ref.path) && inspectedScopes)
         continue
       if (ref.path === fromAbs && ref.start >= decl.start && ref.start < decl.end)
         continue
-      references.push({ file: relative(cwd, vueScripts.get(ref.path) ?? ref.path), line: ref.line, col: ref.col })
+      references.push({ file: relative(cwd, extensionScripts.get(ref.path) ?? ref.path), line: ref.line, col: ref.col })
     }
     references.sort((a, b) => `${a.file}\0${a.line}\0${a.col}`.localeCompare(`${b.file}\0${b.line}\0${b.col}`))
     if (references.length) {
@@ -192,25 +172,21 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
       const extra = references.length > 20 ? `\n... ${references.length - 20} more` : ''
       throw new Error(`ripast delete: "${symbol}" still has ${references.length} reference${references.length === 1 ? '' : 's'}\n\n${preview}${extra}\n\nUse ripast scan ${symbol} to inspect usages.`)
     }
-
     const after = pruneUnusedImports(removeDeclaration(before, parsed.comments, decl), fromAbs)
     const changes: FileChange[] = after === before
       ? []
       : [{ path: fromAbs, rel: relative(cwd, fromAbs), before, after }]
-
     const regressions = verifyMode === 'none'
       ? []
-      : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd) : [fromAbs])
+      : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd, undefined, opts.extensions) : [fromAbs])
     if (verifyMode === 'project')
-      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), async () => nuxtAdapter ?? await loadAdapter('vue')))
-
+      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), opts.extensions))
     return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions }
   }
   finally {
     server.dispose()
   }
 }
-
 function inspectionPath(path: string, extension: 'ts' | 'tsx'): string {
   let candidate = `${path}.${randomUUID()}.${extension}`
   while (existsSync(candidate))

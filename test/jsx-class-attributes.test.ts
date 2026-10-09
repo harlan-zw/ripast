@@ -1,7 +1,7 @@
 import type { Fixture } from './helpers.ts'
 import { parse } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
-import { runCssClassRename, runCssClassScan, writeChanges } from '../packages/core/src/index.ts'
+import { runCssClassRename, runCssClassScan, writeChanges } from './engine-sdk.ts'
 import { makeReactFixture, reactDiagnostics, renderReactFixture } from './react-helpers.ts'
 import { assertSolidDiagnostics, makeSolidFixture, renderSolidFixture } from './solid-helpers.ts'
 

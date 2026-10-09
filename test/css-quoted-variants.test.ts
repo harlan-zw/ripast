@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { rewriteClassString, runCssClassRename, runCssClassScan } from '@ripast/core'
 import { parse } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
+import { rewriteClassString, runCssClassRename, runCssClassScan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const rename = new Map([['old-token', 'new-token']])

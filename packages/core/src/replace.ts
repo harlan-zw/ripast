@@ -1,3 +1,4 @@
+import type { ExtensionOptions } from './adapter.ts'
 import type { ImportInfo } from './imports.ts'
 import type { VerifyMode } from './project.ts'
 import type { SourceSite, TsServer } from './ts-server.ts'
@@ -7,15 +8,15 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
-import { loadAdapter } from './adapter.ts'
+import { assertOperationSupport } from './capabilities.ts'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
-import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
+import { findTsconfig, isExtensionPath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
-import { findRegressions, findVueRegressions } from './verify.ts'
+import { findExtensionRegressions, findRegressions } from './verify.ts'
 
-export interface ReplaceOptions {
+export interface ReplaceOptions extends ExtensionOptions {
   cwd?: string
   glob?: string | string[]
   verify?: boolean | VerifyMode
@@ -23,34 +24,31 @@ export interface ReplaceOptions {
   /** Import specifier for the validated target, including framework aliases. */
   targetImport?: string
 }
-
 export interface ReplaceResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
 }
-
 interface ReplacementTarget {
   filePath: string
   importName: string
   isTypeOnly: boolean
   declarationFiles: readonly string[]
 }
-
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
   const cwd = opts.cwd ?? process.cwd()
+  assertOperationSupport('replace', cwd, opts.extensions)
   const verifyMode = resolveVerifyMode(opts.verify === undefined || opts.verify === true ? 'project' : opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : rgFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+    : rgFilesMany([to, '\\u'], { cwd, glob: opts.glob, extensions: opts.extensions }).filter(path => !isExtensionPath(path, opts.extensions))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripast replace: --target-import requires an import path without whitespace, quotes, or backslashes')
-
   const server = await startTsServer(cwd)
   try {
     const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
+    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, glob: opts.glob, extensions: opts.extensions }).filter(path => !isExtensionPath(path, opts.extensions) && !target.declarationFiles.includes(path))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     const referenceCache = new Map<string, SourceSite[]>()
@@ -62,16 +60,15 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
     }
     const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path)))
+      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), opts.extensions))
     if (verifyMode === 'project')
-      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), () => loadAdapter('vue')))
+      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), opts.extensions))
     return { changes, scanned: candidatePaths.length, regressions }
   }
   finally {
     server.dispose()
   }
 }
-
 async function findReplacementTarget(server: TsServer, paths: string[], symbol: string, cwd: string, targetScope?: string): Promise<ReplacementTarget> {
   const scopeAbs = targetScope ? resolve(cwd, targetScope) : null
   const matches: ReplacementTarget[] = []
@@ -91,7 +88,12 @@ async function findReplacementTarget(server: TsServer, paths: string[], symbol: 
         continue
       if (!targetScope && statement.source)
         continue
-      const specifier = statement.specifiers.find((item: { exported: { name?: string, value?: string } }) => (item.exported.name ?? item.exported.value) === symbol)
+      const specifier = statement.specifiers.find((item: {
+        exported: {
+          name?: string
+          value?: string
+        }
+      }) => (item.exported.name ?? item.exported.value) === symbol)
       if (!specifier)
         continue
       let isTypeOnly = statement.exportKind === 'type' || specifier.exportKind === 'type'
@@ -120,21 +122,17 @@ async function findReplacementTarget(server: TsServer, paths: string[], symbol: 
   }
   const uniqueFiles = new Set(matches.map(m => relative(cwd, m.filePath)))
   if (uniqueFiles.size > 1) {
-    throw new Error(
-      `ripast replace: "${symbol}" is exported from multiple files (${[...uniqueFiles].join(', ')}). `
-      + `Pass --target-scope <file> to pick one.`,
-    )
+    throw new Error(`ripast replace: "${symbol}" is exported from multiple files (${[...uniqueFiles].join(', ')}). `
+      + `Pass --target-scope <file> to pick one.`)
   }
   return matches[0]
 }
-
 interface ImportedBinding {
   imp: ImportInfo
   kind: 'named' | 'default'
   name?: string
   offset: number
 }
-
 async function replaceImportedSymbol(server: TsServer, referenceCache: Map<string, SourceSite[]>, path: string, source: string, from: string, to: string, target: ReplacementTarget, projectStyle: (path: string) => string, targetImport?: string): Promise<string> {
   const program = parseProgram(path, source)
   const imports = listImports(source, path, program)
@@ -149,9 +147,8 @@ async function replaceImportedSymbol(server: TsServer, referenceCache: Map<strin
   }
   if (!bindings.length)
     return source
-
-  // Keep the original local binding when the target name could capture references.
-  // It already resolves correctly at each semantic reference, including nested scopes.
+    // Keep the original local binding when the target name could capture references.
+    // It already resolves correctly at each semantic reference, including nested scopes.
   const occupied = usedIdentifierNames(program)
   for (const imp of imports) {
     for (const named of imp.named)
@@ -162,11 +159,13 @@ async function replaceImportedSymbol(server: TsServer, referenceCache: Map<strin
       occupied.add(imp.namespaceImport.name)
   }
   const localName = from !== to && occupied.has(to) ? from : to
-
   const referenceReplacements = new Map<number, string>()
   const bindingNames = new Set<number>()
   const qualifiedNames = new Set<number>()
-  const reexports: { start: number, end: number }[] = []
+  const reexports: {
+    start: number
+    end: number
+  }[] = []
   const unrelated = source.includes('\\u') ? unrelatedVariableIdentifierOffsets(program, from, new Set(bindings.map(binding => binding.offset))) : new Set<number>()
   walk(program, {
     enter(node: any) {
@@ -193,7 +192,6 @@ async function replaceImportedSymbol(server: TsServer, referenceCache: Map<strin
       }
     },
   })
-
   server.open(path, source)
   const edits: TextEdit[] = []
   let replaced = false
@@ -209,7 +207,6 @@ async function replaceImportedSymbol(server: TsServer, referenceCache: Map<strin
       replaced = true
     }
   }
-
   const working = new Map<ImportInfo, ImportInfo>()
   for (const binding of bindings) {
     const current = working.get(binding.imp) ?? { ...binding.imp, named: [...binding.imp.named] }
@@ -231,7 +228,6 @@ async function replaceImportedSymbol(server: TsServer, referenceCache: Map<strin
   const stripped = applyTextEdits(source, edits)
   if (!replaced)
     return stripped
-
   const style = bindings.find(binding => relativeScriptSpecifier(binding.imp.specifier))?.imp.specifier
     ?? imports.find(imp => relativeScriptSpecifier(imp.specifier))?.specifier
     ?? projectStyle(path)
@@ -255,7 +251,6 @@ async function replaceImportedSymbol(server: TsServer, referenceCache: Map<strin
   })
   return pruneUnusedImports(withImport, path)
 }
-
 async function cachedReferences(server: TsServer, cache: Map<string, SourceSite[]>, path: string, offset: number): Promise<SourceSite[]> {
   const key = `${path}:${offset}`
   const cached = cache.get(key)
@@ -269,13 +264,14 @@ async function cachedReferences(server: TsServer, cache: Map<string, SourceSite[
     cache.set(`${reference.path}:${reference.start}`, references)
   return references
 }
-
 function relativeScriptSpecifier(specifier: string): boolean {
-  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|vue|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
+  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
 }
-
 function inferProjectSpecifierStyle(cwd: string): (path: string) => string {
-  let entries: { directory: string[], style: string }[] | undefined
+  let entries: {
+    directory: string[]
+    style: string
+  }[] | undefined
   return (path) => {
     entries ??= projectScriptFiles(cwd).flatMap((file) => {
       const source = readFileSync(file, 'utf8')
@@ -283,7 +279,10 @@ function inferProjectSpecifierStyle(cwd: string): (path: string) => string {
     })
     const directory = dirname(path).split(/[\\/]/)
     let nearest = Infinity
-    const counts = new Map<string, { count: number, style: string }>()
+    const counts = new Map<string, {
+      count: number
+      style: string
+    }>()
     for (const entry of entries) {
       let common = 0
       while (common < directory.length && directory[common] === entry.directory[common])

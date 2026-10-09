@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
-import { runReplace, writeChanges } from '../packages/core/src/index.ts'
+import { runReplace, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const require = createRequire(import.meta.url)

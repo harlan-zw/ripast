@@ -1,49 +1,30 @@
-import type { ComponentInfo, ComponentUsageInfo } from './adapter.ts'
+import type { ComponentInfo, ComponentUsageInfo, ExtensionOptions } from './adapter.ts'
 import { isAbsolute, relative, sep } from 'node:path'
 import process from 'node:process'
-import { detectFrameworks, loadAdapter } from './adapter.ts'
 
-export interface ComponentsListOptions {
+export interface ComponentsListOptions extends ExtensionOptions {
   cwd?: string
   glob?: string[]
   source?: 'auto' | 'manifest' | 'filesystem'
   warn?: (msg: string) => void
 }
-
 export interface ComponentInventory {
   components: ComponentInfo[]
   duplicates: DuplicateGroup[]
   shadowed: ComponentInfo[]
 }
-
 export interface DuplicateGroup {
   name: string
   entries: ComponentInfo[]
 }
-
 export interface ComponentDetail {
   component: ComponentInfo
   candidates: ComponentInfo[]
   usages: ComponentUsageInfo[]
 }
-
-export async function loadVueComponentsAdapter(cwd?: string): Promise<{
-  listComponents: NonNullable<Awaited<ReturnType<typeof loadAdapter>>>['listComponents']
-  findComponentUsages: NonNullable<Awaited<ReturnType<typeof loadAdapter>>>['findComponentUsages']
-} | null> {
-  const frameworks = detectFrameworks(cwd ?? process.cwd())
-  const name = frameworks.includes('nuxt') ? 'nuxt' : frameworks.includes('vue') ? 'vue' : null
-  if (!name)
-    return null
-  const adapter = await loadAdapter(name)
-  if (!adapter?.listComponents || !adapter?.findComponentUsages)
-    return null
-  return { listComponents: adapter.listComponents, findComponentUsages: adapter.findComponentUsages }
-}
-
 export async function buildComponentInventory(opts: ComponentsListOptions = {}): Promise<ComponentInventory> {
   const cwd = opts.cwd ?? process.cwd()
-  const adapter = await loadVueComponentsAdapter(cwd)
+  const adapter = opts.extensions?.find(extension => extension.listComponents && extension.findComponentUsages)
   if (!adapter)
     return { components: [], duplicates: [], shadowed: [] }
   const components = adapter.listComponents!(cwd, { glob: opts.glob, source: opts.source, warn: opts.warn })
@@ -51,10 +32,9 @@ export async function buildComponentInventory(opts: ComponentsListOptions = {}):
   const shadowed = components.filter(c => c.shadowed)
   return { components, duplicates, shadowed }
 }
-
 export async function buildComponentDetail(name: string, opts: ComponentsListOptions = {}): Promise<ComponentDetail | null> {
   const cwd = opts.cwd ?? process.cwd()
-  const adapter = await loadVueComponentsAdapter(cwd)
+  const adapter = opts.extensions?.find(extension => extension.listComponents && extension.findComponentUsages)
   if (!adapter)
     return null
   const components = adapter.listComponents!(cwd, { glob: opts.glob, source: opts.source, warn: opts.warn })
@@ -69,11 +49,9 @@ export async function buildComponentDetail(name: string, opts: ComponentsListOpt
   const usages = adapter.findComponentUsages!(aliases, { cwd })
   return { component, candidates: matches, usages }
 }
-
 function groupDuplicates(components: ComponentInfo[]): DuplicateGroup[] {
   // Group by registered name when present (manifest source); otherwise by canonical name.
-  // This avoids false positives when Nuxt's pathPrefix:true gives nested files distinct
-  // registered names that happen to share a basename.
+  // Registered names can differ for files with matching basenames.
   const byKey = new Map<string, ComponentInfo[]>()
   for (const c of components) {
     const key = c.registeredName ?? c.name
@@ -89,11 +67,9 @@ function groupDuplicates(components: ComponentInfo[]): DuplicateGroup[] {
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
-
 function unique<T>(arr: T[]): T[] {
   return [...new Set(arr)]
 }
-
 export function formatInventory(inv: ComponentInventory): string {
   const lines: string[] = []
   lines.push(`${inv.components.length} component${inv.components.length === 1 ? '' : 's'}`)
@@ -121,7 +97,6 @@ export function formatInventory(inv: ComponentInventory): string {
   }
   return lines.join('\n')
 }
-
 export function formatAgentInventory(inv: ComponentInventory): string {
   const lines = ['components']
   lines.push(`total: ${inv.components.length}, duplicates: ${inv.duplicates.length}, shadowed: ${inv.shadowed.length}`)
@@ -137,13 +112,11 @@ export function formatAgentInventory(inv: ComponentInventory): string {
   }
   return lines.join('\n')
 }
-
 function relativeToCwd(abs: string): string {
   const cwd = process.cwd()
   const rel = relative(cwd, abs)
   return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) ? rel : abs
 }
-
 export function formatDetail(detail: ComponentDetail): string {
   const lines: string[] = []
   const c = detail.component
@@ -162,7 +135,8 @@ export function formatDetail(detail: ComponentDetail): string {
   }
   lines.push('')
   const byForm = new Map<string, number>()
-  for (const u of detail.usages) byForm.set(u.form, (byForm.get(u.form) ?? 0) + 1)
+  for (const u of detail.usages)
+    byForm.set(u.form, (byForm.get(u.form) ?? 0) + 1)
   lines.push(`usages: ${detail.usages.length}`)
   for (const [form, n] of [...byForm.entries()].sort((a, b) => b[1] - a[1]))
     lines.push(`  ${form.padEnd(20)} ${n}`)

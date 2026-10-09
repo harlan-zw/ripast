@@ -1,3 +1,4 @@
+import type { ExtensionOptions } from './adapter.ts'
 import type { TopLevelDeclaration } from './declarations.ts'
 import type { ImportInfo, ImportSpec } from './imports.ts'
 import type { ProfileSink } from './profile.ts'
@@ -9,61 +10,56 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { parse as parseSfc } from '@vue/compiler-sfc'
 import { walk } from 'oxc-walker'
-import { loadAdapter } from './adapter.ts'
+import { composeAdapters } from './adapter.ts'
+import { assertOperationSupport } from './capabilities.ts'
 import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { addOrMergeImport, appendStatement, computeSpecifier, isImportEmpty, listImports, parseProgram, pruneUnusedImports, renderImport, rewriteImports } from './imports.ts'
-import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
+import { findTsconfig, resolveVerifyMode, verifyScope } from './project.ts'
+import { isInsideAutoImportScope } from './source-policy.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, mergeFileChanges, rgFiles } from './util.ts'
-import { findRegressions, findVueRegressions } from './verify.ts'
+import { findExtensionRegressions, findRegressions } from './verify.ts'
 
-export interface MoveOptions {
+export interface MoveOptions extends ExtensionOptions {
   cwd?: string
   /** Configured project used for moves and verification. */
   tsconfig?: string
   verify?: boolean | VerifyMode
-  vue?: boolean
   profile?: ProfileSink
 }
-
 export interface MoveResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
 }
-
 export async function runMove(symbol: string, fromPath: string, toPath: string, opts: MoveOptions = {}): Promise<MoveResult> {
   const cwd = opts.cwd ?? process.cwd()
+  assertOperationSupport('move', cwd, opts.extensions)
+  const isExtension = (path: string) => opts.extensions?.some(extension => extension.suffixes.some(suffix => path.endsWith(suffix))) ?? false
   const profile = opts.profile
   const verifyMode = resolveVerifyMode(opts.verify)
-  const vueEnabled = opts.vue ?? true
+  const extensionsEnabled = true
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
-
   const fromAbs = resolve(cwd, fromPath)
   const toAbs = resolve(cwd, toPath)
   if (fromAbs === toAbs)
     throw new Error('ripast move: source and destination must be different files')
-  // Imports may spell identifiers with Unicode escapes. Inspect every script.
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, listAll: true }))
-
+    // Imports may spell identifiers with Unicode escapes. Inspect every script.
+  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, listAll: true, extensions: opts.extensions }))
   const fromOriginal = readFileSync(fromAbs, 'utf8')
   const fromSplit = timed(profile, 'split declarators', () => splitMultiDeclaratorIfNeeded(fromOriginal, fromAbs, symbol))
   const parsed = parseSource(fromAbs, fromSplit)
   const importStyle = listImports(fromSplit, fromAbs, parsed.program).find(imp => isRelativeScriptImport(imp.specifier))?.specifier
-    ?? candidatePaths.filter(path => path !== fromAbs && !isVuePath(path)).flatMap((path) => {
+    ?? candidatePaths.filter(path => path !== fromAbs && !isExtension(path)).flatMap((path) => {
       return listImports(readFileSync(path, 'utf8'), path).filter(imp => isRelativeScriptImport(imp.specifier)).map(imp => imp.specifier)
     })[0]
     ?? './placeholder.ts'
-
   const decl = timed(profile, 'find export', () => findMovableExport(parsed.program, symbol))
   if (!decl)
     throw new Error(`ripast move: no top-level export named "${symbol}" in ${fromPath} (supported: function, class, interface, type, enum, const with single declarator)`)
-
-  const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
+  const adapter = extensionsEnabled && tsconfigPath ? composeAdapters(opts.extensions) : null
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
     // Splitting a declaration changes offsets. Resolve against the exact source overlay.
@@ -71,16 +67,12 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     const referencedBindings = await timedAsync(profile, 'resolve declaration dependencies', () => referencedTopLevelBindings(server, fromAbs, fromSplit, parsed.program, decl))
     const localDeps = timed(profile, 'find local deps', () => findLocalSiblingDeps(parsed.program, decl, referencedBindings))
     if (localDeps.nonExported.length) {
-      throw new Error(
-        `ripast move: "${symbol}" depends on local non-exported symbol(s) [${localDeps.nonExported.join(', ')}] in ${fromPath}. `
-        + `Export them first, or move them together.`,
-      )
+      throw new Error(`ripast move: "${symbol}" depends on local non-exported symbol(s) [${localDeps.nonExported.join(', ')}] in ${fromPath}. `
+        + `Export them first, or move them together.`)
     }
-
     const usedImports = timed(profile, 'collect used imports', () => collectUsedImports(fromSplit, fromAbs, parsed.program, referencedBindings))
     const declText = timed(profile, 'copy declaration', () => declarationText(fromSplit, parsed.comments, decl))
     const remainingReferences = (await server.references(fromAbs, decl.nameStart)).filter(site => site.path === fromAbs && (site.start < decl.start || site.start >= decl.end)).length
-
     const toOriginal = existsSync(toAbs) ? readFileSync(toAbs, 'utf8') : ''
     let toAfter = toOriginal
     const targetDeclarations = listTopLevelDeclarations(parseProgram(toAbs, toOriginal))
@@ -97,16 +89,13 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     if (localDeps.namedImports.length || localDeps.defaultImport)
       toAfter = addOrMergeImport(toAfter, toAbs, computeSpecifier(toAbs, fromAbs, importStyle), { namedImports: localDeps.namedImports.map(name => ({ name })), defaultImport: localDeps.defaultImport })
     toAfter = appendStatement(toAfter, declText)
-
     let fromAfter = removeDeclaration(fromSplit, parsed.comments, decl)
     fromAfter = pruneUnusedImports(fromAfter, fromAbs)
     if (remainingReferences > 0)
       fromAfter = addOrMergeImport(fromAfter, fromAbs, computeSpecifier(fromAbs, toAbs, importStyle), { namedImports: [{ name: symbol }] })
-
     // Removing the last export must not turn module-local declarations into globals.
     if (fromAfter.trim() && !parseProgram(fromAbs, fromAfter).body.some((node: any) => node.type === 'ImportDeclaration' || node.type.startsWith('Export')))
       fromAfter = appendStatement(fromAfter, 'export {}')
-
     // Consumer import queries still refer to their original documents.
     server.open(fromAbs, fromOriginal)
     // Resolve bindings against the same text used to collect their offsets.
@@ -125,7 +114,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     }
     toAfter = rewriteImports(toAfter, destinationImports, replacements, [])
     server.open(toAbs, toOriginal)
-    const unsupportedConsumer = await findUnsupportedModuleConsumer(server, candidatePaths.filter(path => !vueAdapter?.isGeneratedPath?.(cwd, path)), fromAbs)
+    const unsupportedConsumer = await findUnsupportedModuleConsumer(server, candidatePaths.filter(path => !adapter?.isGeneratedPath?.(cwd, path)), fromAbs, opts.extensions)
     if (unsupportedConsumer)
       throw new Error(`ripast move: cannot move "${symbol}" while ${relative(cwd, unsupportedConsumer)} uses a namespace or dynamic import of ${fromPath}. Use named imports first.`)
     const changes: FileChange[] = []
@@ -133,10 +122,9 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
       changes.push({ path: fromAbs, rel: relative(cwd, fromAbs), before: fromOriginal, after: fromAfter })
     if (toAfter !== toOriginal)
       changes.push({ path: toAbs, rel: relative(cwd, toAbs), before: toOriginal, after: toAfter })
-
     await timedAsync(profile, 'rewrite import sites', async () => {
       for (const path of candidatePaths) {
-        if (path === fromAbs || path === toAbs || isVuePath(path))
+        if (path === fromAbs || path === toAbs || isExtension(path))
           continue
         const before = readFileSync(path, 'utf8')
         const importsAfter = await rewriteImportSites(server, path, before, fromAbs, toAbs, symbol)
@@ -145,65 +133,57 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
           changes.push({ path, rel: relative(cwd, path), before, after })
       }
     })
-
     const fromBasename = basename(fromAbs, extname(fromAbs))
-    if (vueAdapter && tsconfigPath && fromBasename && timed(profile, 'vue prefilter', () => vueAdapter.hasFilesContaining(cwd, fromBasename))) {
-      const vueChanges = await timedAsync(profile, 'vue import rewrite', () => vueAdapter.applyImportRewrite(tsconfigPath, cwd, fromAbs, toAbs))
-      for (const vc of vueChanges) {
+    if (adapter && tsconfigPath && fromBasename && timed(profile, 'extension prefilter', () => adapter.hasFilesContaining(cwd, fromBasename))) {
+      const extensionChanges = await timedAsync(profile, 'extension import rewrite', () => adapter.applyImportRewrite(tsconfigPath, cwd, fromAbs, toAbs))
+      for (const vc of extensionChanges) {
         if (!changes.some(c => c.path === vc.path))
           changes.push(vc)
       }
     }
-
-    if (vueAdapter?.autoImportScopes) {
-      const scopes = timed(profile, 'auto-import scopes', () => vueAdapter.autoImportScopes!(cwd))
-      if (isInsideAutoImportScope(fromAbs, scopes) && !isInsideAutoImportScope(toAbs, scopes) && vueAdapter.addExplicitImports) {
-        const autoImportChanges = timed(profile, 'nuxt auto-import consumers', () => vueAdapter.addExplicitImports!({
+    if (adapter?.autoImportScopes) {
+      const scopes = timed(profile, 'auto-import scopes', () => adapter.autoImportScopes!(cwd))
+      if (isInsideAutoImportScope(fromAbs, scopes) && !isInsideAutoImportScope(toAbs, scopes) && adapter.addExplicitImports) {
+        const autoImportChanges = timed(profile, 'implicit import consumers', () => adapter.addExplicitImports!({
           cwd,
           symbols: [symbol],
           toAbs,
           fromAbs,
           existingChanges: changes,
-          noScriptError: name => new Error(
-            `ripast move: "${name}" is auto-imported in Nuxt; moving to ${toAbs}`
+          noScriptError: name => new Error(`ripast move: "${name}" is implicitly imported; moving to ${toAbs}`
             + ` removes it from auto-import scope. Either keep it in`
-            + ` composables/utils/components, or add explicit imports first.`,
-          ),
+            + ` composables/utils/components, or add explicit imports first.`),
         }))
         mergeFileChanges(changes, autoImportChanges)
       }
       if (scopes.size)
-        vueAdapter.filterGeneratedChanges?.(cwd, changes)
+        adapter.filterGeneratedChanges?.(cwd, changes)
     }
-
     const regressions: Regression[] = []
     if (verifyMode !== 'none') {
-      const scriptChanges = changes.filter(c => !isVuePath(c.path))
-      const files = verifyScope(verifyMode, cwd, [fromAbs, toAbs, ...candidatePaths], scriptChanges.map(c => c.path))
+      const scriptChanges = changes.filter(c => !isExtension(c.path))
+      const files = verifyScope(verifyMode, cwd, [fromAbs, toAbs, ...candidatePaths], scriptChanges.map(c => c.path), opts.extensions)
       const verified = await timedAsync(profile, 'verify', () => findRegressions(server, scriptChanges, files))
       // Native module resolution reads disk, so a new directory cannot resolve yet.
       // Ignore only changed consumers pointing at this planned destination.
       const consumers = new Set(scriptChanges.filter(change => change.path !== toAbs).map(change => change.path))
       regressions.push(...verified.filter(regression => !consumers.has(regression.file)
         || (!isUnresolvedMoveTarget(regression, toAbs) && !(regression.code === 2307
-          && vueAdapter?.isPlannedImportTarget?.(cwd, regression.file, /Cannot find module '([^']+)'/.exec(regression.message)?.[1] ?? '', toAbs)))))
+          && adapter?.isPlannedImportTarget?.(cwd, regression.file, /Cannot find module '([^']+)'/.exec(regression.message)?.[1] ?? '', toAbs)))))
     }
-
-    if (vueEnabled && verifyMode === 'project') {
-      regressions.push(...await findVueRegressions(cwd, changes, tsconfigPath, async () => vueAdapter))
+    if (extensionsEnabled && verifyMode === 'project') {
+      regressions.push(...await findExtensionRegressions(cwd, changes, tsconfigPath, opts.extensions))
     }
-    else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {
-      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes)
-      regressions.push(...vueRegs)
+    else if (adapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isExtension(c.path))) {
+      const extensionRegressions = await adapter.regressions(tsconfigPath, cwd, changes)
+      regressions.push(...extensionRegressions)
     }
-
     return { changes, scanned: new Set([...candidatePaths, fromAbs, toAbs]).size, regressions }
   }
   finally {
     server.dispose()
   }
 }
-
 function isUnresolvedMoveTarget(regression: Regression, toAbs: string): boolean {
   if (regression.code !== 2307)
     return false
@@ -214,18 +194,12 @@ function isUnresolvedMoveTarget(regression: Regression, toAbs: string): boolean 
   const base = resolve(dirname(regression.file), specifier).replace(moduleExtension, '')
   return base === toAbs.replace(moduleExtension, '')
 }
-
 function findMovableExport(program: any, symbol: string): TopLevelDeclaration | null {
-  return listTopLevelDeclarations(program).find(d =>
-    d.name === symbol && d.exported && !d.isDefault && (d.kind !== 'variable' || d.declaratorCount === 1),
-  ) ?? null
+  return listTopLevelDeclarations(program).find(d => d.name === symbol && d.exported && !d.isDefault && (d.kind !== 'variable' || d.declaratorCount === 1)) ?? null
 }
-
 function splitMultiDeclaratorIfNeeded(source: string, path: string, symbol: string): string {
   const { program } = parseSource(path, source)
-  const target = listTopLevelDeclarations(program).find(d =>
-    d.kind === 'variable' && d.exported && !d.isDefault && d.declaratorCount > 1 && d.name === symbol,
-  )
+  const target = listTopLevelDeclarations(program).find(d => d.kind === 'variable' && d.exported && !d.isDefault && d.declaratorCount > 1 && d.name === symbol)
   if (!target)
     return source
   const lines = (target.node.declarations as any[]).map((declarator) => {
@@ -234,18 +208,15 @@ function splitMultiDeclaratorIfNeeded(source: string, path: string, symbol: stri
   })
   return source.slice(0, target.start) + lines.join('\n') + source.slice(target.end)
 }
-
 interface LocalSiblingDeps {
   nonExported: string[]
   namedImports: string[]
   defaultImport?: string
 }
-
 function isRelativeScriptImport(specifier: string): boolean {
   return specifier.startsWith('.') && !/[?#]/.test(specifier)
-    && !/\.(?:json|vue|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
+    && !/\.(?:json|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
 }
-
 function isBindingReference(node: any, parent: any): boolean {
   if (node.type === 'Identifier')
     return !isPropertyNamePosition(node, parent)
@@ -256,7 +227,6 @@ function isBindingReference(node: any, parent: any): boolean {
   return (parent.type === 'JSXOpeningElement' || parent.type === 'JSXClosingElement')
     && parent.name === node && !/^[a-z]/.test(node.name)
 }
-
 function findLocalSiblingDeps(program: any, decl: TopLevelDeclaration, referenced: Set<string>): LocalSiblingDeps {
   const out: LocalSiblingDeps = { nonExported: [], namedImports: [] }
   for (const other of listTopLevelDeclarations(program)) {
@@ -271,7 +241,6 @@ function findLocalSiblingDeps(program: any, decl: TopLevelDeclaration, reference
   }
   return out
 }
-
 /** Resolve only candidate names seen in the declaration, so nested shadows stay local. */
 async function referencedTopLevelBindings(server: TsServer, path: string, source: string, program: any, decl: TopLevelDeclaration): Promise<Set<string>> {
   const candidates = new Set<string>()
@@ -299,12 +268,10 @@ async function referencedTopLevelBindings(server: TsServer, path: string, source
   }
   return referenced
 }
-
 interface UsedImport {
   specifier: string
   spec: ImportSpec
 }
-
 async function withoutDestinationBindings(server: TsServer, fromAbs: string, toAbs: string, used: UsedImport, imports: ImportInfo[], declarations: TopLevelDeclaration[]): Promise<ImportSpec> {
   const alreadyDeclared = async (name: string, offset: number | undefined): Promise<boolean> => {
     const declaration = declarations.find(declaration => declaration.name === name)
@@ -328,7 +295,6 @@ async function withoutDestinationBindings(server: TsServer, fromAbs: string, toA
     defaultImport: defaultImport && await alreadyDeclared(defaultImport, defaultOffset) ? undefined : defaultImport,
   }
 }
-
 function collectUsedImports(source: string, path: string, program: any, referenced: Set<string>): UsedImport[] {
   const out: UsedImport[] = []
   for (const imp of listImports(source, path, program)) {
@@ -344,7 +310,6 @@ function collectUsedImports(source: string, path: string, program: any, referenc
   }
   return out
 }
-
 /** A relative specifier written from `fromAbs`, rewritten so it resolves the same target from `toAbs`. */
 function rebaseSpecifier(specifier: string, fromAbs: string, toAbs: string): string {
   if (!specifier.startsWith('.'))
@@ -352,7 +317,6 @@ function rebaseSpecifier(specifier: string, fromAbs: string, toAbs: string): str
   const target = resolve(dirname(fromAbs), specifier)
   return computeSpecifier(toAbs, target, specifier)
 }
-
 async function rewriteImportSites(server: TsServer, path: string, source: string, fromAbs: string, toAbs: string, symbol: string): Promise<string> {
   const program = parseProgram(path, source)
   const imports = listImports(source, path, program)
@@ -416,16 +380,18 @@ async function rewriteImportSites(server: TsServer, path: string, source: string
     return source
   return rewriteImports(source, imports, replacements, inserts)
 }
-
 function isSimpleSoleNamedImport(imp: ImportInfo, symbol: string): boolean {
   if (imp.defaultImport || imp.namespaceImport || imp.named.length !== 1)
     return false
   const only = imp.named[0]
   return only.name === symbol && !only.alias
 }
-
 async function rewriteReexports(server: TsServer, path: string, source: string, original: string, fromAbs: string, toAbs: string, symbol: string, isTypeOnly: boolean, sourceIsEmpty: boolean): Promise<string> {
-  const edits: { start: number, end: number, replacement: string }[] = []
+  const edits: {
+    start: number
+    end: number
+    replacement: string
+  }[] = []
   for (const node of parseProgram(path, source).body ?? []) {
     if (node.type === 'ExportAllDeclaration' && !node.exported) {
       const specifier = node.source.value
@@ -456,10 +422,8 @@ async function rewriteReexports(server: TsServer, path: string, source: string, 
     }
     else {
       // Import rewrites may shift this statement. Query the server at its original offset.
-      const originalNode = parseProgram(path, original).body.find((statement: any) =>
-        statement.type === 'ExportNamedDeclaration' && statement.source?.value === specifier
-        && statement.specifiers.some((spec: any) => (spec.local.name ?? spec.local.value) === symbol),
-      )
+      const originalNode = parseProgram(path, original).body.find((statement: any) => statement.type === 'ExportNamedDeclaration' && statement.source?.value === specifier
+        && statement.specifiers.some((spec: any) => (spec.local.name ?? spec.local.value) === symbol))
       const originalSpecifier = originalNode.specifiers.find((spec: any) => (spec.local.name ?? spec.local.value) === symbol)
       resolves = (await server.definition(path, originalSpecifier.local.start)).some(definition => definition.path === fromAbs)
     }
@@ -476,9 +440,7 @@ async function rewriteReexports(server: TsServer, path: string, source: string, 
   }
   return applyTextEdits(source, edits)
 }
-
-const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
-
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 /** Absolute file a relative specifier points at from `fromFile`, probing extensions and index files. */
 function relativeImportTarget(fromFile: string, specifier: string): string | null {
   if (!specifier.startsWith('.'))
@@ -512,29 +474,28 @@ function relativeImportTarget(fromFile: string, specifier: string): string | nul
   }
   return base
 }
-
 async function importResolvesTo(server: TsServer, path: string, imp: ImportInfo, targetAbs: string): Promise<boolean> {
   if (imp.specifier.startsWith('.'))
     return relativeImportTarget(path, imp.specifier) === targetAbs
-  // Path aliases and packages: ask the server where the binding is declared.
+    // Path aliases and packages: ask the server where the binding is declared.
   const offset = imp.named[0]?.localStart ?? imp.defaultImport?.start ?? imp.namespaceImport?.start
   if (offset === undefined)
     return false
   const definitions = await server.definition(path, offset)
   return definitions.some(d => d.path === targetAbs)
 }
-
-async function findUnsupportedModuleConsumer(server: TsServer, paths: string[], fromAbs: string): Promise<string | null> {
+async function findUnsupportedModuleConsumer(server: TsServer, paths: string[], fromAbs: string, extensions: ExtensionOptions['extensions']): Promise<string | null> {
   for (const path of paths) {
     const source = readFileSync(path, 'utf8')
     let script = source
     let scriptPath = path
-    if (isVuePath(path)) {
-      const { descriptor } = parseSfc(source, { filename: path })
-      const blocks = [descriptor.script, descriptor.scriptSetup].filter(block => block !== null)
-      script = blocks.map(block => block.content).join('\n')
-      const extension = blocks.some(block => block.lang === 'tsx' || block.lang === 'jsx') ? 'tsx' : 'ts'
-      scriptPath = `${path}.${randomUUID()}.${extension}`
+    const extension = extensions?.find(extension => extension.suffixes.some(suffix => path.endsWith(suffix)))
+    if (extension) {
+      if (!extension.inspectionSource)
+        throw new Error(`Extension cannot inspect move consumers: ${extension.name}`)
+      const inspected = extension.inspectionSource(path, source)
+      script = inspected.source
+      scriptPath = `${path}.${randomUUID()}.${inspected.extension}`
       server.open(scriptPath, script)
     }
     const program = parseProgram(scriptPath, script)

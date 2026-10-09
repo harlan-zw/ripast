@@ -1,8 +1,8 @@
-import type { TextEdit } from './util.ts'
+import type { TextEdit } from '@ripast/core/adapter'
+import { applyTextEdits } from '@ripast/core/adapter'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
-import { applyTextEdits } from './util.ts'
 
 export interface TemplateExpression {
   code: string

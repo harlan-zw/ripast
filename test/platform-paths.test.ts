@@ -4,9 +4,9 @@ import fs, { mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
-import { runDoctor, runMove, runRename, runRenameFile, writeChanges } from '@ripast/core'
 import vue from '@ripast/vue'
 import { it, vi } from 'vitest'
+import { createEngine, runDoctor, runMove, runRename, runRenameFile, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each(['app\\composables\\useValue.ts', 'layers\\base\\utils\\value.ts', 'app\\nested\\types.d.ts'])('doctor filters convention paths with Windows separators: %s', (file) => {
@@ -45,8 +45,8 @@ it('renames and moves through native paths containing spaces and Unicode', async
     'lib space/target.ts': '',
   })
   try {
-    writeChanges((await runRename('value', 'renamed', { cwd: fx.dir, vue: false })).changes)
-    const result = await runMove('renamed', join('src café', 'source.ts'), join('lib space', 'target.ts'), { cwd: fx.dir, vue: false })
+    writeChanges((await runRename('value', 'renamed', { cwd: fx.dir })).changes)
+    const result = await runMove('renamed', join('src café', 'source.ts'), join('lib space', 'target.ts'), { cwd: fx.dir })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     assert.equal(execFileSync(process.execPath, [join(fx.dir, 'src café/main.ts')], { encoding: 'utf8' }).trim(), '42')
@@ -61,7 +61,7 @@ it.each([false, true])('rewrites a file move and its own imports through native 
     'main.ts': 'import { value } from "./src café/source.ts"; console.log(value)\r\n',
   })
   try {
-    const result = await runRenameFile(join('src café', 'source.ts'), join('lib space', 'source.ts'), { cwd: fx.dir, vue: useVue, verify: false })
+    const result = await createEngine({ extensions: useVue ? [vue] : [] }).runRenameFile(join('src café', 'source.ts'), join('lib space', 'source.ts'), { cwd: fx.dir, verify: false })
     mkdirSync(dirname(result.fileMove.to), { recursive: true })
     renameSync(result.fileMove.from, result.fileMove.to)
     if (result.selfChange)
@@ -110,7 +110,7 @@ it.each([false, true])('plans a case-only file rename with vue=%s', async (useVu
     'main.ts': 'import { value } from "./Source.ts"; console.log(value)\n',
   })
   try {
-    const result = await runRenameFile('Source.ts', 'source.ts', { cwd: fx.dir, vue: useVue, verify: false })
+    const result = await createEngine({ extensions: useVue ? [vue] : [] }).runRenameFile('Source.ts', 'source.ts', { cwd: fx.dir, verify: false })
     const change = result.changes.find(c => c.path === join(fx.dir, 'main.ts'))
     assert.ok(change)
     assert.match(change.after, /from ['"]\.\/source\.ts['"]/)
@@ -129,7 +129,7 @@ it('accepts the source entry under another casing on a case-insensitive filesyst
   const lstatSpy = vi.spyOn(fs, 'lstatSync').mockImplementation(((path: fs.PathLike, options: any) => lstat(path === target ? source : path, options)) as typeof lstat)
   syncBuiltinESMExports()
   try {
-    const result = await runRenameFile('Source.ts', 'source.ts', { cwd: fx.dir, vue: false, verify: false })
+    const result = await runRenameFile('Source.ts', 'source.ts', { cwd: fx.dir, verify: false })
     assert.deepEqual(result.fileMove, { from: source, to: target })
     assert.equal(fx.read('Source.ts'), 'export const value = 42\n')
   }

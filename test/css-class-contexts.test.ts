@@ -1,7 +1,7 @@
 /* eslint-disable no-template-curly-in-string -- These fixtures exercise template source, including its interpolation syntax. */
-import { runCssClassRename, runCssClassScan } from '@ripast/core'
 import { parse } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
+import { runCssClassRename, runCssClassScan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('class expression contexts', () => {

@@ -1,15 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import process from 'node:process'
-import { hyphenateVueName, parseSourceFile, parseVueTemplateAst, posToLineCol, rgFilesMany } from '@ripast/core/adapter'
+import { posToLineCol } from '@ripast/core/adapter'
+import { rgFilesMany } from './discovery.ts'
+import { parseSourceFile } from './parse.ts'
+import { hyphenateVueName, parseVueTemplateAst } from './vue-template.ts'
 
-export type UsageForm
-  = | 'tag-pascal'
-    | 'tag-kebab'
-    | 'resolveComponent'
-    | 'dynamic-is-literal'
-    | 'dynamic-is-binding'
-
+export type UsageForm = 'tag-pascal' | 'tag-kebab' | 'resolveComponent' | 'dynamic-is-literal' | 'dynamic-is-binding'
 export interface ComponentUsage {
   name: string
   file: string
@@ -20,18 +17,14 @@ export interface ComponentUsage {
   /** Dynamic binding only: the bound identifier or expression text. */
   binding?: string
 }
-
 export interface FindUsagesOptions {
   cwd?: string
   glob?: string | string[]
 }
-
 const NODE_ELEMENT = 1
 const NODE_DIRECTIVE = 7
 const ATTRIBUTE = 6
-
 const DEFAULT_GLOB = ['*.vue', '*.ts', '*.tsx', '*.js', '*.jsx', '*.mjs']
-
 export function findComponentUsages(names: string[], opts: FindUsagesOptions = {}): ComponentUsage[] {
   const cwd = opts.cwd ?? process.cwd()
   const aliasIndex = buildAliasIndex(names)
@@ -47,7 +40,6 @@ export function findComponentUsages(names: string[], opts: FindUsagesOptions = {
   }
   return out.sort(sortUsages)
 }
-
 interface AliasIndex {
   /** Canonical name for any tag-name lookup (PascalCase or kebab). */
   byTag: Map<string, string>
@@ -56,7 +48,6 @@ interface AliasIndex {
   /** All alias strings used for ripgrep prefilter. */
   search: string[]
 }
-
 function buildAliasIndex(names: string[]): AliasIndex {
   const byTag = new Map<string, string>()
   const byString = new Set<string>()
@@ -73,12 +64,10 @@ function buildAliasIndex(names: string[]): AliasIndex {
   }
   return { byTag, byString, search: [...search] }
 }
-
 function candidateFiles(cwd: string, alias: AliasIndex, glob?: string | string[]): string[] {
   const globs = glob ? (Array.isArray(glob) ? glob : [glob]) : DEFAULT_GLOB
   return rgFilesMany(alias.search, { cwd, glob: globs })
 }
-
 function readOrEmpty(abs: string): string {
   try {
     return readFileSync(abs, 'utf8')
@@ -87,7 +76,6 @@ function readOrEmpty(abs: string): string {
     return ''
   }
 }
-
 function collectFromSfc(abs: string, source: string, cwd: string, alias: AliasIndex, out: ComponentUsage[]): void {
   const ast = parseVueTemplateAst(source)
   if (!ast)
@@ -115,7 +103,6 @@ function collectFromSfc(abs: string, source: string, cwd: string, alias: AliasIn
     }
   })
 }
-
 function isIsDirective(prop: any): boolean {
   if (!prop)
     return false
@@ -125,7 +112,6 @@ function isIsDirective(prop: any): boolean {
     return true
   return false
 }
-
 function collectDynamicIs(abs: string, source: string, cwd: string, prop: any, alias: AliasIndex, out: ComponentUsage[]): void {
   if (prop.type === ATTRIBUTE) {
     const value = prop.value?.content
@@ -162,7 +148,6 @@ function collectDynamicIs(abs: string, source: string, cwd: string, prop: any, a
     binding: trimmed,
   })
 }
-
 function walkTemplate(node: any, visit: (n: any) => void): void {
   if (!node || typeof node !== 'object')
     return
@@ -171,7 +156,6 @@ function walkTemplate(node: any, visit: (n: any) => void): void {
   for (const child of node.children ?? [])
     walkTemplate(child, visit)
 }
-
 function collectFromScript(abs: string, source: string, cwd: string, alias: AliasIndex, out: ComponentUsage[]): void {
   const file = parseSourceFile(abs.endsWith('.vue') ? `${abs}.ts` : abs, abs.endsWith('.vue') ? extractScriptOnly(source) ?? '' : source)
   const program = file.program
@@ -195,7 +179,6 @@ function collectFromScript(abs: string, source: string, cwd: string, alias: Alia
     out.push({ name: arg.value, file: abs, rel: relative(cwd, abs), line, col, form: 'resolveComponent' })
   })
 }
-
 function walkScript(node: any, visit: (n: any) => void): void {
   if (!node || typeof node !== 'object')
     return
@@ -206,21 +189,19 @@ function walkScript(node: any, visit: (n: any) => void): void {
       continue
     const value = node[key]
     if (Array.isArray(value)) {
-      for (const child of value) walkScript(child, visit)
+      for (const child of value)
+        walkScript(child, visit)
     }
     else if (value && typeof value === 'object' && typeof value.type === 'string') {
       walkScript(value, visit)
     }
   }
 }
-
 const SCRIPT_TAG_RE = /<script(\s[^>]*)?>([\s\S]*?)<\/script>/i
-
 function extractScriptOnly(source: string): string | null {
   const m = source.match(SCRIPT_TAG_RE)
   return m ? m[2] ?? null : null
 }
-
 function scriptOffsetIn(source: string): number {
   const re = /<script(\s[^>]*)?>/i
   const m = source.match(re)
@@ -228,11 +209,9 @@ function scriptOffsetIn(source: string): number {
     return 0
   return m.index + m[0].length
 }
-
 function sortUsages(a: ComponentUsage, b: ComponentUsage): number {
   return a.rel.localeCompare(b.rel) || a.line - b.line || a.col - b.col
 }
-
 export function findComponentUsage(name: string, opts: FindUsagesOptions = {}): ComponentUsage[] {
   return findComponentUsages([name], opts)
 }

@@ -3,8 +3,8 @@ import { symlinkSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { it, vi } from 'vitest'
 import { rgFiles, rgFilesMany } from '../packages/core/src/adapter.ts'
-import { scan } from '../packages/core/src/index.ts'
 import vueAdapter from '../packages/vue/src/index.ts'
+import { scan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([

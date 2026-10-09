@@ -1,6 +1,7 @@
+import type { FrameworkAdapter } from './adapter.ts'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { createPatch } from 'diff'
 import { parseSync } from 'oxc-parser'
@@ -17,20 +18,17 @@ export interface ParsedFile {
   program: any | null
   isSfc: boolean
 }
-
 export interface FileChange {
   path: string
   rel: string
   before: string
   after: string
 }
-
 export interface TextEdit {
   start: number
   end: number
   replacement: string
 }
-
 export function mergeFileChanges(target: FileChange[], incoming: FileChange[]): void {
   for (const change of incoming) {
     const existing = target.find(c => c.path === change.path)
@@ -40,7 +38,6 @@ export function mergeFileChanges(target: FileChange[], incoming: FileChange[]): 
       target.push(change)
   }
 }
-
 export function applyTextEdits(source: string, edits: TextEdit[]): string {
   if (!edits.length)
     return source
@@ -56,15 +53,12 @@ export function applyTextEdits(source: string, edits: TextEdit[]): string {
   out += source.slice(cursor)
   return out
 }
-
-const EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
-
+const EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 // Meta-project directories that aren't real source even when not in .gitignore.
 // `.git` is already excluded by ripgrep's built-in rules; the rest are workflow
 // caches that frequently leak into open-ended scans (claude worktrees, skilld
 // snapshots, etc.).
 const DEFAULT_EXCLUDES = ['!.claude/worktrees/**', '!**/.claude/worktrees/**']
-
 function discoverySelection(userGlobs: string[]) {
   // Only a literal directory segment opts into dependencies. Broad source globs do not.
   const normalizedGlobs = userGlobs.map((glob) => {
@@ -98,7 +92,6 @@ function discoverySelection(userGlobs: string[]) {
   })
   return { globs, select }
 }
-
 function runRipgrep(args: string[], cwd: string, fallback: () => string[]): string[] {
   const result = spawnSync('rg', ['--null', ...args], { cwd, encoding: 'utf8' })
   if (result.error) {
@@ -112,15 +105,21 @@ function runRipgrep(args: string[], cwd: string, fallback: () => string[]): stri
     throw new Error(`rg failed: ${result.stderr}`)
   return result.stdout.split('\0').filter(Boolean).map(p => resolve(cwd, p))
 }
-
-export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {
+export function rgFiles(pattern: string, opts: {
+  glob?: string | string[]
+  cwd?: string
+  fixedStrings?: boolean
+  listAll?: boolean
+  extensions?: readonly FrameworkAdapter[]
+} = {}): string[] {
   const cwd = opts.cwd ?? process.cwd()
-  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
+  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : [...EXTS, ...opts.extensions?.flatMap(extension => [...extension.suffixes]) ?? []].map(e => `*${e}`)
   const { globs, select } = discoverySelection(userGlobs)
   const args: string[] = []
   if (opts.listAll) {
     args.push('--files', '--hidden', '--no-messages')
-    for (const g of globs) args.push('-g', g)
+    for (const g of globs)
+      args.push('-g', g)
     args.push('.')
   }
   else {
@@ -137,73 +136,50 @@ export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?:
     return searchFiles(cwd, globs, opts.listAll ? { _tag: 'Files' } : { _tag: 'Text', patterns: [pattern] })
   }), cwd)
 }
-
 /**
  * Batch multiple fixed-string patterns into a single rg invocation via `-e <pat>`.
  * Returns the union of matching file paths. Empty `patterns` returns `[]` without spawning rg.
  */
-export function rgFilesMany(patterns: string[], opts: { glob?: string | string[], cwd?: string } = {}): string[] {
+export function rgFilesMany(patterns: string[], opts: {
+  glob?: string | string[]
+  cwd?: string
+  extensions?: readonly FrameworkAdapter[]
+} = {}): string[] {
   if (!patterns.length)
     return []
   const cwd = opts.cwd ?? process.cwd()
-  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
+  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : [...EXTS, ...opts.extensions?.flatMap(extension => [...extension.suffixes]) ?? []].map(e => `*${e}`)
   const { globs, select } = discoverySelection(userGlobs)
   const args: string[] = ['--files-with-matches', '--hidden', '--no-messages', '--fixed-strings']
-  for (const g of globs) args.push('-g', g)
-  for (const p of patterns) args.push('-e', p)
+  for (const g of globs)
+    args.push('-g', g)
+  for (const p of patterns)
+    args.push('-e', p)
   args.push('.')
   return select(runRipgrep(args, cwd, () => searchFiles(cwd, globs, { _tag: 'Text', patterns })), cwd)
 }
-
-const SFC_SCRIPT_RE = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi
-const SFC_SRC_ATTR_RE = /\bsrc\s*=/
-
-function extractScript(source: string): { start: number, end: number, code: string } | null {
-  const blocks: { start: number, end: number, code: string, hasSrc: boolean }[] = []
-  for (const m of source.matchAll(SFC_SCRIPT_RE)) {
-    const tagStart = m.index ?? 0
-    const tagEnd = source.indexOf('>', tagStart) + 1
-    const attrs = source.slice(tagStart, tagEnd)
-    const hasSrc = SFC_SRC_ATTR_RE.test(attrs)
-    const code = m[1]
-    const start = tagEnd
-    const end = start + code.length
-    blocks.push({ start, end, code, hasSrc })
-  }
-  const usable = blocks.filter(b => !b.hasSrc)
-  if (!usable.length)
-    return null
-  return usable.reduce((a, b) => (b.code.length > a.code.length ? b : a))
-}
-
-export function parseFile(path: string, cwd: string = process.cwd()): ParsedFile {
+export function parseFile(path: string, cwd: string = process.cwd(), extensions: readonly FrameworkAdapter[] = []): ParsedFile {
   const source = readFileSync(path, 'utf8')
-  return parseSourceFile(path, source, cwd)
+  return parseSourceFile(path, source, cwd, extensions)
 }
-
-export function parseSourceFile(path: string, source: string, cwd: string = process.cwd()): ParsedFile {
+export function parseSourceFile(path: string, source: string, cwd: string = process.cwd(), extensions: readonly FrameworkAdapter[] = []): ParsedFile {
   const rel = relative(cwd, path)
-  if (path.endsWith('.vue')) {
-    const block = extractScript(source)
-    if (!block)
-      return { path, rel, fullSource: source, scriptSource: '', scriptStart: 0, scriptEnd: 0, program: null, isSfc: true }
-    const { program, errors } = parseSync(`${path}.ts`, block.code)
-    if (errors?.length)
-      process.stderr.write(`parse warnings in ${rel}: ${errors.length}\n`)
-    return { path, rel, fullSource: source, scriptSource: block.code, scriptStart: block.start, scriptEnd: block.end, program, isSfc: true }
+  const extension = extensions.find(extension => extension.suffixes.some(suffix => path.endsWith(suffix)))
+  if (extension) {
+    if (!extension.parse)
+      throw new Error(`Extension cannot parse ${path}`)
+    return { ...extension.parse(path, source), path, rel, fullSource: source }
   }
   const { program, errors } = parseSync(path, source)
   if (errors?.length)
     process.stderr.write(`parse warnings in ${rel}: ${errors.length}\n`)
   return { path, rel, fullSource: source, scriptSource: source, scriptStart: 0, scriptEnd: source.length, program, isSfc: false }
 }
-
 export function spliceScript(file: ParsedFile, newScript: string): string {
   if (!file.isSfc)
     return newScript
   return file.fullSource.slice(0, file.scriptStart) + newScript + file.fullSource.slice(file.scriptEnd)
 }
-
 export function writeChanges(changes: FileChange[]): void {
   const targets = new Map<string, FileChange>()
   for (const change of changes) {
@@ -216,8 +192,12 @@ export function writeChanges(changes: FileChange[]): void {
     if (before !== change.before)
       throw new Error(`File changed since planning: ${change.rel}. Run the command again.`)
   }
-
-  const staged: { directory: string, tmp: string, target: string, backup: string | null }[] = []
+  const staged: {
+    directory: string
+    tmp: string
+    target: string
+    backup: string | null
+  }[] = []
   const committed: typeof staged = []
   try {
     for (const [target, change] of targets) {
@@ -262,20 +242,17 @@ export function writeChanges(changes: FileChange[]): void {
   for (const { directory } of staged)
     rmSync(directory, { recursive: true, force: true })
 }
-
 export function printDiffs(changes: FileChange[], out: NodeJS.WritableStream = process.stdout): void {
   for (const c of changes) {
     const patch = createPatch(c.rel, c.before, c.after, '', '', { context: 2 })
     out.write(patch)
   }
 }
-
 export interface ChangeSummary {
   files: number
   linesAdded: number
   linesRemoved: number
 }
-
 export function summarize(changes: FileChange[]): ChangeSummary {
   let added = 0
   let removed = 0
@@ -286,14 +263,18 @@ export function summarize(changes: FileChange[]): ChangeSummary {
   }
   return { files: changes.length, linesAdded: added, linesRemoved: removed }
 }
-
-function diffLineCounts(before: string, after: string): { added: number, removed: number } {
+function diffLineCounts(before: string, after: string): {
+  added: number
+  removed: number
+} {
   const beforeLines = before.split('\n')
   const afterLines = after.split('\n')
   const beforeBag = new Map<string, number>()
-  for (const l of beforeLines) beforeBag.set(l, (beforeBag.get(l) ?? 0) + 1)
+  for (const l of beforeLines)
+    beforeBag.set(l, (beforeBag.get(l) ?? 0) + 1)
   const afterBag = new Map<string, number>()
-  for (const l of afterLines) afterBag.set(l, (afterBag.get(l) ?? 0) + 1)
+  for (const l of afterLines)
+    afterBag.set(l, (afterBag.get(l) ?? 0) + 1)
   let removed = 0
   for (const [l, n] of beforeBag.entries()) {
     const a = afterBag.get(l) ?? 0
@@ -308,8 +289,10 @@ function diffLineCounts(before: string, after: string): { added: number, removed
   }
   return { added, removed }
 }
-
-export function posToLineCol(source: string, pos: number): { line: number, col: number } {
+export function posToLineCol(source: string, pos: number): {
+  line: number
+  col: number
+} {
   let line = 1
   let col = 1
   for (let i = 0; i < pos && i < source.length; i++) {
@@ -317,7 +300,59 @@ export function posToLineCol(source: string, pos: number): { line: number, col: 
       line++
       col = 1
     }
-    else { col++ }
+    else {
+      col++
+    }
   }
   return { line, col }
+}
+export type CommitPlan = {
+  _tag: 'Changes'
+  changes: FileChange[]
+} | {
+  _tag: 'FileRename'
+  changes: FileChange[]
+  from: string
+  to: string
+  before: string
+  after: string
+}
+/** Commit source relocation and consumer edits together, with rollback on failure. */
+export function commitChanges(plan: CommitPlan): void {
+  if (plan._tag === 'Changes') {
+    writeChanges(plan.changes)
+    return
+  }
+  if (readFileSync(plan.from, 'utf8') !== plan.before)
+    throw new Error(`File changed since planning: ${plan.from}`)
+  if (existsSync(plan.to)) {
+    const fromStat = statSync(plan.from)
+    const toStat = statSync(plan.to)
+    const caseOnly = dirname(plan.from) === dirname(plan.to)
+      && basename(plan.from).toLowerCase() === basename(plan.to).toLowerCase()
+      && fromStat.dev === toStat.dev && fromStat.ino === toStat.ino
+      && !readdirSync(dirname(plan.to)).includes(basename(plan.to))
+    if (!caseOnly)
+      throw new Error(`File rename target already exists: ${plan.to}`)
+  }
+  // Validate consumers before the first source relocation.
+  for (const change of plan.changes) {
+    const before = existsSync(change.path) ? readFileSync(change.path, 'utf8') : ''
+    if (before !== change.before)
+      throw new Error(`File changed since planning: ${change.path}`)
+  }
+  mkdirSync(dirname(plan.to), { recursive: true })
+  renameSync(plan.from, plan.to)
+  try {
+    writeChanges([{ path: plan.to, rel: plan.to, before: plan.before, after: plan.after }, ...plan.changes])
+  }
+  catch (error) {
+    try {
+      renameSync(plan.to, plan.from)
+    }
+    catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], 'File rename failed. Restoring the source path also failed.')
+    }
+    throw error
+  }
 }

@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { it } from 'vitest'
-import { runDelete } from '../packages/core/src/index.ts'
+import { runDelete } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each([

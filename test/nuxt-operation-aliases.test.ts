@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove } from '@ripast/core'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { runMove } from './engine-sdk.ts'
 
 function fixture() {
   const cwd = mkdtempSync(join(tmpdir(), 'ripast-nuxt-operation-'))

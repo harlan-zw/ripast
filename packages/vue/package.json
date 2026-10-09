@@ -54,6 +54,8 @@
     "@vue/compiler-sfc": "^3.5.43",
     "@vue/language-core": "^3.3.12",
     "@vue/language-service": "^3.3.12",
+    "oxc-parser": "^0.153.0",
+    "oxc-walker": "^1.1.1",
     "picomatch": "^4.0.7",
     "volar-service-typescript": "^0.0.71",
     "vscode-languageserver-protocol": "3.18.4",

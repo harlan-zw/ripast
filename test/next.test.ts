@@ -3,8 +3,8 @@ import { execFileSync, spawn } from 'node:child_process'
 import { cpSync, mkdirSync, readFileSync, renameSync, symlinkSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { resolveNativeTsc, runMove, runRename, runRenameFile, scan, writeChanges } from '@ripast/core'
 import { describe, expect, it } from 'vitest'
+import { resolveNativeTsc, runMove, runRename, runRenameFile, scan, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const require = createRequire(import.meta.url)
@@ -82,7 +82,7 @@ describe('next App Router fixture', () => {
     const fx = makeNextFixture()
     try {
       checkProject(fx.dir)
-      const result = await runRename('formatCount', 'displayCount', { cwd: fx.dir, vue: false, verify: 'project' })
+      const result = await runRename('formatCount', 'displayCount', { cwd: fx.dir, verify: 'project' })
       expect(result.regressions).toEqual([])
       expect(result.changes.map(change => change.rel).sort()).toEqual([
         'app/api/status/route.ts',
@@ -102,13 +102,13 @@ describe('next App Router fixture', () => {
     const fx = makeNextFixture()
     try {
       checkProject(fx.dir)
-      const renamed = await runRename('Counter', 'CountButton', { cwd: fx.dir, vue: false, verify: 'project' })
+      const renamed = await runRename('Counter', 'CountButton', { cwd: fx.dir, verify: 'project' })
       expect(renamed.regressions).toEqual([])
       writeChanges(renamed.changes)
 
       const file = await runRenameFile('components/Counter.tsx', 'components/controls/CountButton.tsx', {
         cwd: fx.dir,
-        vue: false,
+
         verify: 'project',
       })
       expect(file.regressions).toEqual([])
@@ -120,7 +120,7 @@ describe('next App Router fixture', () => {
 
       const moved = await runMove('formatCount', 'lib/count.ts', 'lib/display.ts', {
         cwd: fx.dir,
-        vue: false,
+
         verify: 'project',
       })
       expect(moved.regressions).toEqual([])

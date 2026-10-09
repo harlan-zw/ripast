@@ -1,19 +1,18 @@
 import type { FrameworkAdapter } from '@ripast/core/adapter'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { isInsideAutoImportScope, rgFiles } from '@ripast/core/adapter'
+import { isInsideAutoImportScope } from '@ripast/core/adapter'
+import { rgFiles } from './discovery.ts'
 import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath } from './nuxt-paths.ts'
 
 export const inspectNuxtAutoImportConsumers: NonNullable<FrameworkAdapter['inspectAutoImportConsumers']> = ctx => inspectConsumers(ctx, new Map(), 'Delete')
-
 export const validateNuxtAutoImportRename: NonNullable<FrameworkAdapter['validateAutoImportRename']> = (ctx) => {
   const consumers = inspectConsumers({ ...ctx, files: rgFiles('', { cwd: ctx.cwd, listAll: true }) }, new Map(ctx.changes.map(change => [change.path, change.after])), 'Rename')
   if (consumers.length)
     throw new Error(`ripast rename: unresolved Nuxt auto-import uses remain in ${consumers.join(', ')}. Use explicit imports first.`)
 }
-
 function inspectConsumers(ctx: Parameters<NonNullable<FrameworkAdapter['inspectAutoImportConsumers']>>[0], planned: Map<string, string>, purpose: 'Delete' | 'Rename'): string[] {
   const { cwd, symbol, fromAbs, files, scopes } = ctx
   const binding = loadNuxtBindingNames(cwd, symbol, fromAbs)

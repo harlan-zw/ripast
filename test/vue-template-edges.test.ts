@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { runVueTemplateUnwrap, runVueTemplateWrap, writeChanges } from '@ripast/core'
 import { parse } from '@vue/compiler-sfc'
 import { it } from 'vitest'
+import { runVueTemplateUnwrap, runVueTemplateWrap, writeChanges } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 it.each(['Outer/', 'Outer />', '<Outer>', 'img', 'Outer><Injected'])('wrap rejects an invalid parent: %s', async (wrapper) => {

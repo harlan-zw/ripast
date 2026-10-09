@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'vitest'
-import { formatAgentFileScanHits, formatFileScanHits, runCssClassFileScan, runCssClassScan } from '../packages/core/src/css-class-scan.ts'
+import { formatAgentFileScanHits, formatFileScanHits, runCssClassFileScan, runCssClassScan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('runCssClassScan', () => {

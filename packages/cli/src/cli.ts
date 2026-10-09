@@ -1,54 +1,13 @@
-import type { ExportFilter, VerifyMode } from '@ripast/core'
-import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
-import { dirname, relative, resolve } from 'node:path'
+import type { ExportFilter, VerifyMode } from './sdk.ts'
+import { existsSync, readFileSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import {
-  buildComponentDetail,
-  buildComponentInventory,
-  buildDeclarationTree,
-  buildDoctorFixes,
-  buildScanGraph,
-  buildUnusedDeclarations,
-  formatAgentDeclarationTree,
-  formatAgentDoctorReport,
-  formatAgentFileScanHits,
-  formatAgentHits,
-  formatAgentInventory,
-  formatAgentScanHits,
-  formatDeclarationTree,
-  formatDetail,
-  formatDoctorReport,
-  formatFileScanHits,
-  formatHits,
-  formatInventory,
-  formatRegressions,
-  formatScanGraph,
-  formatScanHits,
-  formatUnusedDeclarations,
-  getChangedFiles,
-  printDiffs,
-  resolveVerifyMode,
-  runCssClassFileScan,
-  runCssClassRename,
-  runCssClassScan,
-  runDelete,
-  runDoctor,
-  runMove,
-  runRename,
-  runRenameFile,
-  runReplace,
-  runVueTemplateUnwrap,
-  runVueTemplateWrap,
-  scan,
-  summarize,
-  writeChanges,
-} from '@ripast/core'
 import { runMain } from 'citty'
 import { agent, isAgent } from 'std-env'
 import { defineStrictCommand as defineCommand } from './command.ts'
+import { applyOperation, buildComponentDetail, buildComponentInventory, buildDeclarationTree, buildDoctorFixes, buildScanGraph, buildUnusedDeclarations, formatAgentDeclarationTree, formatAgentDoctorReport, formatAgentFileScanHits, formatAgentHits, formatAgentInventory, formatAgentScanHits, formatDeclarationTree, formatDetail, formatDoctorReport, formatFileScanHits, formatHits, formatInventory, formatRegressions, formatScanGraph, formatScanHits, formatUnusedDeclarations, getChangedFiles, printDiffs, resolveVerifyMode, runCssClassFileScan, runCssClassRename, runCssClassScan, runDelete, runDoctor, runMove, runRename, runRenameFile, runReplace, runVueTemplateUnwrap, runVueTemplateWrap, scan, summarize, writeChanges } from './sdk.ts'
 
 const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
-
 function splitGlobs(value: string): string[] {
   const globs: string[] = []
   let start = 0
@@ -93,11 +52,12 @@ const verifyModeArg = { type: 'string' as const, description: 'Verification mode
 const vueArg = { type: 'boolean' as const, default: true, description: 'Enable Volar pass for .vue files. Disable with --no-vue to skip the Volar pass.' }
 const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit machine-readable JSON (suppresses diff/summary text).' }
 const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto uses std-env isAgent.' }
-
 type OutputProfile = 'auto' | 'agent' | 'full'
 type GraphFormat = 'mermaid' | 'dot'
-
-function resolveProfile(raw: unknown): { profile: OutputProfile, agentProfile: boolean } {
+function resolveProfile(raw: unknown): {
+  profile: OutputProfile
+  agentProfile: boolean
+} {
   const profile = (raw as OutputProfile | undefined) ?? 'auto'
   if (profile !== 'auto' && profile !== 'agent' && profile !== 'full') {
     process.stderr.write(`ripast: --profile must be "auto", "agent", or "full".\n`)
@@ -105,7 +65,6 @@ function resolveProfile(raw: unknown): { profile: OutputProfile, agentProfile: b
   }
   return { profile, agentProfile: profile === 'agent' || (profile === 'auto' && isAgent) }
 }
-
 function resolveGraphFormat(raw: unknown): GraphFormat {
   if (raw !== 'mermaid' && raw !== 'dot') {
     process.stderr.write(`ripast scan: --graph must be "mermaid" or "dot".\n`)
@@ -113,11 +72,9 @@ function resolveGraphFormat(raw: unknown): GraphFormat {
   }
   return raw
 }
-
 function profileHeader(): string {
   return `# profile: agent${agent ? ` (${agent})` : ''}`
 }
-
 function resolveCliVerifyMode(verify: unknown, verifyMode: unknown, defaultMode: VerifyMode = 'touched'): VerifyMode {
   if (verifyMode != null) {
     if (verifyMode !== 'none' && verifyMode !== 'touched' && verifyMode !== 'project') {
@@ -128,19 +85,25 @@ function resolveCliVerifyMode(verify: unknown, verifyMode: unknown, defaultMode:
   }
   return resolveVerifyMode(verify === false ? false : defaultMode)
 }
-
 // Recover from agent quoting bugs where two positional paths get smushed into
 // `old`, leaving `new` empty (e.g. `rename-file "A.vue B.vue"` instead of two
 // args). Splits on whitespace, comma, or `:` when the literal `old` is missing
 // but the split halves resolve to a real source file + a non-existent target.
-function recoverSmushedPair(oldArg: string, newArg: string): { old: string, new: string, warning?: string } {
+function recoverSmushedPair(oldArg: string, newArg: string): {
+  old: string
+  new: string
+  warning?: string
+} {
   const cwd = process.cwd()
   const oldExists = !!oldArg && existsSync(resolve(cwd, oldArg))
   if (oldExists && newArg)
     return { old: oldArg, new: newArg }
   if (!oldArg)
     return { old: oldArg, new: newArg }
-  const candidates: [string, string][] = []
+  const candidates: [
+    string,
+    string,
+  ][] = []
   for (const sep of [/\s+/, /\s*,\s*/, /\s*:\s*/]) {
     const parts = oldArg.split(sep).filter(Boolean)
     if (parts.length === 2)
@@ -157,7 +120,6 @@ function recoverSmushedPair(oldArg: string, newArg: string): { old: string, new:
   }
   return { old: oldArg, new: newArg }
 }
-
 function resolveExportFilter(raw: unknown): ExportFilter {
   if (raw !== 'all' && raw !== 'exported' && raw !== 'local') {
     process.stderr.write(`ripast: --exports must be "all", "exported", or "local".\n`)
@@ -165,7 +127,6 @@ function resolveExportFilter(raw: unknown): ExportFilter {
   }
   return raw
 }
-
 const scanCmd = defineCommand({
   meta: { name: 'scan', description: 'rg-prefilter + AST-classify occurrences of an identifier.' },
   args: {
@@ -176,7 +137,7 @@ const scanCmd = defineCommand({
     profile: profileArg,
     json: { type: 'boolean', default: false },
   },
-  run({ args }) {
+  async run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
     const opts = {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
@@ -184,10 +145,10 @@ const scanCmd = defineCommand({
     }
     if (args.graph) {
       const graphFormat = resolveGraphFormat(args.graph)
-      process.stdout.write(`${formatScanGraph(buildScanGraph(args.pattern as string, opts), graphFormat)}\n`)
+      process.stdout.write(`${formatScanGraph(await buildScanGraph(args.pattern as string, opts), graphFormat)}\n`)
       return
     }
-    const hits = scan(args.pattern as string, opts)
+    const hits = await scan(args.pattern as string, opts)
     if (agentProfile && !args.json) {
       process.stdout.write(`${profileHeader()}\n${formatAgentHits(hits)}\n`)
       return
@@ -195,7 +156,6 @@ const scanCmd = defineCommand({
     process.stdout.write(`${formatHits(hits, args.json as boolean)}\n`)
   },
 })
-
 const renameCmd = defineCommand({
   meta: { name: 'rename', description: 'Scope-aware symbol rename via the native TypeScript server (handles type-only imports, shadowing, JSX).' },
   args: {
@@ -225,7 +185,6 @@ const renameCmd = defineCommand({
     emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
-
 const replaceCmd = defineCommand({
   meta: { name: 'replace', description: 'Replace an imported symbol with another project export; updates imports and call sites.' },
   args: {
@@ -251,7 +210,6 @@ const replaceCmd = defineCommand({
     emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
-
 const treeCmd = defineCommand({
   meta: { name: 'tree', description: 'Print a project declaration tree from top-level AST declarations, grouped by file.' },
   args: {
@@ -260,12 +218,12 @@ const treeCmd = defineCommand({
     profile: profileArg,
     json: jsonArg,
   },
-  run({ args }) {
+  async run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
     const exportFilter = args.exports == null
       ? agentProfile ? 'exported' : 'all'
       : resolveExportFilter(args.exports)
-    const tree = buildDeclarationTree({
+    const tree = await buildDeclarationTree({
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       exports: agentProfile && !args.json ? 'all' : exportFilter,
     })
@@ -277,7 +235,6 @@ const treeCmd = defineCommand({
     process.stdout.write(`${formatDeclarationTree(tree, !!args.json)}\n`)
   },
 })
-
 const unusedCmd = defineCommand({
   meta: { name: 'unused', description: 'Find unreferenced top-level declarations.' },
   args: {
@@ -294,7 +251,6 @@ const unusedCmd = defineCommand({
     process.stdout.write(`${formatUnusedDeclarations(unused, !!args.json)}\n`)
   },
 })
-
 const moveCmd = defineCommand({
   meta: { name: 'move', description: 'Move a top-level exported symbol between files; rewrites import sites project-wide.' },
   args: {
@@ -319,7 +275,6 @@ const moveCmd = defineCommand({
     emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
-
 const deleteCmd = defineCommand({
   meta: { name: 'delete', description: 'Delete an unused top-level declaration from a file; refuses if references remain.' },
   args: {
@@ -339,14 +294,23 @@ const deleteCmd = defineCommand({
     emitResult(r, !!args.apply, verifyMode !== 'none', !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
-
 interface MutatingResult {
-  changes: { path: string, rel: string, before: string, after: string }[]
+  changes: {
+    path: string
+    rel: string
+    before: string
+    after: string
+  }[]
   scanned: number
-  regressions: { file: string, line: number, col: number, code: number, message: string }[]
+  regressions: {
+    file: string
+    line: number
+    col: number
+    code: number
+    message: string
+  }[]
   warnings?: string[]
 }
-
 function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, json: boolean = false, agentProfile: boolean = false): void {
   const s = summarize(r.changes)
   const warnings = r.warnings ?? []
@@ -416,12 +380,12 @@ function emitResult(r: MutatingResult, apply: boolean, verify: boolean = false, 
   }
   if (apply) {
     writeChanges(r.changes)
-    for (const c of r.changes) process.stdout.write(`wrote ${c.rel}\n`)
+    for (const c of r.changes)
+      process.stdout.write(`wrote ${c.rel}\n`)
   }
   const suffix = apply ? '' : ' (dry run, pass --apply to write)'
   process.stdout.write(`\n${r.changes.length}/${r.scanned} files changed${suffix}\n`)
 }
-
 const renameFileCmd = defineCommand({
   meta: { name: 'rename-file', description: 'Rename a file and rewrite every import site (including .vue consumers and component-name refs).' },
   args: {
@@ -456,24 +420,8 @@ const renameFileCmd = defineCommand({
     const s = summarize(displayChanges)
     const blockedByRegression = verify && apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
-
-    if (wrote) {
-      mkdirSync(dirname(r.fileMove.to), { recursive: true })
-      renameSync(r.fileMove.from, r.fileMove.to)
-      try {
-        writeChanges(displayChanges)
-      }
-      catch (error) {
-        try {
-          renameSync(r.fileMove.to, r.fileMove.from)
-        }
-        catch (rollbackError) {
-          throw new AggregateError([error, rollbackError], 'File rename failed. Restoring the source path also failed.')
-        }
-        throw error
-      }
-    }
-
+    if (wrote)
+      await applyOperation(r)
     if (json) {
       process.stdout.write(`${JSON.stringify({
         applied: wrote,
@@ -532,7 +480,8 @@ const renameFileCmd = defineCommand({
       }
     }
     if (wrote) {
-      for (const c of r.changes) process.stdout.write(`wrote ${c.rel}\n`)
+      for (const c of r.changes)
+        process.stdout.write(`wrote ${c.rel}\n`)
       if (selfChangeDisplay)
         process.stdout.write(`wrote ${selfChangeDisplay.rel} (moved file, intra-file imports)\n`)
       process.stdout.write(`renamed ${args.old} -> ${args.new}\n`)
@@ -541,7 +490,6 @@ const renameFileCmd = defineCommand({
     process.stdout.write(`\n${r.changes.length} consumer file(s) updated${suffix}\n`)
   },
 })
-
 const cssClassRenameCmd = defineCommand({
   meta: { name: 'css-class-rename', description: 'Rename CSS utility class token(s) across strings, Vue templates, and @apply. Pass a single "from to" pair, or --map <file.json> for bulk. No typecheck verify.' },
   args: {
@@ -561,7 +509,6 @@ const cssClassRenameCmd = defineCommand({
     emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
-
 function buildRenameMap(from: string | undefined, to: string | undefined, mapPath: string | undefined): Map<string, string> {
   const hasPair = from != null && to != null
   const hasMap = !!mapPath
@@ -588,7 +535,10 @@ function buildRenameMap(from: string | undefined, to: string | undefined, mapPat
     process.stderr.write(`ripast css-class-rename: --map must be a flat JSON object, got ${Array.isArray(parsed) ? 'array' : typeof parsed}.\n`)
     process.exit(2)
   }
-  const entries: [string, string][] = []
+  const entries: [
+    string,
+    string,
+  ][] = []
   for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof v !== 'string') {
       process.stderr.write(`ripast css-class-rename: --map value for "${k}" is not a string.\n`)
@@ -606,7 +556,6 @@ function buildRenameMap(from: string | undefined, to: string | undefined, mapPat
   }
   return new Map(entries)
 }
-
 const cssClassScanCmd = defineCommand({
   meta: { name: 'css-class-scan', description: 'Tokenize every class site (strings, Vue class attrs, @apply) and emit sortable token or file frequency lists. Use --sort count-asc for rare tokens or --by file for files introducing the most unique classes.' },
   args: {
@@ -617,7 +566,7 @@ const cssClassScanCmd = defineCommand({
     profile: profileArg,
     json: jsonArg,
   },
-  run({ args }) {
+  async run({ args }) {
     const { agentProfile } = resolveProfile(args.profile)
     const by = resolveCssClassScanGroup(args.by)
     const base = {
@@ -625,7 +574,7 @@ const cssClassScanCmd = defineCommand({
       pattern: args.pattern ? (args.pattern as string).split(',') : undefined,
     }
     if (by === 'file') {
-      const hits = runCssClassFileScan({ ...base, sort: resolveCssClassFileScanSort(args.sort) })
+      const hits = await runCssClassFileScan({ ...base, sort: resolveCssClassFileScanSort(args.sort) })
       if (agentProfile && !args.json) {
         process.stdout.write(`${profileHeader()}\n${formatAgentFileScanHits(hits)}\n`)
         return
@@ -633,7 +582,7 @@ const cssClassScanCmd = defineCommand({
       process.stdout.write(`${formatFileScanHits(hits, !!args.json)}\n`)
       return
     }
-    const hits = runCssClassScan({ ...base, sort: resolveCssClassScanSort(args.sort) })
+    const hits = await runCssClassScan({ ...base, sort: resolveCssClassScanSort(args.sort) })
     if (agentProfile && !args.json) {
       process.stdout.write(`${profileHeader()}\n${formatAgentScanHits(hits)}\n`)
       return
@@ -641,7 +590,6 @@ const cssClassScanCmd = defineCommand({
     process.stdout.write(`${formatScanHits(hits, !!args.json)}\n`)
   },
 })
-
 function resolveCssClassScanGroup(raw: unknown): 'token' | 'file' {
   if (raw == null)
     return 'token'
@@ -651,7 +599,6 @@ function resolveCssClassScanGroup(raw: unknown): 'token' | 'file' {
   }
   return raw
 }
-
 function resolveCssClassScanSort(raw: unknown): 'count-desc' | 'count-asc' | 'token' {
   if (raw == null)
     return 'count-desc'
@@ -661,7 +608,6 @@ function resolveCssClassScanSort(raw: unknown): 'count-desc' | 'count-asc' | 'to
   }
   return raw
 }
-
 function resolveCssClassFileScanSort(raw: unknown): 'unique-desc' | 'unique-asc' | 'count-desc' | 'count-asc' | 'file' {
   if (raw == null)
     return 'unique-desc'
@@ -671,10 +617,8 @@ function resolveCssClassFileScanSort(raw: unknown): 'unique-desc' | 'unique-asc'
   }
   return raw
 }
-
 const scopeArg = { type: 'string' as const, description: 'Restrict to a single .vue file (skips glob/rg).' }
 const rootOnlyArg = { type: 'boolean' as const, default: false, description: 'Match only template-root elements (direct children of <template>); ignores nested matches.' }
-
 const vueTemplateWrapCmd = defineCommand({
   meta: { name: 'vue-template-wrap', description: 'Wrap every matching element in a Vue <template> with a parent component. Selector: "Tag" or "Tag[attr]" / "Tag[attr=value]". Wrapper: tag name with optional inline attributes (e.g. "ProPageStates name=\\"lh\\"").' },
   args: {
@@ -696,7 +640,6 @@ const vueTemplateWrapCmd = defineCommand({
     emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
-
 const vueTemplateUnwrapCmd = defineCommand({
   meta: { name: 'vue-template-unwrap', description: 'Remove every matching element in a Vue <template>, hoisting its children up one level. Inverse of vue-template-wrap.' },
   args: {
@@ -717,7 +660,6 @@ const vueTemplateUnwrapCmd = defineCommand({
     emitResult(r, !!args.apply, false, !!args.json, resolveProfile(args.profile).agentProfile)
   },
 })
-
 const componentsCmd = defineCommand({
   meta: { name: 'components', description: 'Inventory Vue/Nuxt components (manifest-first, glob fallback); flag shadowed entries and duplicate-name groups. Pass a name positional for the focused view.' },
   args: {
@@ -773,7 +715,6 @@ const componentsCmd = defineCommand({
     process.stdout.write(`${formatInventory(inv)}\n`)
   },
 })
-
 function resolveComponentsSource(raw: unknown): 'auto' | 'manifest' | 'filesystem' | undefined {
   if (raw == null)
     return undefined
@@ -783,7 +724,6 @@ function resolveComponentsSource(raw: unknown): 'auto' | 'manifest' | 'filesyste
   }
   return raw
 }
-
 const doctorCmd = defineCommand({
   meta: { name: 'doctor', description: 'Health checks over the AST graph. Suppress per-file with `// ripast-doctor-ignore-file[: c1,c2]` or per-line with `// ripast-doctor-ignore-next-line[: c1,c2]`.' },
   args: {
@@ -844,7 +784,8 @@ const doctorCmd = defineCommand({
       }
       else {
         writeChanges(fix.changes)
-        for (const c of fix.changes) process.stdout.write(`wrote ${c.rel}\n`)
+        for (const c of fix.changes)
+          process.stdout.write(`wrote ${c.rel}\n`)
       }
       if (fix.skipped.length)
         process.exit(1)
@@ -860,7 +801,6 @@ const doctorCmd = defineCommand({
       process.exit(1)
   },
 }, ['changed'])
-
 runMain(defineCommand({
   meta: { name: 'ripast', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
   subCommands: {

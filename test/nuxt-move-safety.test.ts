@@ -3,10 +3,10 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runMove } from '@ripast/core'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { runMove } from './engine-sdk.ts'
 
 it('preserves local Vue bindings when moving a Nuxt auto-import out of scope', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-move-safety-'))

@@ -1,6 +1,6 @@
-import { runCssClassRename, runCssClassScan } from '@ripast/core'
 import { compileTemplate, parse } from '@vue/compiler-sfc'
 import { describe, expect, it } from 'vitest'
+import { runCssClassRename, runCssClassScan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'
 
 const replacement = 'content-["a\\b`' + '$' + '{x}&"]'

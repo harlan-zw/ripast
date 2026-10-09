@@ -1,18 +1,15 @@
 import type { FileChange, FrameworkAdapter } from '@ripast/core/adapter'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { extractTemplateExpressions, rgFiles, scan } from '@ripast/core/adapter'
+import { visitClassTokens } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
-import {
-  applyVueFileRenameEdits,
-  applyVueImportRewrite,
-  applyVueRename,
-  hasVueFilesContaining,
-  vueRegressions,
-} from './bridge.ts'
+import { parse as parseSfc } from '@vue/compiler-sfc'
+import { applyVueFileRenameEdits, applyVueImportRewrite, applyVueRename, hasVueFilesContaining, vueRegressions } from './bridge.ts'
+import { rewriteFrameworkClasses, visitFrameworkClasses } from './class-source.ts'
 import { parseComponent, parseComponentSource } from './component-parse.ts'
 import { findComponentUsage, findComponentUsages } from './component-usages.ts'
 import { listComponents } from './components.ts'
+import { rgFiles, scan } from './discovery.ts'
 import { doctor } from './doctor.ts'
 import { finalizeVueFileRename } from './finalize-rename.ts'
 import { loadNuxtProviderPaths, nuxtConsumerContext } from './nuxt-bindings.ts'
@@ -21,6 +18,9 @@ import { inspectNuxtAutoImportConsumers, validateNuxtAutoImportRename } from './
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
 import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, loadNuxtPathAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
 import { planNuxtAutoImportRename } from './nuxt-rename.ts'
+import { inspectionSource, parseSourceFile } from './parse.ts'
+import { templateRename } from './template-rename.ts'
+import { extractTemplateExpressions } from './vue-template.ts'
 
 export { parseComponent, parseComponentSource } from './component-parse.ts'
 export type { ParsedComponentShape, PropSig } from './component-parse.ts'
@@ -28,9 +28,25 @@ export { findComponentUsage, findComponentUsages } from './component-usages.ts'
 export type { ComponentUsage, UsageForm } from './component-usages.ts'
 export { listComponents } from './components.ts'
 export type { ComponentKind, ListComponentsOptions, VueComponent } from './components.ts'
-
-const adapter: FrameworkAdapter = {
+const adapter: FrameworkAdapter & Required<Pick<FrameworkAdapter, 'regressions'>> = {
   name: 'vue',
+  suffixes: ['.vue'],
+  semanticService: 'vue',
+  configFiles: () => ['.nuxt/tsconfig.json', '.nuxt/tsconfig.app.json', '.nuxt/tsconfig.server.json', '.nuxt/tsconfig.shared.json', '.nuxt/tsconfig.node.json'],
+  operations: ['rename', 'move', 'delete', 'rename-file', 'replace'],
+  setup(hooks) {
+    hooks.hook('operation:plan', (context) => {
+      if (context.operation === 'replace' && hasVueFilesContaining(context.cwd, context.args[0]!))
+        throw new Error('Vue consumers do not support replace. Use rename or explicit imports first.')
+    })
+  },
+  parse: parseSourceFile,
+  inspectionSource,
+  templateRename,
+  classSource: {
+    visit: (file, visit) => visitFrameworkClasses({ ...file, extensions: [adapter] }, text => visitClassTokens(text, visit), source => parseSfc(source).descriptor),
+    rewrite: (file, map) => rewriteFrameworkClasses({ ...file, extensions: [adapter] }, map, source => parseSfc(source).descriptor),
+  },
   hasFilesContaining: hasVueFilesContaining,
   applyRename: applyVueRename,
   applyImportRewrite: applyVueImportRewrite,
@@ -66,13 +82,10 @@ const adapter: FrameworkAdapter = {
   findComponentUsages,
   doctor,
 }
-
 void parseComponent
 void parseComponentSource
 void findComponentUsage
-
 export default adapter
-
 const DEFAULT_NUXT_AUTO_IMPORT_DIRS = [
   'composables',
   'utils',
@@ -82,7 +95,6 @@ const DEFAULT_NUXT_AUTO_IMPORT_DIRS = [
   'server/utils',
   'middleware',
 ]
-
 function isNuxtProject(cwd: string): boolean {
   if (existsSync(join(cwd, 'nuxt.config.ts')) || existsSync(join(cwd, 'nuxt.config.js')) || existsSync(join(cwd, '.nuxt')))
     return true
@@ -98,7 +110,6 @@ function isNuxtProject(cwd: string): boolean {
     return false
   }
 }
-
 function nuxtAutoImportScopes(cwd: string): Set<string> {
   const scopes = new Set<string>()
   const contexts = new Set([cwd, ...rgFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
@@ -113,14 +124,15 @@ function nuxtAutoImportScopes(cwd: string): Set<string> {
     for (const dir of ['utils', 'composables', 'components', 'middleware'])
       scopes.add(resolve(sourceRoot, dir))
     const sharedRoot = resolve(context, literalString(configProperty(configProperty(config, 'dir'), 'shared')) ?? 'shared')
-    for (const dir of ['utils', 'types']) scopes.add(resolve(sharedRoot, dir))
-    for (const dir of configuredNuxtDirs(config)) scopes.add(resolve(sourceRoot, stripGlob(dir)))
+    for (const dir of ['utils', 'types'])
+      scopes.add(resolve(sharedRoot, dir))
+    for (const dir of configuredNuxtDirs(config))
+      scopes.add(resolve(sourceRoot, stripGlob(dir)))
     for (const provider of loadNuxtProviderPaths(context))
       scopes.add(provider)
   }
   return scopes
 }
-
 function defaultNuxtSourceDir(context: string, config: ts.Expression | undefined): string {
   const app = join(context, 'app')
   if (!existsSync(app))
@@ -134,7 +146,6 @@ function defaultNuxtSourceDir(context: string, config: ts.Expression | undefined
     .map(name => literalString(configProperty(configProperty(config, 'dir'), name)) ?? name)
   return directories.some(directory => existsSync(resolve(context, directory))) ? '.' : 'app'
 }
-
 function configuredNuxtDirs(config: ts.Expression | undefined): string[] {
   const dirs: string[] = []
   for (const array of [configProperty(configProperty(config, 'imports'), 'dirs'), configProperty(config, 'components')]) {
@@ -148,16 +159,13 @@ function configuredNuxtDirs(config: ts.Expression | undefined): string[] {
   }
   return dirs.filter(dir => !dir.startsWith('#') && !dir.startsWith('~') && !dir.startsWith('@'))
 }
-
 function stripGlob(dir: string): string {
   return dir.replace(/\/\*\*.*$/, '').replace(/\/\*.*$/, '')
 }
-
 const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs|vue)$/
 const ALIAS_PREFIX_RE = /^[~@#]/
 const IMPORT_FROM_RE = /\b(?:import|export)\b[^;\n]+from\s*(['"`])([^'"`]+)\1/g
 const DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*(['"`])([^'"`]+)\1\s*\)/g
-
 /**
  * Volar's getFileRenameEdits preserves the original alias prefix when rewriting
  * consumer imports. In a multi-app Nuxt workspace each app re-roots `~/*` to its
@@ -196,7 +204,6 @@ function rewriteUnportableAliasSpecifiers(cwd: string, changes: FileChange[], ne
   }
   return changes
 }
-
 function collectSpecifiers(source: string): Set<string> {
   const out = new Set<string>()
   IMPORT_FROM_RE.lastIndex = 0
@@ -206,12 +213,10 @@ function collectSpecifiers(source: string): Set<string> {
     out.add(m[2])
   return out
 }
-
 function replaceSpecifier(source: string, oldSpec: string, newSpec: string): string {
   const escaped = oldSpec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return source.replace(new RegExp(`(['"\`])${escaped}\\1`, 'g'), `$1${newSpec}$1`)
 }
-
 function toRelativeSpecifier(consumerFile: string, targetFile: string, oldSpec: string): string {
   const hasExt = MODULE_EXT_RE.test(oldSpec)
   let rel = relative(dirname(consumerFile), targetFile).replace(/\\/g, '/')
@@ -221,3 +226,5 @@ function toRelativeSpecifier(consumerFile: string, targetFile: string, oldSpec: 
     rel = `./${rel}`
   return rel
 }
+export { runVueTemplateUnwrap, runVueTemplateWrap } from './vue-template-wrap.ts'
+export type { VueTemplateWrapOptions, VueTemplateWrapResult } from './vue-template-wrap.ts'

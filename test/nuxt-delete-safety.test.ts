@@ -3,9 +3,9 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unli
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runDelete } from '@ripast/core'
 import ts from 'typescript'
 import { it } from 'vitest'
+import { runDelete } from './engine-sdk.ts'
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-delete-'))
