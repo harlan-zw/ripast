@@ -2,7 +2,10 @@
 
 Rename, replace, move, delete, and rename-file compare type diagnostics by default.
 New diagnostics block `--apply`. Results report checks that ran against proposed content.
-Agent JSON uses `verification: [[checker, scope, files, newErrors, ignoredErrors?]]`.
+JSON defaults to compact output in every environment. Agent detection only changes default text output.
+Every JSON response contains `_tag`, `command`, `base`, and `data`.
+Mutation tags are `Preview`, `Applied`, `Refused`, or `Empty`. Discovery uses `Result`; failures use `Error`.
+Compact JSON uses `data.verification: [[checker, scope, files, newErrors, ignoredErrors?]]`.
 `typescript` pulls error diagnostics from the native TypeScript language server.
 `vue` collects error diagnostics through the Vue adapter.
 Both compare before and proposed content. Existing errors match their mapped source locations.
@@ -11,7 +14,9 @@ Skipped checks return `disabled`, `no-changes`, or `not-applicable`.
 Full JSON uses tagged `Checked` or `Skipped` receipts with named fields.
 Zero new errors applies only to the reported scope. It does not prove a clean build or passing tests.
 Use `--verify-mode touched|project|none` to select scope. Keep verification enabled.
-Replacement checks the project by default. Other symbol refactors default to touched files.
+CLI replacement and file renames check the project by default. Other symbol refactors default to touched files.
+SDK replacement defaults to project checks. Other SDK refactors default to touched files.
+The SDK accepts `verifyMode: 'none' | 'touched' | 'project'`. Boolean `verify` options and legacy CLI verification flags fail.
 Project verification includes unchanged Vue consumers. It requires the Vue adapter when Vue files exist.
 Refactor globs limit edits without narrowing project verification. File discovery ignores still apply.
 CSS and Vue template transforms have no type verification. Run their relevant project checks.
