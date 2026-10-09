@@ -36,7 +36,7 @@ it.each([
 ] as const)('refuses a Nuxt %s provider rename without metadata with verify %s', async (directory, verify) => {
   const fx = fixture(directory)
   try {
-    await assert.rejects(runRename('format', 'pretty', { cwd: fx.dir, scope: fx.provider, verify }), /cannot resolve auto-import metadata/)
+    await assert.rejects(runRename('format', 'pretty', { cwd: fx.dir, scope: fx.provider, verifyMode: verify === false ? 'none' : verify }), /cannot resolve auto-import metadata/)
     assert.equal(readFileSync(join(fx.dir, fx.provider), 'utf8'), fx.before)
     assert.equal(readFileSync(join(fx.dir, 'app/pages/index.vue'), 'utf8'), fx.page)
     assert.equal(existsSync(join(fx.dir, '.nuxt/imports.d.ts')), false)
@@ -86,7 +86,7 @@ it.each([false, true])('permits explicit imports without Nuxt metadata when Nuxt
     ...(nuxt ? { 'nuxt.config.ts': 'export default {}' } : {}),
   })
   try {
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: path, verify: false })
+    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: path, verifyMode: 'none' as const })
     writeChanges(result.changes)
     const execution = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'consumer.ts'], { cwd: fx.dir, encoding: 'utf8' })
     assert.equal(execution.status, 0, execution.stderr)

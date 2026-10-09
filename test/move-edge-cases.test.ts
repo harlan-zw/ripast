@@ -17,7 +17,7 @@ it.each([
     'consumer.ts': `import { ${name} as local } from '${oldSpecifier}'\nexport const result = local()\n`,
   })
   try {
-    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })
     const consumer = result.changes.find(change => change.rel === 'consumer.ts')
     assert.ok(consumer, 'consumer must be rewritten')
     const imported = parseSourceFile('consumer.ts', consumer.after).program.body.find((node: any) => node.type === 'ImportDeclaration')
@@ -33,7 +33,7 @@ it('move preserves two local aliases for the same destination export', async () 
     'target.ts': 'import { value as existing } from \'./dependency.ts\'\nexport const before = existing\n',
   })
   try {
-    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `const target = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/target.ts`).href)}); console.log(target.before + target.helper())`], { encoding: 'utf8' })
     assert.equal(output.trim(), '84')
@@ -52,7 +52,7 @@ it.each([
     'target.ts': `${existingImport}\nexport const before = ${existingExpression}\n`,
   })
   try {
-    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `const target = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/target.ts`).href)}); console.log(target.before + target.helper())`], { encoding: 'utf8' })
     assert.equal(output.trim(), '84')
@@ -67,7 +67,7 @@ it('move upgrades an existing inline type import for value use', async () => {
     'target.ts': 'import { type Model } from \'./dependency.ts\'\nexport type Existing = Model\n',
   })
   try {
-    const result = await runMove('make', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runMove('make', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `const target = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/target.ts`).href)}); console.log(target.make())`], { encoding: 'utf8' })
     assert.equal(output.trim(), '42')

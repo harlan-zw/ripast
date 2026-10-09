@@ -14,7 +14,7 @@ it.skipIf(process.platform === 'win32')('rename-file SDK refuses a dangling targ
     await assert.rejects(runRenameFile('source.ts', 'target.ts', {
       cwd: fixture.dir,
       vue: false,
-      verify: false,
+      verifyMode: 'none' as const,
     }), /target "target\.ts" already exists/)
     assert.equal(readlinkSync(resolve(fixture.dir, 'target.ts')), 'missing.ts')
     assert.equal(fixture.read('source.ts'), 'export const value = 42\n')

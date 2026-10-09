@@ -11,7 +11,7 @@ it('rename throws on ambiguity across multiple files', async () => {
   })
   try {
     await assert.rejects(
-      async () => runRename('helper', 'newHelper', { cwd: fx.dir, verify: false }),
+      async () => runRename('helper', 'newHelper', { cwd: fx.dir, verifyMode: 'none' as const }),
       /declared in multiple files/,
     )
   }
@@ -24,7 +24,7 @@ it('rename --scope resolves ambiguity', async () => {
     'b.ts': 'export function helper() { return 2 }\nexport const bVal = helper()\n',
   })
   try {
-    const r = await runRename('helper', 'newHelper', { cwd: fx.dir, verify: false, scope: 'a.ts' })
+    const r = await runRename('helper', 'newHelper', { cwd: fx.dir, verifyMode: 'none' as const, scope: 'a.ts' })
     writeChanges(r.changes)
     assert.match(fx.read('a.ts'), /export function newHelper/)
     assert.match(fx.read('a.ts'), /aVal = newHelper\(\)/)
@@ -39,7 +39,7 @@ it('rename --all renames every declaration in every file', async () => {
     'b.ts': 'export function helper() {}\n',
   })
   try {
-    const r = await runRename('helper', 'newHelper', { cwd: fx.dir, verify: false, allowMultiple: true })
+    const r = await runRename('helper', 'newHelper', { cwd: fx.dir, verifyMode: 'none' as const, allowMultiple: true })
     writeChanges(r.changes)
     assert.match(fx.read('a.ts'), /export function newHelper/)
     assert.match(fx.read('b.ts'), /export function newHelper/)
@@ -54,7 +54,7 @@ it('rename --scope with no matching declaration gives a scope-specific error', a
   })
   try {
     await assert.rejects(
-      async () => runRename('helper', 'newHelper', { cwd: fx.dir, verify: false, scope: 'b.ts' }),
+      async () => runRename('helper', 'newHelper', { cwd: fx.dir, verifyMode: 'none' as const, scope: 'b.ts' }),
       /no declaration of "helper" in b\.ts/,
     )
   }

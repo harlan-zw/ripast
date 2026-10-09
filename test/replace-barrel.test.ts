@@ -18,7 +18,7 @@ it('migrates a same-name import to a curated barrel alias and merges imports', a
       cwd: fixture.dir,
       targetScope: 'server/index.ts',
       targetImport: '#site-config/server',
-      verify: false,
+      verifyMode: 'none' as const,
     })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'use.ts'], { cwd: fixture.dir, encoding: 'utf8' })
@@ -38,7 +38,7 @@ it('preserves wrapper implementations behind a selected barrel', async () => {
     'use.ts': 'import { old } from "./old.ts"\nconsole.log(old())\n',
   })
   try {
-    const result = await runReplace('old', 'better', { cwd: fixture.dir, targetScope: 'index.ts', verify: false })
+    const result = await runReplace('old', 'better', { cwd: fixture.dir, targetScope: 'index.ts', verifyMode: 'none' as const })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'use.ts'], { cwd: fixture.dir, encoding: 'utf8' })
     assert.equal(output.trim(), '11')
@@ -132,7 +132,7 @@ it('keeps default target discovery on direct declarations', async () => {
     'use.ts': 'import { old } from "./old.ts"\nconsole.log(old())\n',
   })
   try {
-    const result = await runReplace('old', 'better', { cwd: fixture.dir, verify: false })
+    const result = await runReplace('old', 'better', { cwd: fixture.dir, verifyMode: 'none' as const })
     writeChanges(result.changes)
     assert.match(fixture.read('use.ts'), /from ["']\.\/utils\.ts["']/)
   }

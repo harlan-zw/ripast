@@ -12,7 +12,7 @@ it('move rejects a destination alias before changing either module', async () =>
     'target.ts': 'import { helper as current } from \'./source.ts\'\nexport const result = current()\n',
   })
   try {
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false }), /Remove the alias/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false }), /Remove the alias/)
     const target = await import(pathToFileURL(`${fx.dir}/target.ts`).href)
     assert.equal(target.result, 42)
   }
@@ -25,7 +25,7 @@ it('move preserves a destination that already imports the moved declaration', as
     'target.ts': 'import { helper, other } from \'./source.ts\'\nexport const result = helper() + other\n',
   })
   try {
-    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `const target = await import(${JSON.stringify(pathToFileURL(`${fx.dir}/target.ts`).href)}); console.log(target.result)`], { encoding: 'utf8' })
     assert.equal(output.trim(), '43')
@@ -121,7 +121,7 @@ it('move fast path rewrites a sole named import by changing only the module spec
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     assert.match(fx.read('b.ts'), /^import \{ helper \} from '\.\/c\.ts'/)
     assert.doesNotMatch(fx.read('b.ts'), /\.\/a\.ts/)
   }
@@ -135,7 +135,7 @@ it('move keeps import alias when fast path is not safe', async () => {
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     const b = fx.read('b.ts')
     assert.match(b, /import \{ helper as h \} from ['"]\.\/c\.ts['"]/)
     assert.match(b, /h\(\)/)
@@ -150,7 +150,7 @@ it('move preserves default import when named import is moved', async () => {
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     const b = fx.read('b.ts')
     assert.match(b, /import main from ['"]\.\/a\.ts['"]/)
     assert.match(b, /import \{ helper \} from ['"]\.\/c\.ts['"]/)
@@ -166,7 +166,7 @@ it('move merges with an existing target import instead of duplicating simple imp
     'c.ts': 'export const existing = 1\n',
   })
   try {
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     const b = fx.read('b.ts')
     assert.match(b, /import \{ existing, helper \} from ['"]\.\/c\.ts['"]/)
     assert.equal((b.match(/\.\/c\.ts/g) ?? []).length, 1)
@@ -182,7 +182,7 @@ it('move handles type-only sole named imports', async () => {
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('MyType', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('MyType', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     assert.match(fx.read('b.ts'), /import type \{ MyType \} from ['"]\.\/c\.ts['"]/)
   }
   finally { fx.cleanup() }
@@ -195,7 +195,7 @@ it('move copies type-only imports as type-only imports', async () => {
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('MyType', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('MyType', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     assert.match(fx.read('c.ts'), /import (?:type \{ Base \}|\{ type Base \}) from ['"]\.\/types\.ts['"]/)
     assert.doesNotMatch(fx.read('c.ts'), /import \{ Base \}/)
   }
@@ -209,7 +209,7 @@ it('move handles multiline named imports via fallback path', async () => {
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     const b = fx.read('b.ts')
     assert.match(b, /other[\s\S]*from ['"]\.\/a\.ts['"]/)
     assert.match(b, /helper[\s\S]*from ['"]\.\/c\.ts['"]/)
@@ -224,7 +224,7 @@ it('move preserves extensionless import style when moving a simple import', asyn
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     assert.match(fx.read('b.ts'), /from ['"]\.\/c['"]/)
   }
   finally { fx.cleanup() }

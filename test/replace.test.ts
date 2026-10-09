@@ -14,7 +14,7 @@ it('replace leaves the replacement wrapper callable without recursion', async ()
     'consumer.ts': 'import { original } from "./original.ts"\nexport const result = original()\n',
   })
   try {
-    const result = await runReplace('original', 'replacement', { cwd: fx.dir, verify: false })
+    const result = await runReplace('original', 'replacement', { cwd: fx.dir, verifyMode: 'none' as const })
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
     assert.equal(consumer.result, 43)
@@ -33,7 +33,7 @@ it('replace resolves an explicit target outside the consumer glob', async () => 
       cwd: fx.dir,
       glob: 'consumer.ts',
       targetScope: 'helper.ts',
-      verify: false,
+      verifyMode: 'none' as const,
     })
     writeChanges(result.changes)
     const consumer = await import(pathToFileURL(resolve(fx.dir, 'consumer.ts')).href)
@@ -49,7 +49,7 @@ it('replace removes one old named import from a mixed import', async () => {
     'use.ts': 'import { old, keep } from \'./old.ts\'\nexport const value = old() + keep()\n',
   })
   try {
-    const result = await runReplace('old', 'better', { cwd: fx.dir, verify: false })
+    const result = await runReplace('old', 'better', { cwd: fx.dir, verifyMode: 'none' as const })
     writeChanges(result.changes)
     const use = fx.read('use.ts')
     assert.match(use, /import \{ keep \} from '\.\/old\.ts'/)
@@ -66,7 +66,7 @@ it('replace preserves aliased old imports by replacing local references', async 
     'use.ts': 'import { old as current } from \'./old.ts\'\nexport const value = current()\n',
   })
   try {
-    const result = await runReplace('current', 'next', { cwd: fx.dir, verify: false })
+    const result = await runReplace('current', 'next', { cwd: fx.dir, verifyMode: 'none' as const })
     writeChanges(result.changes)
     const use = fx.read('use.ts')
     assert.doesNotMatch(use, /current/)

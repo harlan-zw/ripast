@@ -49,13 +49,11 @@ it('replacement checks unchanged Vue consumers after changing a TypeScript expor
 })
 
 it.each([
-  { verify: undefined, blocked: true },
-  { verify: true, blocked: true },
-  { verify: 'project' as const, blocked: true },
-  { verify: 'touched' as const, blocked: false },
-  { verify: false, blocked: false },
-  { verify: 'none' as const, blocked: false },
-])('replacement respects verification $verify', async ({ verify, blocked }) => {
+  { verifyMode: undefined, blocked: true },
+  { verifyMode: 'project' as const, blocked: true },
+  { verifyMode: 'touched' as const, blocked: false },
+  { verifyMode: 'none' as const, blocked: false },
+])('replacement respects verification $verifyMode', async ({ verifyMode, blocked }) => {
   const fx = makeFixture({
     'original.ts': 'export function original() { return 42 }\n',
     'replacement.ts': 'export function replacement() { return "text" }\n',
@@ -63,7 +61,7 @@ it.each([
     'consumer.ts': 'import { value } from "./bridge.ts"\nexport const result: number = value\n',
   })
   try {
-    const result = await runReplace('original', 'replacement', { cwd: fx.dir, verify })
+    const result = await runReplace('original', 'replacement', { cwd: fx.dir, verifyMode })
     assert.equal(result.regressions.some(regression => regression.file.endsWith('/consumer.ts') && regression.code === 2322), blocked)
     assert.equal(result.changes[0]?.rel, 'bridge.ts')
   }

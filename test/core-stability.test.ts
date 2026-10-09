@@ -93,7 +93,7 @@ it('preserves destructured siblings when moving another variable from their stat
     'main.ts': 'import { moved, kept } from "./source.ts"\nconsole.log(moved + kept)\n',
   })
   try {
-    const result = await runMove('moved', 'source.ts', 'target.ts', { cwd: fx.dir, vue: false, verify: false })
+    const result = await runMove('moved', 'source.ts', 'target.ts', { cwd: fx.dir, vue: false, verifyMode: 'none' as const })
     writeChanges(result.changes)
     assert.equal(execFileSync(process.execPath, [join(fx.dir, 'main.ts')], { encoding: 'utf8' }).trim(), '3')
   }
@@ -103,7 +103,7 @@ it('preserves destructured siblings when moving another variable from their stat
 it('rejects moving an export into its own file', async () => {
   const fx = makeFixture({ 'source.ts': 'export const moved = 1\n' })
   try {
-    await assert.rejects(runMove('moved', 'source.ts', './source.ts', { cwd: fx.dir, vue: false, verify: false }))
+    await assert.rejects(runMove('moved', 'source.ts', './source.ts', { cwd: fx.dir, vue: false, verifyMode: 'none' as const }))
     assert.equal(fx.read('source.ts'), 'export const moved = 1\n')
   }
   finally { fx.cleanup() }
@@ -115,7 +115,7 @@ it('renames dollar-prefixed bindings and their shorthand properties', async () =
     'main.ts': 'import { $old } from "./source.ts"\nconsole.log(JSON.stringify({ $old }))\n',
   })
   try {
-    writeChanges((await runRename('$old', '$new', { cwd: fx.dir, vue: false, verify: false })).changes)
+    writeChanges((await runRename('$old', '$new', { cwd: fx.dir, vue: false, verifyMode: 'none' as const })).changes)
     assert.equal(execFileSync(process.execPath, [join(fx.dir, 'main.ts')], { encoding: 'utf8' }).trim(), '{"$new":3}')
   }
   finally { fx.cleanup() }
@@ -128,7 +128,7 @@ it('preserves named re-export aliases when moving their declaration', async () =
     'main.ts': 'import { publicName, kept } from "./barrel.ts"\nconsole.log(publicName + kept)\n',
   })
   try {
-    writeChanges((await runMove('moved', 'source.ts', 'target.ts', { cwd: fx.dir, vue: false, verify: false })).changes)
+    writeChanges((await runMove('moved', 'source.ts', 'target.ts', { cwd: fx.dir, vue: false, verifyMode: 'none' as const })).changes)
     assert.equal(execFileSync(process.execPath, [join(fx.dir, 'main.ts')], { encoding: 'utf8' }).trim(), '3')
   }
   finally { fx.cleanup() }
@@ -140,7 +140,7 @@ it.each(['old', '$old'])('reports multiline stale imports of %s', async (name) =
     'consumer.ts': `import {\n  ${name},\n} from "unresolved-package"\nconsole.log(${name})\n`,
   })
   try {
-    const result = await runRename(name, 'updated', { cwd: fx.dir, vue: false, verify: false })
+    const result = await runRename(name, 'updated', { cwd: fx.dir, vue: false, verifyMode: 'none' as const })
     assert.equal(result.warnings.length, 1)
     assert.match(result.warnings[0], /consumer\.ts/)
   }

@@ -21,7 +21,7 @@ try {
   writeFileSync(join(cwd, 'consumer.ts'), `import { runRename } from 'ripide-api'
 import { parseSourceFile } from 'ripide-api/adapter'
 import vueAdapter from 'ripide-vue'
-const result = await runRename('target', 'next', { cwd: process.cwd(), vue: false, verify: false })
+const result = await runRename('target', 'next', { cwd: process.cwd(), vue: false, verifyMode: 'none' })
 if (!result.changes.some(change => change.after.includes('export const next')))
   throw new Error('SDK rename did not produce the expected edit')
 parseSourceFile('source.ts', 'export const target = 1')

@@ -4,12 +4,18 @@ import { rgFiles } from './util.ts'
 
 export type VerifyMode = 'none' | 'touched' | 'project'
 
-export function resolveVerifyMode(verify: boolean | VerifyMode | undefined): VerifyMode {
-  if (verify === false || verify === 'none')
-    return 'none'
-  if (verify === 'project')
-    return 'project'
-  return 'touched'
+export function resolveVerifyMode(value: unknown, defaultMode: VerifyMode = 'touched'): VerifyMode {
+  if (value === undefined)
+    return defaultMode
+  if (value === 'none' || value === 'touched' || value === 'project')
+    return value
+  throw new Error('ripide: verifyMode must be none, touched, or project.')
+}
+
+export function resolveVerificationOptions(opts: { verifyMode?: VerifyMode }, defaultMode: VerifyMode = 'touched'): VerifyMode {
+  if (Object.hasOwn(opts, 'verify'))
+    throw new Error('ripide: verify was removed. Use verifyMode: none, touched, or project.')
+  return resolveVerifyMode(opts.verifyMode, defaultMode)
 }
 
 export function findTsconfig(cwd: string): string | null {

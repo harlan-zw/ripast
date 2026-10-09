@@ -18,7 +18,7 @@ it('rename is complete: scan(oldName) is empty post-rename', async () => {
     'c.ts': 'export { foo as re } from \'./a.ts\'\n',
   })
   try {
-    writeChanges((await runRename('foo', 'bar', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runRename('foo', 'bar', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     const stray = scan('foo', { cwd: fx.dir })
     assert.equal(stray.length, 0, `expected 0 stray "foo" refs, got ${stray.length}: ${JSON.stringify(stray)}`)
   }
@@ -28,9 +28,9 @@ it('rename is complete: scan(oldName) is empty post-rename', async () => {
 it('rename: second invocation throws (symbol no longer exists)', async () => {
   const fx = makeFixture({ 'a.ts': 'export function foo() {}\n' })
   try {
-    writeChanges((await runRename('foo', 'bar', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runRename('foo', 'bar', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     await assert.rejects(
-      async () => runRename('foo', 'bar', { cwd: fx.dir, verify: false }),
+      async () => runRename('foo', 'bar', { cwd: fx.dir, verifyMode: 'none' as const }),
       /no declaration of "foo" found/,
     )
   }
@@ -44,7 +44,7 @@ it('move is complete: fromFile no longer declares the symbol', async () => {
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     assert.doesNotMatch(fx.read('a.ts'), /export function helper/, 'helper removed from a.ts')
     assert.match(fx.read('c.ts'), /export function helper/, 'helper present in c.ts')
   }
@@ -57,9 +57,9 @@ it('move: second invocation throws (symbol no longer in source file)', async () 
     'c.ts': '',
   })
   try {
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
     await assert.rejects(
-      async () => runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false }),
+      async () => runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const }),
       /no top-level export named "helper"/,
     )
   }
@@ -76,8 +76,8 @@ it('move then reverse move: scan counts conserved', async () => {
     const beforeHelper = scan('helper', { cwd: fx.dir }).length
     const beforeOther = scan('other', { cwd: fx.dir }).length
 
-    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verify: false })).changes)
-    writeChanges((await runMove('helper', 'c.ts', 'a.ts', { cwd: fx.dir, verify: false })).changes)
+    writeChanges((await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
+    writeChanges((await runMove('helper', 'c.ts', 'a.ts', { cwd: fx.dir, verifyMode: 'none' as const })).changes)
 
     assert.equal(scan('helper', { cwd: fx.dir }).length, beforeHelper, 'helper conserved')
     assert.equal(scan('other', { cwd: fx.dir }).length, beforeOther, 'other untouched')
