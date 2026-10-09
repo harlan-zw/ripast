@@ -5,6 +5,10 @@ export function defineStrictCommand<const T extends ArgsDef>(definition: Command
   return defineCommand({
     ...definition,
     async setup(context) {
+      if (definition.subCommands) {
+        await definition.setup?.(context)
+        return
+      }
       if (!definition.subCommands) {
         const args: ArgsDef = (typeof definition.args === 'function' ? await definition.args() : await definition.args) ?? {}
         if (optionalValues.length) {
@@ -55,6 +59,39 @@ export function defineStrictCommand<const T extends ArgsDef>(definition: Command
         const extra = context.args._[positionalCount]
         if (extra !== undefined)
           throw new Error(`Unexpected positional argument: ${extra}. Run the command with --help.`)
+      }
+      const choices: Record<string, string[]> = {
+        profile: ['auto', 'agent', 'full'],
+        verifyMode: ['none', 'touched', 'project'],
+        exports: ['all', 'exported', 'local'],
+        graph: ['mermaid', 'dot'],
+        source: ['auto', 'manifest', 'filesystem'],
+      }
+      for (const [name, values] of Object.entries(choices)) {
+        const value = context.args[name]
+        if (value !== undefined && !values.includes(String(value)))
+          throw new Error(`Option --${name} must be one of: ${values.join(', ')}.`)
+      }
+      for (const name of ['limit', 'offset', 'code']) {
+        const value = context.args[name]
+        if (value !== undefined && (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value))))
+          throw new Error(`Option --${name} requires a non-negative integer.`)
+      }
+      if (context.args.graph && context.args.json)
+        throw new Error('Options --graph and --json cannot be combined. Use scan --json for structured hits.')
+      if ((context.args.fields || context.args.minify) && !context.args.json)
+        throw new Error('Options --fields and --minify require --json.')
+      if (context.args.apply && context.args.fix === false)
+        throw new Error('Option --apply requires --fix for doctor.')
+      const meta = typeof definition.meta === 'function' ? await definition.meta() : await definition.meta
+      if (context.args.fields && !['scan', 'tree', 'unused', 'components', 'doctor', 'css-class-scan'].includes(meta?.name ?? ''))
+        throw new Error('Option --fields is available for discovery commands only.')
+      if (context.args.kind) {
+        const kinds = ['identifier-reference', 'identifier-binding', 'import-specifier', 'member-access', 'property', 'jsx', 'string-literal', 'label']
+        for (const kind of String(context.args.kind).split(',')) {
+          if (!kinds.includes(kind))
+            throw new Error(`Unknown scan kind: ${kind}. Choose: ${kinds.join(', ')}.`)
+        }
       }
       await definition.setup?.(context)
     },

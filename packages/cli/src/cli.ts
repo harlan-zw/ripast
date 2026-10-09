@@ -1,8 +1,10 @@
+import type { CommandDef } from 'citty'
 import type { ExportFilter, Verification, VerifyMode } from 'ripide-api'
-import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { runMain } from 'citty'
+import { fileURLToPath } from 'node:url'
+import { renderUsage, runCommand, showUsage } from 'citty'
 import {
   buildChangeManifest,
   buildComponentDetail,
@@ -24,12 +26,13 @@ import {
   formatFileScanHits,
   formatHits,
   formatInventory,
-  formatRegressions,
+  formatOutputPage,
   formatScanGraph,
   formatScanHits,
   formatUnusedDeclarations,
   formatVerification,
   getChangedFiles,
+  outputPath,
   printDiffs,
   resolveVerifyMode,
   runCssClassFileScan,
@@ -44,6 +47,8 @@ import {
   runVueTemplateUnwrap,
   runVueTemplateWrap,
   scan,
+  selectDoctorFindings,
+  selectOutput,
   summarize,
   writeChanges,
 } from 'ripide-api'
@@ -97,22 +102,76 @@ const vueArg = { type: 'boolean' as const, default: true, description: 'Enable V
 const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit machine-readable JSON (suppresses diff/summary text).' }
 const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto uses std-env isAgent.' }
 
+const outputArgs = {
+  limit: { type: 'string' as const, description: 'Maximum displayed results. Agent default: 40. Does not restrict discovery or verification.' },
+  offset: { type: 'string' as const, description: 'Skip displayed results. Repeat with a later offset to retrieve omitted results.' },
+  file: { type: 'string' as const, description: 'Display results for this project-relative file only.' },
+  code: { type: 'string' as const, description: 'Display diagnostics with this numeric TypeScript code.' },
+  fields: { type: 'string' as const, description: 'Comma-separated result fields for JSON discovery output.' },
+  minify: { type: 'boolean' as const, default: false, description: 'Emit JSON without indentation.' },
+  artifact: { type: 'string' as const, description: 'Save complete JSON evidence to this file before display selection.' },
+}
+
+type OutputArgs = Record<string, unknown>
+function selection(args: OutputArgs, agentProfile: boolean, defaultLimit = 40) {
+  return { limit: args.limit == null ? agentProfile ? defaultLimit : undefined : Number(args.limit), offset: args.offset == null ? 0 : Number(args.offset), file: args.file as string | undefined }
+}
+function selectedFields(items: unknown[], args: OutputArgs) {
+  if (!args.fields)
+    return items
+  const fields = String(args.fields).split(',')
+  return items.map((item) => {
+    if (!item || typeof item !== 'object')
+      throw new Error('Field selection requires object results.')
+    const data = item as Record<string, unknown>
+    for (const field of fields) {
+      if (!(field in data))
+        throw new Error(`Unknown result field: ${field}.`)
+    }
+    return Object.fromEntries(fields.map(field => [field, data[field]]))
+  })
+}
+function saveArtifact(args: OutputArgs, full: unknown): void {
+  if (args.artifact)
+    writeFileSync(resolve(String(args.artifact)), `${JSON.stringify(full, null, 2)}\n`)
+}
+function emitJson(payload: unknown, args: OutputArgs, full = payload): void {
+  saveArtifact(args, full)
+  process.stdout.write(`${JSON.stringify(payload, null, args.minify || resolveProfile(args.profile).agentProfile ? undefined : 2)}\n`)
+}
+function discoveryJson<T>(results: T[], args: OutputArgs, file?: (item: T) => string, full: unknown = results) {
+  const agentProfile = resolveProfile(args.profile).agentProfile
+  if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null) {
+    emitJson(full, args, full)
+    return
+  }
+  const page = selectOutput(results, selection(args, agentProfile), file)
+  emitJson({ status: page.total ? 'ok' : 'empty', ...page, results: selectedFields(page.results, args) }, args, full)
+}
+function diagnostics(r: MutatingResult, args: OutputArgs, agentProfile: boolean) {
+  const all = [...r.regressions].map(d => ({ ...d, file: outputPath(d.file, process.cwd()) })).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col || a.code - b.code || a.message.localeCompare(b.message))
+  const filtered = args.code == null ? all : all.filter(d => d.code === Number(args.code))
+  return { ...selectOutput(filtered, selection(args, agentProfile, 20), d => d.file), total: all.length }
+}
+function diagnosticText(r: MutatingResult, args: OutputArgs, agentProfile: boolean): string {
+  const page = diagnostics(r, args, agentProfile)
+  return [`regressions: ${r.regressions.length}`, ...page.results.map(d => `  ${d.file}:${d.line}:${d.col} TS${d.code} ${d.message}`), formatOutputPage(page), ...(page.omitted ? ['Retrieve more with --offset, --limit, --file, or --code.'] : [])].join('\n')
+}
+
 type OutputProfile = 'auto' | 'agent' | 'full'
 type GraphFormat = 'mermaid' | 'dot'
 
 function resolveProfile(raw: unknown): { profile: OutputProfile, agentProfile: boolean } {
   const profile = (raw as OutputProfile | undefined) ?? 'auto'
   if (profile !== 'auto' && profile !== 'agent' && profile !== 'full') {
-    process.stderr.write(`ripide: --profile must be "auto", "agent", or "full".\n`)
-    process.exit(2)
+    throw new Error(`ripide: --profile must be "auto", "agent", or "full".`)
   }
   return { profile, agentProfile: profile === 'agent' || (profile === 'auto' && isAgent) }
 }
 
 function resolveGraphFormat(raw: unknown): GraphFormat {
   if (raw !== 'mermaid' && raw !== 'dot') {
-    process.stderr.write(`ripide scan: --graph must be "mermaid" or "dot".\n`)
-    process.exit(2)
+    throw new Error(`ripide scan: --graph must be "mermaid" or "dot".`)
   }
   return raw
 }
@@ -124,8 +183,7 @@ function profileHeader(): string {
 function resolveCliVerifyMode(verify: unknown, verifyMode: unknown, defaultMode: VerifyMode = 'touched'): VerifyMode {
   if (verifyMode != null) {
     if (verifyMode !== 'none' && verifyMode !== 'touched' && verifyMode !== 'project') {
-      process.stderr.write(`ripide: --verify-mode must be "none", "touched", or "project".\n`)
-      process.exit(2)
+      throw new Error(`ripide: --verify-mode must be "none", "touched", or "project".`)
     }
     return verifyMode
   }
@@ -163,8 +221,7 @@ function recoverSmushedPair(oldArg: string, newArg: string): { old: string, new:
 
 function resolveExportFilter(raw: unknown): ExportFilter {
   if (raw !== 'all' && raw !== 'exported' && raw !== 'local') {
-    process.stderr.write(`ripide: --exports must be "all", "exported", or "local".\n`)
-    process.exit(2)
+    throw new Error(`ripide: --exports must be "all", "exported", or "local".`)
   }
   return raw
 }
@@ -177,6 +234,7 @@ const scanCmd = defineCommand({
     kind: { type: 'string', description: 'Filter to kind(s), comma-separated. Kinds: identifier-reference, identifier-binding, import-specifier, member-access, property, jsx, string-literal.' },
     graph: { type: 'string', description: 'Emit a dependency graph for hit files: mermaid or dot.' },
     profile: profileArg,
+    ...outputArgs,
     json: { type: 'boolean', default: false },
   },
   run({ args }) {
@@ -187,15 +245,27 @@ const scanCmd = defineCommand({
     }
     if (args.graph) {
       const graphFormat = resolveGraphFormat(args.graph)
-      process.stdout.write(`${formatScanGraph(buildScanGraph(args.pattern as string, opts), graphFormat)}\n`)
+      const graph = buildScanGraph(args.pattern as string, opts)
+      graph.nodes.sort((a, b) => a.file.localeCompare(b.file))
+      const page = selectOutput(graph.nodes, selection(args, agentProfile), node => node.file)
+      const selected = new Set(page.results.map(node => node.file))
+      const edges = graph.edges.filter(edge => selected.has(edge.from) && selected.has(edge.to))
+      const prefix = graphFormat === 'dot' ? '// ' : '%% '
+      process.stdout.write(`${prefix + formatOutputPage(page)}, omitted edges: ${graph.edges.length - edges.length}\n`)
+      process.stdout.write(`${formatScanGraph({ ...graph, nodes: page.results, edges }, graphFormat)}\n`)
       return
     }
-    const hits = scan(args.pattern as string, opts)
-    if (agentProfile && !args.json) {
-      process.stdout.write(`${profileHeader()}\n${formatAgentHits(hits)}\n`)
+    const hits = scan(args.pattern as string, opts).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col || a.kind.localeCompare(b.kind))
+    if (args.json) {
+      discoveryJson(hits, args, hit => hit.file)
       return
     }
-    process.stdout.write(`${formatHits(hits, args.json as boolean)}\n`)
+    const page = selectOutput(hits, selection(args, agentProfile), hit => hit.file)
+    if (agentProfile) {
+      process.stdout.write(`${profileHeader()}\n${formatAgentHits(hits, selection(args, true))}\n`)
+      return
+    }
+    process.stdout.write(`${formatHits(page.results, false)}\n`)
   },
 })
 
@@ -213,6 +283,7 @@ const renameCmd = defineCommand({
     all: { type: 'boolean', default: false, description: 'Rename declarations in every file that defines the name (bypasses ambiguity check).' },
     vue: vueArg,
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -225,7 +296,7 @@ const renameCmd = defineCommand({
       allowMultiple: args.all as boolean,
       vue: args.vue as boolean,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
   },
 })
 
@@ -241,6 +312,7 @@ const replaceCmd = defineCommand({
     'verify': verifyArg,
     'verifyMode': { ...verifyModeArg, description: 'Verification mode: touched, project, or none. Defaults to project; --no-verify maps to none.' },
     'profile': profileArg,
+    ...outputArgs,
     'json': jsonArg,
   },
   async run({ args }) {
@@ -251,7 +323,7 @@ const replaceCmd = defineCommand({
       targetScope: args['target-scope'] as string | undefined,
       targetImport: args['target-import'] as string | undefined,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
   },
 })
 
@@ -261,6 +333,7 @@ const treeCmd = defineCommand({
     glob: globArg,
     exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to exported for detected agents, all otherwise.' },
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   run({ args }) {
@@ -270,14 +343,21 @@ const treeCmd = defineCommand({
       : resolveExportFilter(args.exports)
     const tree = buildDeclarationTree({
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
-      exports: agentProfile && !args.json ? 'all' : exportFilter,
+      exports: agentProfile ? 'all' : exportFilter,
     })
-    if (agentProfile && !args.json) {
-      process.stdout.write(`${profileHeader()}\n`)
-      process.stdout.write(`${formatAgentDeclarationTree(tree, exportFilter)}\n`)
+    tree.files.sort((a, b) => a.file.localeCompare(b.file))
+    if (args.json) {
+      const filtered = { files: tree.files.map(file => ({ ...file, declarations: file.declarations.filter(declaration => exportFilter === 'all' || (exportFilter === 'exported') === declaration.exported) })) }
+      discoveryJson(filtered.files, args, file => file.file, filtered)
       return
     }
-    process.stdout.write(`${formatDeclarationTree(tree, !!args.json)}\n`)
+    const page = selectOutput(tree.files, selection(args, agentProfile), file => file.file)
+    if (agentProfile) {
+      process.stdout.write(`${profileHeader()}\n`)
+      process.stdout.write(`${formatAgentDeclarationTree({ files: page.results }, exportFilter)}\n${formatOutputPage(page)}\n`)
+      return
+    }
+    process.stdout.write(`${formatDeclarationTree({ files: page.results }, false)}\n`)
   },
 })
 
@@ -285,7 +365,9 @@ const unusedCmd = defineCommand({
   meta: { name: 'unused', description: 'Find unreferenced top-level declarations.' },
   args: {
     glob: globArg,
-    exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to exported (unused local declarations are already caught by tsc noUnusedLocals).' },
+    exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to exported.' },
+    profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -294,7 +376,15 @@ const unusedCmd = defineCommand({
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       exports: exportFilter,
     })
-    process.stdout.write(`${formatUnusedDeclarations(unused, !!args.json)}\n`)
+    const { agentProfile } = resolveProfile(args.profile)
+    const declarations = unused.files.flatMap(file => file.declarations.map(declaration => ({ file: file.file, ...declaration })))
+    if (args.json) {
+      discoveryJson(declarations, args, declaration => declaration.file, unused)
+      return
+    }
+    const page = selectOutput(declarations, selection(args, agentProfile), declaration => declaration.file)
+    const files = [...new Set(page.results.map(d => d.file))].map(file => ({ file, declarations: page.results.filter(d => d.file === file) }))
+    process.stdout.write(`${formatUnusedDeclarations({ ...unused, files }, false)}\n${formatOutputPage(page)}\n`)
   },
 })
 
@@ -310,6 +400,7 @@ const moveCmd = defineCommand({
     verifyMode: verifyModeArg,
     vue: vueArg,
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -319,7 +410,7 @@ const moveCmd = defineCommand({
       verify: verifyMode,
       vue: args.vue as boolean,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
   },
 })
 
@@ -332,6 +423,7 @@ const deleteCmd = defineCommand({
     verify: verifyArg,
     verifyMode: verifyModeArg,
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -339,7 +431,7 @@ const deleteCmd = defineCommand({
     const r = await runDelete(args.symbol as string, args.from as string, {
       verify: verifyMode,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
   },
 })
 
@@ -351,41 +443,53 @@ interface MutatingResult {
   warnings?: string[]
 }
 
-function compactMutationResult(r: MutatingResult, apply: boolean, manifest = buildChangeManifest(r.changes)) {
+function compactMutationResult(r: MutatingResult, apply: boolean, manifest = buildChangeManifest(r.changes), args: OutputArgs = {}) {
   const blocked = apply && r.regressions.length > 0
+  const { results: changes, ...changePage } = selectOutput(manifest.changes, selection(args, true), c => c[0])
+  const { results: regressions, ...diagnosticPage } = diagnostics(r, args, true)
   return {
+    status: blocked ? 'refused' : r.changes.length || manifest.moves?.length ? 'ok' : 'empty',
     mode: blocked ? 'blocked' : apply ? 'applied' : 'dry-run',
-    ...manifest,
     verification: compactVerification(r.verification),
-    ...(r.regressions.length ? { regressions: r.regressions } : {}),
+    ...(r.regressions.length ? { regressions, diagnosticPage } : {}),
     ...(r.warnings?.length ? { warnings: r.warnings } : {}),
+    ...manifest,
+    changes,
+    changePage,
   }
 }
 
-function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, agentProfile: boolean = false): void {
+function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, agentProfile: boolean = false, args: OutputArgs = {}): void {
   const s = summarize(r.changes)
   const warnings = r.warnings ?? []
   if (json) {
     const blockedByRegression = apply && r.regressions.length > 0
     const wrote = apply && !blockedByRegression
+    saveArtifact(args, r)
     if (wrote)
       writeChanges(r.changes)
     const payload = agentProfile
-      ? compactMutationResult(r, apply)
+      ? compactMutationResult(r, apply, undefined, args)
       : {
+          status: blockedByRegression ? 'refused' : r.changes.length ? 'ok' : 'empty',
           applied: wrote,
           dryRun: !apply,
           blockedByRegression,
           scanned: r.scanned,
           summary: s,
-          changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
           verification: r.verification,
-          regressions: r.regressions,
+          regressions: diagnostics(r, args, false).results,
           warnings,
+          changes: selectOutput(r.changes, selection(args, false), c => c.rel).results.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
+          changePage: (() => {
+            const { results, ...page } = selectOutput(r.changes, selection(args, false), c => c.rel)
+            return page
+          })(),
+
         }
-    process.stdout.write(`${JSON.stringify(payload)}\n`)
+    emitJson(payload, args, { ...r, summary: s, applied: wrote, blockedByRegression })
     if (blockedByRegression)
-      process.exit(1)
+      process.exitCode = 1
     return
   }
   for (const w of warnings)
@@ -396,20 +500,18 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
     process.stdout.write(`changes: ${r.changes.length}/${r.scanned} files, +${s.linesAdded} -${s.linesRemoved} lines\n`)
     process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
     process.stdout.write(`${formatVerification(r.verification)}\n`)
+    if (r.regressions.length)
+      process.stdout.write(`${diagnosticText(r, args, true)}\n`)
     if (r.changes.length) {
-      process.stdout.write(`files:\n`)
-      for (const c of r.changes)
+      process.stdout.write(`files: ${formatOutputPage(selectOutput(r.changes, selection(args, true), c => c.rel))}\n`)
+      for (const c of selectOutput(r.changes, selection(args, true), c => c.rel).results)
         process.stdout.write(`  ${c.rel}\n`)
     }
     if (r.regressions.length) {
-      process.stdout.write(`regressions: ${r.regressions.length}\n`)
-      for (const regression of r.regressions.slice(0, 20))
-        process.stdout.write(`  ${regression.file}:${regression.line}:${regression.col} TS${regression.code} ${regression.message}\n`)
-      if (r.regressions.length > 20)
-        process.stdout.write(`  ... ${r.regressions.length - 20} more\n`)
       if (apply) {
-        process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
-        process.exit(1)
+        process.stderr.write(`\nripide: refusing to apply. Fix the reported diagnostics, then retry.\n`)
+        process.exitCode = 1
+        return
       }
     }
     if (apply) {
@@ -421,17 +523,17 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
     }
     return
   }
-  if (!apply) {
-    process.stdout.write(`${s.files} file${s.files === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
-    printDiffs(r.changes)
-  }
   process.stdout.write(`${formatVerification(r.verification)}\n`)
   if (r.regressions.length) {
-    process.stderr.write(`\n${formatRegressions(r.regressions, process.cwd())}\n`)
+    process.stdout.write(`${diagnosticText(r, args, false)}\n`)
     if (apply) {
-      process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
-      process.exit(1)
+      process.exitCode = 1
+      return
     }
+  }
+  if (!apply) {
+    process.stdout.write(`${s.files} files, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
+    printDiffs(selectOutput(r.changes, selection(args, false), c => c.rel).results)
   }
   if (apply) {
     writeChanges(r.changes)
@@ -452,6 +554,7 @@ const renameFileCmd = defineCommand({
     verifyMode: verifyModeArg,
     vue: vueArg,
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -484,6 +587,7 @@ const renameFileCmd = defineCommand({
         })
       : undefined
 
+    saveArtifact(args, r)
     if (wrote) {
       mkdirSync(dirname(r.fileMove.to), { recursive: true })
       renameSync(r.fileMove.from, r.fileMove.to)
@@ -502,23 +606,30 @@ const renameFileCmd = defineCommand({
     }
 
     if (json) {
-      process.stdout.write(`${JSON.stringify(agentProfile
-        ? compactMutationResult(r, apply, manifest)
+      const payload = agentProfile
+        ? compactMutationResult(r, apply, manifest, args)
         : {
+            status: blockedByRegression ? 'refused' : 'ok',
             applied: wrote,
             dryRun: !apply,
             blockedByRegression,
             scanned: r.scanned,
             summary: s,
+            verification: r.verification,
+            regressions: diagnostics(r, args, false).results,
+            warnings: r.warnings,
             fileMove: r.fileMove,
             selfChange: r.selfChange,
-            changes: r.changes.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
-            verification: r.verification,
-            regressions: r.regressions,
-            warnings: r.warnings,
-          })}\n`)
+            changes: selectOutput(r.changes, selection(args, false), c => c.rel).results.map(c => ({ path: c.rel, absolutePath: c.path, before: c.before, after: c.after })),
+            changePage: (() => {
+              const { results, ...page } = selectOutput(r.changes, selection(args, false), c => c.rel)
+              return page
+            })(),
+
+          }
+      emitJson(payload, args, r)
       if (blockedByRegression)
-        process.exit(1)
+        process.exitCode = 1
       return
     }
     for (const w of r.warnings)
@@ -531,36 +642,35 @@ const renameFileCmd = defineCommand({
         process.stdout.write(`self: rewrote moved file's own relative imports\n`)
       process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
       process.stdout.write(`${formatVerification(r.verification)}\n`)
+      if (r.regressions.length)
+        process.stdout.write(`${diagnosticText(r, args, true)}\n`)
       if (displayChanges.length) {
-        process.stdout.write(`files:\n`)
-        for (const c of displayChanges)
+        process.stdout.write(`files: ${formatOutputPage(selectOutput(displayChanges, selection(args, true), c => c.rel))}\n`)
+        for (const c of selectOutput(displayChanges, selection(args, true), c => c.rel).results)
           process.stdout.write(`  ${c.rel}${selfChangeDisplay && c === selfChangeDisplay ? ' (moved file, intra-file imports)' : ''}\n`)
       }
       if (r.regressions.length) {
-        process.stdout.write(`regressions: ${r.regressions.length}\n`)
         if (apply) {
-          process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
-          process.exit(1)
+          process.stderr.write(`\nripide: refusing to apply. Fix the reported diagnostics, then retry.\n`)
+          process.exitCode = 1
+          return
         }
       }
       if (!apply)
         process.stdout.write(`apply: pass --apply to write, or --profile full to see diff\n`)
       return
     }
-    if (!apply) {
-      process.stdout.write(`rename ${args.old} -> ${args.new}\n`)
-      const consumerCount = r.changes.length
-      const selfSuffix = selfChangeDisplay ? ` (+ moved file's own imports)` : ''
-      process.stdout.write(`${consumerCount} consumer file${consumerCount === 1 ? '' : 's'}${selfSuffix}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
-      printDiffs(displayChanges)
-    }
     process.stdout.write(`${formatVerification(r.verification)}\n`)
     if (r.regressions.length) {
-      process.stderr.write(`\n${formatRegressions(r.regressions, process.cwd())}\n`)
+      process.stdout.write(`${diagnosticText(r, args, false)}\n`)
       if (apply) {
-        process.stderr.write(`\nripide: refusing to --apply; --no-verify to override.\n`)
-        process.exit(1)
+        process.exitCode = 1
+        return
       }
+    }
+    if (!apply) {
+      process.stdout.write(`rename ${args.old} -> ${args.new}\n`)
+      printDiffs(selectOutput(displayChanges, selection(args, false), c => c.rel).results)
     }
     if (wrote) {
       for (const c of r.changes) process.stdout.write(`wrote ${c.rel}\n`)
@@ -582,6 +692,7 @@ const cssClassRenameCmd = defineCommand({
     glob: globArg,
     apply: applyArg,
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -589,7 +700,7 @@ const cssClassRenameCmd = defineCommand({
     const r = await runCssClassRename(map, {
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
   },
 })
 
@@ -597,12 +708,10 @@ function buildRenameMap(from: string | undefined, to: string | undefined, mapPat
   const hasPair = from != null && to != null
   const hasMap = !!mapPath
   if (hasPair && hasMap) {
-    process.stderr.write(`ripide css-class-rename: pass either "from to" positionals OR --map, not both.\n`)
-    process.exit(2)
+    throw new Error(`ripide css-class-rename: pass either "from to" positionals OR --map, not both.`)
   }
   if (!hasPair && !hasMap) {
-    process.stderr.write(`ripide css-class-rename: missing input. Pass "from to" positionals or --map <file.json>.\n`)
-    process.exit(2)
+    throw new Error(`ripide css-class-rename: missing input. Pass "from to" positionals or --map <file.json>.`)
   }
   if (hasPair)
     return new Map([[from, to]])
@@ -612,28 +721,23 @@ function buildRenameMap(from: string | undefined, to: string | undefined, mapPat
     parsed = JSON.parse(raw)
   }
   catch (err) {
-    process.stderr.write(`ripide css-class-rename: --map file is not valid JSON (${(err as Error).message}).\n`)
-    process.exit(2)
+    throw new Error(`ripide css-class-rename: --map file is not valid JSON (${(err as Error).message}).`)
   }
   if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    process.stderr.write(`ripide css-class-rename: --map must be a flat JSON object, got ${Array.isArray(parsed) ? 'array' : typeof parsed}.\n`)
-    process.exit(2)
+    throw new Error(`ripide css-class-rename: --map must be a flat JSON object, got ${Array.isArray(parsed) ? 'array' : typeof parsed}.`)
   }
   const entries: [string, string][] = []
   for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof v !== 'string') {
-      process.stderr.write(`ripide css-class-rename: --map value for "${k}" is not a string.\n`)
-      process.exit(2)
+      throw new TypeError(`ripide css-class-rename: --map value for "${k}" is not a string.`)
     }
     if (!k) {
-      process.stderr.write(`ripide css-class-rename: --map has an empty key.\n`)
-      process.exit(2)
+      throw new Error(`ripide css-class-rename: --map has an empty key.`)
     }
     entries.push([k, String(v)])
   }
   if (!entries.length) {
-    process.stderr.write(`ripide css-class-rename: --map is empty.\n`)
-    process.exit(2)
+    throw new Error(`ripide css-class-rename: --map is empty.`)
   }
   return new Map(entries)
 }
@@ -646,6 +750,7 @@ const cssClassScanCmd = defineCommand({
     by: { type: 'string', description: 'Group by token or file. Default: token.' },
     sort: { type: 'string', description: 'Sort order. Token: count-desc, count-asc, token. File: unique-desc, unique-asc, count-desc, count-asc, file.' },
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   run({ args }) {
@@ -657,19 +762,36 @@ const cssClassScanCmd = defineCommand({
     }
     if (by === 'file') {
       const hits = runCssClassFileScan({ ...base, sort: resolveCssClassFileScanSort(args.sort) })
-      if (agentProfile && !args.json) {
-        process.stdout.write(`${profileHeader()}\n${formatAgentFileScanHits(hits)}\n`)
+      if (args.json) {
+        const results = agentProfile ? hits.map(hit => ({ file: hit.file, count: hit.count, unique: hit.unique })) : hits
+        discoveryJson(results, args, hit => hit.file, hits)
         return
       }
-      process.stdout.write(`${formatFileScanHits(hits, !!args.json)}\n`)
+      if (agentProfile) {
+        process.stdout.write(`${profileHeader()}\n${formatAgentFileScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined)}\n`)
+        return
+      }
+      const page = selectOutput(hits, selection(args, false), hit => hit.file)
+      process.stdout.write(`${formatFileScanHits(page.results, false)}\n${formatOutputPage(page)}\n`)
       return
     }
     const hits = runCssClassScan({ ...base, sort: resolveCssClassScanSort(args.sort) })
-    if (agentProfile && !args.json) {
-      process.stdout.write(`${profileHeader()}\n${formatAgentScanHits(hits)}\n`)
+    if (args.json) {
+      if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null) {
+        emitJson(hits, args, hits)
+        return
+      }
+      const page = selectOutput(hits, selection(args, agentProfile), hit => args.file && hit.files.includes(String(args.file)) ? String(args.file) : '')
+      const results = agentProfile ? page.results.map(hit => ({ token: hit.token, count: hit.count, files: hit.files.length })) : page.results
+      emitJson({ status: page.total ? 'ok' : 'empty', ...page, results: selectedFields(results, args) }, args, hits)
       return
     }
-    process.stdout.write(`${formatScanHits(hits, !!args.json)}\n`)
+    if (agentProfile) {
+      process.stdout.write(`${profileHeader()}\n${formatAgentScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined)}\n`)
+      return
+    }
+    const page = selectOutput(hits, selection(args, false), hit => args.file && hit.files.includes(String(args.file)) ? String(args.file) : '')
+    process.stdout.write(`${formatScanHits(page.results, false)}\n${formatOutputPage(page)}\n`)
   },
 })
 
@@ -677,8 +799,7 @@ function resolveCssClassScanGroup(raw: unknown): 'token' | 'file' {
   if (raw == null)
     return 'token'
   if (raw !== 'token' && raw !== 'file') {
-    process.stderr.write(`ripide css-class-scan: --by must be "token" or "file".\n`)
-    process.exit(2)
+    throw new Error(`ripide css-class-scan: --by must be "token" or "file".`)
   }
   return raw
 }
@@ -687,8 +808,7 @@ function resolveCssClassScanSort(raw: unknown): 'count-desc' | 'count-asc' | 'to
   if (raw == null)
     return 'count-desc'
   if (raw !== 'count-desc' && raw !== 'count-asc' && raw !== 'token') {
-    process.stderr.write(`ripide css-class-scan: --sort must be "count-desc", "count-asc", or "token".\n`)
-    process.exit(2)
+    throw new Error(`ripide css-class-scan: --sort must be "count-desc", "count-asc", or "token".`)
   }
   return raw
 }
@@ -697,8 +817,7 @@ function resolveCssClassFileScanSort(raw: unknown): 'unique-desc' | 'unique-asc'
   if (raw == null)
     return 'unique-desc'
   if (raw !== 'unique-desc' && raw !== 'unique-asc' && raw !== 'count-desc' && raw !== 'count-asc' && raw !== 'file') {
-    process.stderr.write(`ripide css-class-scan: --sort with --by file must be "unique-desc", "unique-asc", "count-desc", "count-asc", or "file".\n`)
-    process.exit(2)
+    throw new Error(`ripide css-class-scan: --sort with --by file must be "unique-desc", "unique-asc", "count-desc", "count-asc", or "file".`)
   }
   return raw
 }
@@ -716,6 +835,7 @@ const vueTemplateWrapCmd = defineCommand({
     rootOnly: rootOnlyArg,
     apply: applyArg,
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -724,7 +844,7 @@ const vueTemplateWrapCmd = defineCommand({
       scope: args.scope as string | undefined,
       rootOnly: args.rootOnly as boolean,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
   },
 })
 
@@ -737,6 +857,7 @@ const vueTemplateUnwrapCmd = defineCommand({
     rootOnly: rootOnlyArg,
     apply: applyArg,
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -745,7 +866,7 @@ const vueTemplateUnwrapCmd = defineCommand({
       scope: args.scope as string | undefined,
       rootOnly: args.rootOnly as boolean,
     })
-    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile)
+    emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile).agentProfile, args)
   },
 })
 
@@ -757,6 +878,7 @@ const componentsCmd = defineCommand({
     source: { type: 'string', description: 'Discovery source: auto, manifest, or filesystem. Default: auto.' },
     dups: { type: 'boolean', default: false, description: 'Print only duplicate-name groups.' },
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -768,19 +890,23 @@ const componentsCmd = defineCommand({
     if (args.name) {
       const detail = await buildComponentDetail(args.name as string, opts)
       if (!detail) {
-        process.stderr.write(`ripide components: no component named "${args.name}".\n`)
-        process.exit(1)
+        throw new Error(`No component named "${args.name}". Run components to list available names.`)
       }
       if (args.json) {
-        process.stdout.write(`${JSON.stringify(detail, null, 2)}\n`)
+        const normalized = { ...detail, component: { ...detail.component, file: outputPath(detail.component.file, process.cwd()) }, usages: detail.usages.map(u => ({ ...u, file: outputPath(u.file, process.cwd()) })) }
+        const page = selectOutput(normalized.usages, selection(args, agentProfile, 50), usage => usage.rel)
+        emitJson({ status: 'ok', ...normalized, usages: selectedFields(page.results, args), usagePage: { ...page, results: undefined } }, args, detail)
         return
       }
-      process.stdout.write(`${formatDetail(detail)}\n`)
+      process.stdout.write(`${formatDetail(detail, selection(args, agentProfile, 50))}\n`)
       return
     }
     const inv = await buildComponentInventory(opts)
     if (args.json) {
-      process.stdout.write(`${JSON.stringify(args.dups ? inv.duplicates : inv, null, 2)}\n`)
+      if (args.dups)
+        discoveryJson(inv.duplicates, args, undefined, inv)
+      else
+        discoveryJson(inv.components.map(c => ({ ...c, file: outputPath(c.file, process.cwd()), ...(c.shadowedBy ? { shadowedBy: outputPath(c.shadowedBy, process.cwd()) } : {}) })), args, c => c.rel, inv)
       return
     }
     if (args.dups) {
@@ -789,7 +915,7 @@ const componentsCmd = defineCommand({
         return
       }
       const lines: string[] = []
-      for (const dup of inv.duplicates) {
+      for (const dup of selectOutput(inv.duplicates, selection(args, agentProfile)).results) {
         lines.push(dup.name)
         for (const e of dup.entries)
           lines.push(`  ${e.rel}${e.shadowed ? ' (shadowed)' : ''}`)
@@ -798,7 +924,7 @@ const componentsCmd = defineCommand({
       return
     }
     if (agentProfile) {
-      process.stdout.write(`${profileHeader()}\n${formatAgentInventory(inv)}\n`)
+      process.stdout.write(`${profileHeader()}\n${formatAgentInventory(inv, selection(args, true))}\n`)
       return
     }
     process.stdout.write(`${formatInventory(inv)}\n`)
@@ -809,8 +935,7 @@ function resolveComponentsSource(raw: unknown): 'auto' | 'manifest' | 'filesyste
   if (raw == null)
     return undefined
   if (raw !== 'auto' && raw !== 'manifest' && raw !== 'filesystem') {
-    process.stderr.write(`ripide components: --source must be "auto", "manifest", or "filesystem".\n`)
-    process.exit(2)
+    throw new Error(`ripide components: --source must be "auto", "manifest", or "filesystem".`)
   }
   return raw
 }
@@ -825,6 +950,7 @@ const doctorCmd = defineCommand({
     apply: applyArg,
     changed: { type: 'string', description: 'Report only findings on files changed vs git. No value = dirty working tree (staged+unstaged+untracked). With value (e.g. main, HEAD~1) = diff against that ref. Full project is still scanned so cross-file checks stay accurate.' },
     profile: profileArg,
+    ...outputArgs,
     json: jsonArg,
   },
   async run({ args }) {
@@ -836,7 +962,10 @@ const doctorCmd = defineCommand({
       const ref = typeof args.changed === 'string' && args.changed !== '' && args.changed !== 'true' ? args.changed : undefined
       changedFiles = getChangedFiles({ cwd: process.cwd(), ref })
       if (!changedFiles.length) {
-        process.stderr.write(`ripide doctor: --changed${ref ? ` ${ref}` : ''} matched no files; nothing to report.\n`)
+        if (args.json)
+          emitJson({ status: 'empty', findings: [], filesScanned: 0, total: 0, omitted: 0 }, args)
+        else
+          process.stdout.write('doctor: no changed files matched.\n')
         return
       }
     }
@@ -849,29 +978,38 @@ const doctorCmd = defineCommand({
     if (args.fix) {
       const fix = buildDoctorFixes(report, process.cwd())
       if (args.json) {
+        saveArtifact(args, { report, fix })
         if (args.apply && fix.changes.length)
           writeChanges(fix.changes)
-        process.stdout.write(`${JSON.stringify(resolveProfile(args.profile).agentProfile
+        const full = {
+          status: fix.skipped.length ? 'findings' : fix.changes.length ? 'ok' : 'empty',
+          verification: fix.verification,
+          findings: report.findings,
+          filesScanned: report.filesScanned,
+          fix: { applied: !!args.apply, files: fix.changes.length, fixed: fix.fixed, skipped: fix.skipped.length },
+          changes: fix.changes.map(c => ({ path: c.rel, before: c.before, after: c.after })),
+        }
+        const skippedPage = selectOutput(fix.skipped, selection(args, true, 50), finding => finding.file)
+        emitJson(agentProfile
           ? {
-              ...compactMutationResult({ changes: fix.changes, verification: fix.verification, regressions: [], scanned: report.filesScanned }, !!args.apply),
-              ...(fix.skipped.length ? { findings: fix.skipped } : {}),
+              ...compactMutationResult({ changes: fix.changes, verification: fix.verification, regressions: [], scanned: report.filesScanned }, !!args.apply, undefined, args),
+              findings: skippedPage.results,
+              findingPage: { ...skippedPage, results: undefined },
             }
-          : {
-              verification: fix.verification,
-              findings: report.findings,
-              filesScanned: report.filesScanned,
-              fix: {
-                applied: !!args.apply,
-                files: fix.changes.length,
-                fixed: fix.fixed,
-                skipped: fix.skipped.length,
-              },
-              changes: args.apply ? undefined : fix.changes.map(c => ({ path: c.rel, before: c.before, after: c.after })),
-            })}\n`)
+          : full, args, full)
         if (fix.skipped.length)
-          process.exit(1)
+          process.exitCode = 1
         return
       }
+      if (agentProfile) {
+        process.stdout.write(`${formatAgentDoctorReport({ ...report, findings: fix.skipped }, selection(args, true, 50))}\n`)
+        emitResult({ ...fix, scanned: report.filesScanned, regressions: [] }, !!args.apply, false, true, args)
+        if (fix.skipped.length)
+          process.exitCode = 1
+        return
+      }
+      if (fix.skipped.length)
+        process.stdout.write(formatDoctorReport({ ...report, findings: fix.skipped }, false))
       const s = summarize(fix.changes)
       process.stdout.write(`${formatVerification(fix.verification)}\n`)
       process.stdout.write(`doctor --fix: ${fix.fixed.length} fixable / ${fix.skipped.length} non-fixable findings\n`)
@@ -885,21 +1023,31 @@ const doctorCmd = defineCommand({
         for (const c of fix.changes) process.stdout.write(`wrote ${c.rel}\n`)
       }
       if (fix.skipped.length)
-        process.exit(1)
+        process.exitCode = 1
       return
     }
     if (agentProfile && !args.json) {
-      process.stdout.write(`${profileHeader()}\n${formatAgentDoctorReport(report)}\n`)
+      process.stdout.write(`${profileHeader()}\n${formatAgentDoctorReport(report, selection(args, true, 50))}\n`)
+    }
+    else if (args.json) {
+      if (agentProfile) {
+        const page = selectDoctorFindings(report, selection(args, true, 50))
+        emitJson({ status: page.total ? 'findings' : 'empty', ...page, results: selectedFields(page.results, args), filesScanned: report.filesScanned }, args, report)
+      }
+      else {
+        discoveryJson(report.findings, args, finding => finding.file, report)
+      }
     }
     else {
-      process.stdout.write(formatDoctorReport(report, !!args.json))
+      const page = selectOutput(report.findings, selection(args, false), finding => finding.file)
+      process.stdout.write(formatDoctorReport({ ...report, findings: page.results }, false))
     }
     if (report.findings.length)
-      process.exit(1)
+      process.exitCode = 1
   },
 }, ['changed'])
 
-runMain(defineCommand({
+const command = defineCommand({
   meta: { name: 'ripide', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
     'scan': scanCmd,
@@ -917,4 +1065,60 @@ runMain(defineCommand({
     'vue-template-wrap': vueTemplateWrapCmd,
     'vue-template-unwrap': vueTemplateUnwrapCmd,
   },
-}))
+})
+
+function jsonRequested(rawArgs: string[]): boolean {
+  let requested = false
+  for (const arg of rawArgs) {
+    if (arg === '--')
+      break
+    if (arg === '--json' || arg === '--json=true')
+      requested = true
+    if (arg === '--no-json' || arg === '--json=false')
+      requested = false
+  }
+  return requested
+}
+
+/** Parse and validate before an optional launcher resolves operation adapters. */
+export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean | Promise<boolean>): Promise<void> {
+  const name = rawArgs[0]
+  const commands = command.subCommands as Record<string, CommandDef>
+  const selected = commands[name]
+  if (rawArgs.includes('--help') || rawArgs.includes('-h')) {
+    if (jsonRequested(rawArgs))
+      process.stdout.write(`${JSON.stringify({ status: 'help', usage: await renderUsage(selected ?? command) })}\n`)
+    else
+      await showUsage(selected ?? command)
+    return
+  }
+  if ((name === '--version' || name === '-v') && rawArgs.every(arg => ['--version', '-v', '--json'].includes(arg))) {
+    const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+    process.stdout.write(`${jsonRequested(rawArgs) ? JSON.stringify({ status: 'ok', version }) : version}\n`)
+    return
+  }
+  const main = selected
+    ? {
+        ...selected,
+        async run(context: Parameters<NonNullable<typeof selected.run>>[0]) {
+          const needsAdapter = ['rename', 'move', 'rename-file', 'replace', 'doctor', 'components', 'vue-template-wrap', 'vue-template-unwrap'].includes(name)
+          if (needsAdapter && context.args.vue !== false && ensureAdapters && await ensureAdapters())
+            return
+          return selected.run?.(context)
+        },
+      }
+    : command
+  await runCommand(main, { rawArgs: selected ? rawArgs.slice(1) : rawArgs }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    const next = 'Run the command with --help. Fix the reported cause, then retry.'
+    const cause = error instanceof Error && error.cause ? String(error.cause) : undefined
+    if (jsonRequested(rawArgs))
+      process.stdout.write(`${JSON.stringify({ status: 'error', error: { message, next, ...(cause ? { cause } : {}) } })}\n`)
+    else
+      process.stderr.write(`ripide: ${message}\n${next}\n`)
+    process.exitCode = 1
+  })
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  await runCli(process.argv.slice(2))
