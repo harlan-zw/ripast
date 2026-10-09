@@ -22,13 +22,14 @@ export interface Fixture {
   cleanup: () => void
 }
 
-export function prepareLauncher(fx: Fixture): string {
-  const path = fx.write('bin/ripide.mjs', '')
+export function prepareLauncher(fx: Fixture, version = '1.2.3'): string {
+  const path = fx.write('node_modules/ripide/bin/ripide.mjs', '')
   copyFileSync(resolve('packages/cli/bin/ripide.mjs'), path)
+  fx.write('node_modules/ripide/package.json', JSON.stringify({ type: 'module', version }))
   mkdirSync(join(fx.dir, 'node_modules'), { recursive: true })
   // Link this dependency alone. Keep adapter resolution isolated from the workspace.
   symlinkSync(resolve('packages/cli/node_modules/cross-spawn'), join(fx.dir, 'node_modules/cross-spawn'), 'junction')
-  symlinkSync(resolve('packages/cli/dist'), join(fx.dir, 'dist'), 'junction')
+  symlinkSync(resolve('packages/cli/dist'), join(fx.dir, 'node_modules/ripide/dist'), 'junction')
   return path
 }
 
