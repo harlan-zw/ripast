@@ -43,13 +43,13 @@ it('pre-existing type errors are not flagged as regressions', async () => {
   finally { fx.cleanup() }
 })
 
-it('verify: false skips regression detection (faster)', async () => {
+it('verifyMode none skips regression detection', async () => {
   const fx = makeFixture({
     'a.ts': 'export function x() {}\n',
     'b.ts': 'import { x } from \'./a.ts\'\nx()\n',
   })
   try {
-    const result = await runRename('x', 'y', { cwd: fx.dir, verify: false })
+    const result = await runRename('x', 'y', { cwd: fx.dir, verifyMode: 'none' as const })
     assert.equal(result.regressions.length, 0, 'verify=false produces empty regressions regardless')
     writeChanges(result.changes)
     assert.match(fx.read('b.ts'), /import \{ y \}/)

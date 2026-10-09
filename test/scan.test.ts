@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { it } from 'vitest'
-import { formatAgentScanHits } from '../packages/core/src/css-class-scan.ts'
-import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, formatAgentDeclarationTree, formatDeclarationTree, formatScanGraph, formatUnusedDeclarations, scan } from '../packages/core/src/scan.ts'
+import { formatAgentDeclarationTree, formatAgentScanHits, formatDeclarationTree, formatScanGraph, formatUnusedDeclarations } from '../packages/cli/src/presentation/index.ts'
+import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, scan } from '../packages/core/src/scan.ts'
 import { makeFixture } from './helpers.ts'
 
 it('scan classifies identifier kinds', () => {

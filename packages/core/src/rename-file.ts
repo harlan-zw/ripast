@@ -10,7 +10,7 @@ import process from 'node:process'
 import { loadAdapter, needsVueAdapter } from './adapter.ts'
 import { computeSpecifier } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
-import { findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { findTsconfig, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { mergeFileChanges, rgFiles } from './util.ts'
 import { createVerification } from './verification.ts'
@@ -22,7 +22,7 @@ export interface RenameFileOptions {
   cwd?: string
   /** Configured project used for import rewrites and verification. */
   tsconfig?: string
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
   vue?: boolean
 }
 
@@ -43,6 +43,7 @@ export interface RenameFileResult {
 }
 
 export async function runRenameFile(oldPath: string, newPath: string, opts: RenameFileOptions = {}): Promise<RenameFileResult> {
+  const verifyMode = resolveVerificationOptions(opts)
   const cwd = opts.cwd ?? process.cwd()
   const profile = opts.profile
   const oldAbs = resolve(cwd, oldPath)
@@ -74,7 +75,6 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   if (!tsconfigPath)
     throw new Error('ripide rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
-  const verifyMode = resolveVerifyMode(opts.verify)
   // Directory indexes and aliases can hide the renamed basename from import sites.
   // Let the adapter resolve consumers instead of filtering by source spelling.
   const vueCandidates = timed(profile, 'vue candidates', () => rgFiles('', { cwd, glob: '*.vue', listAll: true }))

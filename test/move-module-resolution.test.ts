@@ -14,7 +14,7 @@ it('move resolves directory index modules', async () => {
     'consumer.ts': 'import { helper } from \'./source\'\nexport const result = helper()\n',
   })
   try {
-    const result = await runMove('helper', 'source/index.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })
+    const result = await runMove('helper', 'source/index.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })
     const change = result.changes.find(change => change.rel === 'consumer.ts')
     assert.ok(change)
     assert.equal(parseSourceFile('consumer.ts', change.after).program.body[0].source.value, './target')
@@ -33,7 +33,7 @@ it.each([
     'consumer.ts': consumer,
   })
   try {
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false }), /consumer\.ts.*Use named imports first/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false }), /consumer\.ts.*Use named imports first/)
   }
   finally { fx.cleanup() }
 })
@@ -46,7 +46,7 @@ it('move preserves exports through wildcard barrels', async () => {
     'downstream.ts': 'import { helper, other } from \'./consumer.ts\'\nexport const result = helper() + other\n',
   })
   try {
-    writeChanges((await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false })).changes)
+    writeChanges((await runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false })).changes)
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/downstream.ts`).href)})).result)`], { encoding: 'utf8' })
     assert.equal(output.trim(), '43')
   }
@@ -59,7 +59,7 @@ it.each([
 ])('move refuses unsupported dynamic imports with %s', async (_, consumer) => {
   const fx = makeFixture({ 'source.ts': 'export function helper() { return 42 }\n', 'target.ts': '', 'consumer.ts': consumer })
   try {
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false }), /consumer\.ts.*Use named imports first/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false }), /consumer\.ts.*Use named imports first/)
   }
   finally { fx.cleanup() }
 })
@@ -85,7 +85,7 @@ it('move refuses module type queries that include the moved export', async () =>
     'consumer.ts': 'export type All = typeof import(\'./source.ts\')\n',
   })
   try {
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false }), /consumer\.ts.*Use named imports first/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false }), /consumer\.ts.*Use named imports first/)
   }
   finally { fx.cleanup() }
 })
@@ -106,7 +106,7 @@ it('move refuses ambiguous emitted and source modules', async () => {
     finally { server.dispose() }
     const output = execFileSync(process.execPath, ['--input-type=module', '-e', `console.log((await import(${JSON.stringify(pathToFileURL(`${fx.dir}/consumer.ts`).href)})).result)`], { encoding: 'utf8' })
     assert.equal(output.trim(), '2')
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false, vue: false }), /ambiguous.*source\.js/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const, vue: false }), /ambiguous.*source\.js/)
   }
   finally { fx.cleanup() }
 })
@@ -123,7 +123,7 @@ it.each([
     'consumer.vue': `<${tag} lang="ts">${script}</script><template>{{ result }}</template>`,
   })
   try {
-    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verify: false }), /consumer\.vue.*Use named imports first/)
+    await assert.rejects(runMove('helper', 'source.ts', 'target.ts', { cwd: fx.dir, verifyMode: 'none' as const }), /consumer\.vue.*Use named imports first/)
   }
   finally { fx.cleanup() }
 })

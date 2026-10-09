@@ -80,7 +80,7 @@ it('delete resolves namespaces after opening excluded ambient declarations', asy
     'tsconfig.json': JSON.stringify({ compilerOptions: { module: 'ESNext', moduleResolution: 'bundler', noEmit: true }, files: ['source.ts'] }),
   })
   try {
-    const result = await runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false })
+    const result = await runDelete('helper', 'source.ts', { cwd: fx.dir, verifyMode: 'none' as const })
     assert.equal(result.changes[0]!.after, 'export const keep = 7\n')
     assert.equal(fx.read('source.ts'), 'export const helper = 42\nexport const keep = 7\n')
   }
@@ -96,7 +96,7 @@ it('delete keeps same-text namespace imports in different directories separate',
     'two/consumer.ts': 'import * as ns from \'./module.ts\'\nexport type Value = ns.Shape',
   })
   try {
-    await assert.rejects(runDelete('Shape', 'source.ts', { cwd: fx.dir, verify: false }), /namespace import at two\/consumer\.ts:1:/)
+    await assert.rejects(runDelete('Shape', 'source.ts', { cwd: fx.dir, verifyMode: 'none' as const }), /namespace import at two\/consumer\.ts:1:/)
   }
   finally { fx.cleanup() }
 })
@@ -109,10 +109,10 @@ it('delete checks namespace resolution again in each operation', async () => {
     'b.vue': '<script setup>import * as ns from \'./module.ts\'</script><template>{{ ns.other }}</template>',
   })
   try {
-    const result = await runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false })
+    const result = await runDelete('helper', 'source.ts', { cwd: fx.dir, verifyMode: 'none' as const })
     assert.equal(result.changes[0]!.after, '')
     fx.write('module.ts', 'export * from \'./source.ts\'')
-    await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false }), /namespace import at (a\.ts|b\.vue):1:/)
+    await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir, verifyMode: 'none' as const }), /namespace import at (a\.ts|b\.vue):1:/)
   }
   finally { fx.cleanup() }
 })
@@ -124,7 +124,7 @@ it('delete still refuses an unresolved namespace after a resolved namespace', as
     'consumer.ts': 'import * as ns from \'./module.ts\'\nimport * as missing from \'./missing.ts\'\nexport const values = [Object.values(ns), Object.values(missing)]',
   })
   try {
-    await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir, verify: false }), /cannot resolve a namespace import at consumer\.ts:2:/)
+    await assert.rejects(runDelete('helper', 'source.ts', { cwd: fx.dir, verifyMode: 'none' as const }), /cannot resolve a namespace import at consumer\.ts:2:/)
   }
   finally { fx.cleanup() }
 })

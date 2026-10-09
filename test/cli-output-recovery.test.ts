@@ -19,8 +19,8 @@ it('blocked file move flushes large full JSON and leaves all files unchanged', (
     assert.equal(result.error, undefined)
     assert.equal(result.signal, null)
     assert.equal(result.status, 1, result.stderr)
-    const payload = JSON.parse(result.stdout)
-    assert.equal(payload.blockedByRegression, true)
+    const payload = JSON.parse(result.stdout).data
+    assert.equal(JSON.parse(result.stdout)._tag, 'Refused')
     assert.ok(payload.regressions.length > 0)
     assert.ok(result.stdout.length > 500_000)
     assert.equal(fixture.read('packages/source/index.ts'), source)
@@ -42,10 +42,10 @@ it.each([
   try {
     const result = run(fixture.dir, [...args, '--json'])
     assert.notEqual(result.status, 0)
-    const payload = JSON.parse(result.stdout)
-    assert.equal(payload.status, 'error')
-    assert.ok(payload.error.message)
-    assert.ok(payload.error.next)
+    const payload = JSON.parse(result.stdout).data
+    assert.equal(JSON.parse(result.stdout)._tag, 'Error')
+    assert.ok(payload.message)
+    assert.ok(payload.next)
     assert.equal(fixture.read('source.ts'), source)
   }
   finally { fixture.cleanup() }
@@ -56,8 +56,8 @@ it('scan JSON page exposes totals and focused retrieval without source payloads'
     const first = run(fixture.dir, ['scan', 'value', '--json', '--profile', 'agent', '--limit', '3'])
     const next = run(fixture.dir, ['scan', 'value', '--json', '--profile', 'agent', '--limit', '3', '--offset', '3', '--fields', 'file,line'])
     assert.equal(first.status, 0, first.stderr)
-    const a = JSON.parse(first.stdout)
-    const b = JSON.parse(next.stdout)
+    const a = JSON.parse(first.stdout).data
+    const b = JSON.parse(next.stdout).data
     assert.equal(a.total, 12)
     assert.equal(a.omitted, 9)
     assert.equal(a.results.length, 3)
@@ -73,8 +73,8 @@ it('jSON help and version produce valid structured outcomes', () => {
   try {
     const result = run(fixture.dir, ['scan', '--help', '--json'])
     assert.equal(result.status, 0)
-    assert.equal(JSON.parse(result.stdout).status, 'help')
-    assert.match(JSON.parse(result.stdout).usage, /scan/)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Result')
+    assert.match(JSON.parse(result.stdout).data.usage, /scan/)
   }
   finally { fixture.cleanup() }
 })
@@ -85,7 +85,7 @@ it('refused rename closes its child service and terminates within a deadline', a
     const result = await runTracked(fixture.dir, ['rename', 'value', 'taken', '--no-vue', '--apply', '--json'])
     assert.equal(result.code, 1)
     assert.equal(result.signal, null)
-    assert.equal(JSON.parse(result.stdout).status, 'refused')
+    assert.equal(JSON.parse(result.stdout)._tag, 'Refused')
     if (process.platform === 'linux') {
       assert.ok(result.services.length > 0)
       for (const pid of result.services)
@@ -101,7 +101,7 @@ it('compact discovery saves full evidence separately and retrieves another graph
   try {
     const result = run(fixture.dir, ['scan', 'value', '--json', '--profile', 'agent', '--limit', '2', '--minify', '--artifact', 'scan.json'])
     assert.equal(result.status, 0)
-    assert.equal(JSON.parse(result.stdout).omitted, 6)
+    assert.equal(JSON.parse(result.stdout).data.omitted, 6)
     assert.equal(JSON.parse(fixture.read('scan.json')).length, 8)
     const graph = run(fixture.dir, ['scan', 'value', '--graph', 'dot', '--profile', 'agent', '--limit', '2', '--offset', '2'])
     assert.equal(graph.status, 0)
@@ -117,11 +117,11 @@ it('diagnostic retrieval filters codes and files while preserving refusal', () =
   const fixture = makeFixture({ 'source.ts': 'export const value = 1\nexport const taken = 2\n' })
   try {
     const full = run(fixture.dir, ['rename', 'value', 'taken', '--no-vue', '--apply', '--json', '--profile', 'full'])
-    const code = JSON.parse(full.stdout).regressions[0].code
+    const code = JSON.parse(full.stdout).data.regressions[0].code
     const filtered = run(fixture.dir, ['rename', 'value', 'taken', '--no-vue', '--apply', '--json', '--profile', 'agent', '--code', String(code), '--file', 'source.ts', '--limit', '1'])
-    const payload = JSON.parse(filtered.stdout)
+    const payload = JSON.parse(filtered.stdout).data
     assert.equal(filtered.status, 1)
-    assert.equal(payload.status, 'refused')
+    assert.equal(JSON.parse(filtered.stdout)._tag, 'Refused')
     assert.equal(payload.regressions.length, 1)
     assert.equal(payload.regressions[0].code, code)
     assert.equal(payload.regressions[0].file, 'source.ts')
@@ -169,8 +169,8 @@ it('agent pages disclose the path base and bound unused declarations', () => {
   try {
     const result = run(fixture.dir, ['unused', '--exports', 'local', '--json', '--profile', 'agent', '--limit', '2', '--offset', '2'])
     assert.equal(result.status, 0, result.stderr)
-    const payload = JSON.parse(result.stdout)
-    assert.equal(payload.base, fixture.dir)
+    const payload = JSON.parse(result.stdout).data
+    assert.equal(JSON.parse(result.stdout).base, fixture.dir)
     assert.equal(payload.total, 9)
     assert.equal(payload.shown, 2)
     assert.equal(payload.omitted, 7)
@@ -184,7 +184,7 @@ it('timings report finite phase measurements without contaminating JSON', () => 
   try {
     const result = run(fixture.dir, ['scan', 'value', '--json', '--profile', 'agent', '--timings'])
     assert.equal(result.status, 0, result.stderr)
-    assert.equal(JSON.parse(result.stdout).total, 1)
+    assert.equal(JSON.parse(result.stdout).data.total, 1)
     const events = result.stderr.trim().split('\n').map(line => JSON.parse(line))
     assert.ok(events.some(event => event.phase === 'command scan'))
     assert.ok(events.some(event => event.phase === 'scan discovery'))
@@ -199,8 +199,7 @@ it.each([['unknown-command', '--json'], ['--json']])('root JSON outcome stays va
   const fixture = makeFixture({ 'source.ts': 'export const value = 1\n' })
   try {
     const result = run(fixture.dir, args)
-    const payload = JSON.parse(result.stdout)
-    assert.equal(payload.status, args[0] === '--json' ? 'help' : 'error')
+    assert.equal(JSON.parse(result.stdout)._tag, args[0] === '--json' ? 'Result' : 'Error')
     assert.equal(result.status, args[0] === '--json' ? 0 : 1)
     assert.equal(fixture.read('source.ts'), 'export const value = 1\n')
   }
@@ -219,7 +218,7 @@ it('doctor fixes use compact text and apply every fix despite display limits', (
       assert.equal(fixture.read(`file${i}.ts`), source)
     const applied = run(fixture.dir, ['doctor', '--checks', 'dangling-reexport', '--fix', '--apply', '--json', '--profile', 'agent', '--limit', '1', '--artifact', 'fix.json'])
     assert.equal(applied.status, 0, applied.stderr)
-    const payload = JSON.parse(applied.stdout)
+    const payload = JSON.parse(applied.stdout).data
     assert.equal(payload.changePage.total, 4)
     assert.equal(payload.changePage.omitted, 3)
     assert.equal(JSON.parse(fixture.read('fix.json')).fix.changes.length, 4)
@@ -239,7 +238,7 @@ it.each(['source.ts', 'tsconfig.json', 'hardlink.ts', 'alias/source.ts'])('artif
     for (const to of ['other', 'taken']) {
       const result = run(fixture.dir, ['rename', 'value', to, '--scope', 'source.ts', '--no-vue', '--apply', '--json', '--profile', 'full', '--artifact', artifact])
       assert.equal(result.status, 1)
-      assert.equal(JSON.parse(result.stdout).status, 'error')
+      assert.equal(JSON.parse(result.stdout)._tag, 'Error')
       assert.equal(fixture.read('source.ts'), source)
       assert.equal(fixture.read('hardlink.ts'), source)
       assert.equal(fixture.read('tsconfig.json'), config)
@@ -254,7 +253,7 @@ it.each(['new.ts', 'alias/new.ts'])('artifact cannot occupy prospective rename-f
     symlinkSync(fixture.dir, resolve(fixture.dir, 'alias'), 'junction')
     const result = run(fixture.dir, ['rename-file', 'source.ts', 'new.ts', '--no-vue', '--apply', '--json', '--artifact', artifact])
     assert.equal(result.status, 1)
-    assert.equal(JSON.parse(result.stdout).status, 'error')
+    assert.equal(JSON.parse(result.stdout)._tag, 'Error')
     assert.equal(fixture.read('source.ts'), source)
     assert.equal(existsSync(resolve(fixture.dir, 'new.ts')), false)
   }
@@ -267,9 +266,8 @@ it.each(['other', 'taken'])('new artifact stores one complete plan before %s app
   try {
     const result = run(fixture.dir, ['rename', 'value', to, '--no-vue', '--apply', '--json', '--profile', 'full', '--artifact', 'plan.json'])
     assert.equal(result.status, to === 'taken' ? 1 : 0, result.stderr)
-    const payload = JSON.parse(result.stdout)
     const artifact = JSON.parse(fixture.read('plan.json'))
-    assert.equal(payload.status, to === 'taken' ? 'refused' : 'ok')
+    assert.equal(JSON.parse(result.stdout)._tag, to === 'taken' ? 'Refused' : 'Applied')
     assert.equal(artifact.verification._tag, 'Checked')
     assert.equal(artifact.changes.length, 1)
     assert.equal(artifact.regressions.length > 0, to === 'taken')
@@ -279,7 +277,7 @@ it.each(['other', 'taken'])('new artifact stores one complete plan before %s app
     const before = fixture.read('source.ts')
     const repeated = run(fixture.dir, ['scan', 'taken', '--json', '--artifact', 'plan.json'])
     assert.equal(repeated.status, 1)
-    assert.equal(JSON.parse(repeated.stdout).status, 'error')
+    assert.equal(JSON.parse(repeated.stdout)._tag, 'Error')
     assert.equal(fixture.read('plan.json'), saved)
     assert.equal(fixture.read('source.ts'), before)
   }

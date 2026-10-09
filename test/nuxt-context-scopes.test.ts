@@ -55,7 +55,7 @@ for (const input of cases) {
   it.each([undefined, false])(`SDK refuses ${input.name} without metadata, verify=%s`, async (verify) => {
     const { fx, files } = fixture(input)
     try {
-      await assert.rejects(runRename('format', 'pretty', { cwd: fx.dir, scope: input.provider, verify }), /cannot resolve auto-import metadata/)
+      await assert.rejects(runRename('format', 'pretty', { cwd: fx.dir, scope: input.provider, verifyMode: verify === undefined ? undefined : 'none' }), /cannot resolve auto-import metadata/)
       for (const [path, before] of Object.entries(files)) assert.equal(fx.read(path), before)
     }
     finally { fx.cleanup() }
@@ -75,7 +75,7 @@ for (const input of cases) {
         input.provider,
         '--apply',
         '--json',
-        ...(noVerify ? ['--no-verify'] : []),
+        ...(noVerify ? ['--verify-mode', 'none'] : []),
       ], { cwd: fx.dir, encoding: 'utf8' })
       assert.notEqual(result.status, 0, result.stdout)
       assert.match(result.stderr, /cannot resolve auto-import metadata/)
@@ -94,7 +94,7 @@ it('refuses factored configured Nuxt import providers without metadata', async (
   }
   const fx = makeFixture(files)
   try {
-    await assert.rejects(runRename('format', 'pretty', { cwd: fx.dir, scope: 'custom/format.ts', verify: false }), /cannot resolve auto-import metadata/)
+    await assert.rejects(runRename('format', 'pretty', { cwd: fx.dir, scope: 'custom/format.ts', verifyMode: 'none' as const }), /cannot resolve auto-import metadata/)
     for (const [path, before] of Object.entries(files)) assert.equal(fx.read(path), before)
   }
   finally { fx.cleanup() }
