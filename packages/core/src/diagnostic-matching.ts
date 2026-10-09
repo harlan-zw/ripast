@@ -13,10 +13,13 @@ export function diagnosticRegressions(
   const changed = new Map(changes.map(change => [change.path, change]))
   const out: Regression[] = []
   for (const [path, diagnostics] of after) {
+    if (!diagnostics.length)
+      continue
     const change = changed.get(path)
+    const existing = before.get(path) ?? []
     const baseline = new Map<string, number>()
-    const spans = change && change.before !== change.after ? unchangedSpans(change.before, change.after) : null
-    for (const diagnostic of before.get(path) ?? []) {
+    const spans = existing.length && change && change.before !== change.after ? unchangedSpans(change.before, change.after) : null
+    for (const diagnostic of existing) {
       const range = baselineRange(diagnostic, change, spans)
       if (!range)
         continue
