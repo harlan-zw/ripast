@@ -50,7 +50,7 @@ describe('encoded class key discovery', () => {
       ], { cwd: fx.dir, encoding: 'utf8' })
       expect(result.error).toBeUndefined()
       expect(result.status).toBe(0)
-      expect(JSON.parse(result.stdout).changes.map((change: { path: string }) => change.path)).toEqual(['classes.js'])
+      expect(JSON.parse(result.stdout).data.changes.map((change: { path: string }) => change.path)).toEqual(['classes.js'])
       const output = spawnSync(process.execPath, ['--input-type=module', '-e', `${fx.read('classes.js')}\nconsole.log(JSON.stringify({ cls, message }))`], { encoding: 'utf8' })
       expect(output.status).toBe(0)
       expect(JSON.parse(output.stdout)).toEqual({ cls: 'new-token', message: token })
