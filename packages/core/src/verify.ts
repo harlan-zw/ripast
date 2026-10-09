@@ -18,6 +18,9 @@ export async function findExtensionRegressions(cwd: string, changes: FileChange[
     return []
   const regressions: Regression[] = []
   for (const extension of engine.extensions) {
+    // Custom verifiers run after hooks at the engine's final verification boundary.
+    if (extension.verify)
+      continue
     if (!rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
       continue
     if (!extension.semantic)

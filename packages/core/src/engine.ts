@@ -12,10 +12,13 @@ import type { ScanOptions } from './scan.ts'
 import type { FileChange } from './util.ts'
 import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
-import { extname } from 'node:path'
+import { extname, resolve } from 'node:path'
 import process from 'node:process'
 import { createHooks } from 'hookable'
+import { buildComponentDetail, buildComponentInventory } from './components.ts'
+import { runCssClassFileScan, runCssClassScan } from './css-class-scan.ts'
 import { runDelete } from './delete.ts'
+import { runDoctor } from './doctor.ts'
 import { runMove } from './move.ts'
 import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { runRenameFile, verifyFileRename } from './rename-file.ts'
@@ -108,7 +111,15 @@ export function createEngine(options: EngineOptions = {}) {
       throw new Error(`Required extension missing for ${suffix}`)
   }
   const hooks = createHooks<EngineHooks>()
-  for (const extension of extensions) extension.setup?.(hooks)
+  for (const extension of extensions) {
+    if (extension.setup?.constructor.name === 'AsyncFunction')
+      throw new Error(`Extension setup must be synchronous: ${extension.name}`)
+    const initialized: unknown = extension.setup?.(hooks)
+    if (initialized instanceof Promise) {
+      initialized.catch(error => process.stderr.write(`Extension initialization failed: ${String(error)}\n`))
+      throw new Error(`Extension setup must be synchronous: ${extension.name}`)
+    }
+  }
   const owner = (path: string) => owners.get(extname(path))
   const services: EngineServices = {
     suffixes: [...owners.keys()],
@@ -136,8 +147,9 @@ export function createEngine(options: EngineOptions = {}) {
     },
   }
   const plans = new WeakMap<object, { fingerprint: string, movedSource: string | null }>()
-  async function execute<T extends { changes: FileChange[], regressions: Regression[] }>(request: OperationRequest, opts: { cwd?: string, verify?: boolean | 'none' | 'touched' | 'project' }, action: () => Promise<T>): Promise<T> {
+  async function execute<T extends { changes: FileChange[], regressions: Regression[] }>(request: OperationRequest, opts: { cwd?: string, tsconfig?: string, verify?: boolean | 'none' | 'touched' | 'project' }, action: () => Promise<T>): Promise<T> {
     const cwd = opts.cwd ?? process.cwd()
+    const tsconfig = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
     assertSourceSupport(cwd, services)
     services.assertOperation(request, cwd)
     await hooks.callHook('operation:before', { ...request, cwd })
@@ -152,7 +164,7 @@ export function createEngine(options: EngineOptions = {}) {
       // Hook-added plans share the same verification boundary as native plans.
       const scripts = result.changes.filter(change => !services.owns(change.path))
       if (scripts.length && (JSON.stringify(result.changes) !== originalPlan || extensions.some(extension => extension.planRename))) {
-        const server = await startTsServer(cwd, { tsconfig: findTsconfig(cwd) ?? undefined })
+        const server = await startTsServer(cwd, { tsconfig: tsconfig ?? undefined })
         try {
           if (isFileRenameResult(result)) {
             result.regressions.push(...await verifyFileRename(server, cwd, result.fileMove.from, result.fileMove.to, result.changes, result.selfChange, resolveVerifyMode(opts.verify), (consumer, specifier) => services.adapter?.isPlannedImportTarget?.(cwd, consumer, specifier, result.fileMove.to) ?? false))
@@ -168,7 +180,7 @@ export function createEngine(options: EngineOptions = {}) {
           result.regressions.push(...await extension.verify(context))
         }
         else if (extension.semantic && result.changes.length) {
-          const config = findTsconfig(cwd)
+          const config = tsconfig
           if (!config && rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
             throw new Error(`Extension ${extension.name} verification requires a tsconfig`)
           if (config)
@@ -189,6 +201,11 @@ export function createEngine(options: EngineOptions = {}) {
     graph: (pattern: string, opts: ScanOptions = {}) => buildScanGraph(pattern, { ...opts, engine: services }),
     declarations: (opts: Parameters<typeof buildDeclarationTree>[0] = {}) => buildDeclarationTree({ ...opts, engine: services }),
     unused: (opts: Parameters<typeof buildUnusedDeclarations>[0] = {}) => buildUnusedDeclarations({ ...opts, engine: services }),
+    runCssClassScan: (opts: Parameters<typeof runCssClassScan>[0] = {}) => runCssClassScan({ ...opts, engine: services }),
+    runCssClassFileScan: (opts: Parameters<typeof runCssClassFileScan>[0] = {}) => runCssClassFileScan({ ...opts, engine: services }),
+    runDoctor: (opts: Parameters<typeof runDoctor>[0] = {}) => runDoctor({ ...opts, engine: services }),
+    buildComponentInventory: (opts: Parameters<typeof buildComponentInventory>[0] = {}) => buildComponentInventory({ ...opts, engine: services }),
+    buildComponentDetail: (name: string, opts: Parameters<typeof buildComponentDetail>[1] = {}) => buildComponentDetail(name, { ...opts, engine: services }),
     rename: (from: string, to: string, opts: RenameOptions = {}) => execute({ operation: 'rename', from, to }, opts, async () => {
       const planners = extensions.filter(extension => extension.planRename && rgFiles(from, { cwd: opts.cwd, glob: extension.suffixes.map(suffix => `*${suffix}`) }).length)
       const coreBindings = scan(from, { cwd: opts.cwd, engine: services }).some(hit => !services.owns(hit.file) && hit.kind === 'identifier-binding')
@@ -253,6 +270,22 @@ function combineAdapters(adapters: FrameworkAdapter[]): FrameworkAdapter | null 
     applyFileRenameEdits: async (...args) => mergePlans(await Promise.all(adapters.map(adapter => adapter.applyFileRenameEdits(...args)))),
     regressions: async (...args) => (await Promise.all(adapters.map(adapter => adapter.regressions(...args)))).flat(),
     isGeneratedPath: (cwd, path) => adapters.some(adapter => adapter.isGeneratedPath?.(cwd, path)),
+    filterGeneratedChanges(cwd, changes) {
+      for (const adapter of adapters) adapter.filterGeneratedChanges?.(cwd, changes)
+    },
+    isPlannedImportTarget: (...args) => adapters.some(adapter => adapter.isPlannedImportTarget?.(...args)),
+    addExplicitImports: ctx => mergePlans(adapters.map(adapter => adapter.addExplicitImports?.(ctx) ?? [])),
+    async finalizeFileRename(...args) {
+      const results = []
+      for (const adapter of adapters) {
+        const result = await adapter.finalizeFileRename?.(...args)
+        if (result)
+          results.push(result)
+      }
+      return { changes: mergePlans(results.map(result => result.changes)), warnings: results.flatMap(result => result.warnings) }
+    },
+    listComponents: (cwd, opts) => adapters.flatMap(adapter => adapter.listComponents?.(cwd, opts) ?? []),
+    findComponentUsages: (names, opts) => adapters.flatMap(adapter => adapter.findComponentUsages?.(names, opts) ?? []),
   }
 }
 

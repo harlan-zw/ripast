@@ -1,10 +1,10 @@
-# Upgrade to RipIDE 0.5.0
+# Upgrade to Ripast 0.5.0
 
 Use Node 22.13 or later.
-Update the RipIDE packages together.
+Update the Ripast packages together.
 
 ```sh
-npm install ripide-api@0.5.0 ripide-vue@0.5.0
+npm install @ripast/core@0.5.0 @ripast/vue@0.5.0
 ```
 
 ## Refactor options
@@ -15,7 +15,7 @@ Pass the working directory and configuration path instead.
 Before:
 
 ```ts
-import { runRename } from 'ripide-api'
+import { runRename } from '@ripast/core'
 import { Project } from 'ts-morph'
 
 const project = new Project({ tsConfigFilePath: 'tsconfig.json' })
@@ -25,7 +25,7 @@ await runRename('oldName', 'newName', { project, lazy: true })
 After:
 
 ```ts
-import { runRename } from 'ripide-api'
+import { runRename } from '@ripast/core'
 
 await runRename('oldName', 'newName', {
   cwd: process.cwd(),
@@ -42,8 +42,8 @@ For Nuxt, prepare its generated configuration first. Then pass `.nuxt/tsconfig.j
 It returns a promise.
 
 ```ts
-import type { FileChange } from 'ripide-api'
-import { findRegressions, startTsServer } from 'ripide-api'
+import type { FileChange } from '@ripast/core'
+import { findRegressions, startTsServer } from '@ripast/core'
 
 const changes: FileChange[] = [
   { path: '/absolute/project/source.ts', before: 'export const value = 1', after: 'export const value = "one"' },
@@ -69,9 +69,9 @@ Use `tree --glob <pattern>` instead of positional file paths.
 
 Paste this section into your coding agent:
 
-> Upgrade this project from RipIDE 0.4.0 to 0.5.0.
-> Require Node 22.13 or later and update all installed RipIDE packages together.
-> Find RipIDE imports with `rg -n '@ripide/(core|vue|cli)'`.
+> Upgrade this project from Ripast 0.4.0 to 0.5.0.
+> Require Node 22.13 or later and update all installed Ripast packages together.
+> Find Ripast imports with `rg -n '@ripast/(core|vue|cli)'`.
 > Remove `project` and `lazy` from SDK refactor options. Pass `cwd` and `tsconfig` instead.
 > Replace `snapshotDiagnostics` and `DiagnosticSnapshot` with `startTsServer` and asynchronous `findRegressions(server, changes, files)`.
 > Dispose each server in a `finally` block.

@@ -1,5 +1,5 @@
 ---
-name: ripide
+name: ripast
 description: "AST refactors: renames, moves, imports, and CSS classes in TS/JS/Vue."
 ---
 

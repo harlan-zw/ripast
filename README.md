@@ -51,7 +51,7 @@ Requires Node 22.13+.
    npm install -g ripide
    ```
 
-2. Install the [RipIDE Agent Skill](./packages/cli/skills/ripide/SKILL.md) in your project with your preferred installer:
+2. Install the [RipIDE Agent Skill](./packages/cli/skills/ripast/SKILL.md) in your project with your preferred installer:
 
    With [skilld](https://skilld.dev/gh/harlan-zw/ripide):
 
@@ -62,7 +62,7 @@ Requires Node 22.13+.
    Or with [skills.sh](https://skills.sh):
 
    ```bash
-   npx skills add harlan-zw/ripide --skill ripide
+   npx skills add harlan-zw/ripide --skill ripast
    ```
 
 3. Optionally install [ripgrep](https://github.com/BurntSushi/ripgrep#installation) for faster searches.

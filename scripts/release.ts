@@ -94,7 +94,7 @@ async function run() {
       assertReplacementPublished(response, plan.version)
     }
     for (const folder of folders) {
-      const legacy = `@ripide/${folder}`
+      const legacy = `@ripast/${folder}`
       const replacement = packageNames[folder]
       const response = spawnSync(process.execPath, [npm, 'deprecate', legacy, `Renamed to ${replacement}. Install ${replacement} instead.`], { stdio: 'inherit' })
       if (response.error)

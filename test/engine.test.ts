@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { parseSourceFile } from '../packages/core/src/adapter.ts'
 import { createEngine } from '../packages/core/src/index.ts'
+import { createVueExtension } from '../packages/vue/src/index.ts'
 
 const directories: string[] = []
 function fixture() {
@@ -35,13 +36,63 @@ it('propagates broken initialization', () => {
     throw new Error('broken setup')
   } }] })).toThrow('broken setup')
 })
+it('refuses asynchronous setup before creating an engine', () => {
+  expect(() => createEngine({ extensions: [{ ...extension, async setup() {} }] })).toThrow(/synchronous/)
+  expect(() => createEngine({ extensions: [{ ...extension, setup: () => Promise.resolve() }] })).toThrow(/synchronous/)
+})
+
+it('preserves component services when multiple semantic extensions coexist', async () => {
+  const cwd = fixture()
+  rmSync(join(cwd, 'view.custom'))
+  mkdirSync(join(cwd, 'components'))
+  writeFileSync(join(cwd, 'components/Card.vue'), '<template><div>Card</div></template>')
+  const vue = createVueExtension()
+  const engine = createEngine({ extensions: [{ ...vue, semantic: { ...vue.semantic!, autoImportScopes: undefined } }, {
+    ...extension,
+    semantic: {
+      name: 'custom',
+      hasFilesContaining: () => false,
+      applyRename: async () => [],
+      applyImportRewrite: async () => [],
+      applyFileRenameEdits: async () => [],
+      regressions: async () => [],
+    },
+  }] })
+  const inventory = await engine.buildComponentInventory({ cwd, source: 'filesystem' })
+  expect(inventory.components.map(component => component.name)).toContain('Card')
+})
+it('resolves explicit verification configuration against the project directory', async () => {
+  const cwd = fixture()
+  rmSync(join(cwd, 'view.custom'))
+  writeFileSync(join(cwd, 'source.ts'), 'export const shared = 1\n')
+  writeFileSync(join(cwd, 'custom.json'), '{"compilerOptions":{"noEmit":true},"include":["*.ts"]}')
+  const configs: string[] = []
+  const engine = createEngine({ extensions: [{
+    ...extension,
+    semantic: {
+      name: 'custom',
+      hasFilesContaining: () => false,
+      applyRename: async () => [],
+      applyImportRewrite: async () => [],
+      applyFileRenameEdits: async () => [],
+      async regressions(config) {
+        configs.push(config)
+        return []
+      },
+    },
+  }] })
+  const result = await engine.rename('shared', 'renamed', { cwd, tsconfig: 'custom.json' })
+  expect(configs).toEqual([join(cwd, 'custom.json')])
+  engine.commit(result)
+  expect(readFileSync(join(cwd, 'source.ts'), 'utf8')).toContain('export const renamed')
+})
 it('refuses a parser-only extension mutation before writes', async () => {
   const cwd = fixture()
   await expect(createEngine({ extensions: [extension] }).rename('shared', 'next', { cwd })).rejects.toThrow(/rename/)
   expect(readFileSync(join(cwd, 'view.custom'), 'utf8')).toBe('header\nexport const shared = 1\n')
 })
 
-it('renames a TS provider, TS importer, and third-suffix consumer together', async () => {
+it.each(['touched', 'project'] as const)('renames a TS provider, TS importer, and third-suffix consumer with %s verification', async (verify) => {
   const cwd = fixture()
   writeFileSync(join(cwd, 'source.ts'), 'export const shared = 1\nexport const other = 2\n')
   writeFileSync(join(cwd, 'consumer.ts'), 'import { shared } from \'./source.ts\'\nexport const value = shared\n')
@@ -57,7 +108,7 @@ it('renames a TS provider, TS importer, and third-suffix consumer together', asy
       return { changes: [{ path, rel: 'view.custom', before, after: before.replace(from, to) }], regressions: [], warnings: [], scanned: 1 }
     },
   }] })
-  const result = await engine.rename('shared', 'renamed', { cwd })
+  const result = await engine.rename('shared', 'renamed', { cwd, verify })
   expect(result.regressions).toEqual([])
   expect(result.changes.map(change => change.rel).sort()).toEqual(['consumer.ts', 'source.ts', 'view.custom'])
   expect(readFileSync(join(cwd, 'source.ts'), 'utf8')).toContain('export const shared')

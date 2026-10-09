@@ -127,7 +127,7 @@ async function main() {
   if (values.out && existsSync(out))
     throw new Error('Choose a new --out directory')
   mkdirSync(out, { recursive: true })
-  const skill = readFileSync(join(root, 'packages/cli/skills/ripide/SKILL.md'), 'utf8')
+  const skill = readFileSync(join(root, 'packages/cli/skills/ripast/SKILL.md'), 'utf8')
   const providerFile = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'opencode/opencode.json')
   const provider = needsOpenCode ? (JSON.parse(readFileSync(providerFile, 'utf8')) as { provider?: unknown }).provider ?? {} : {}
   const authFile = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'opencode/auth.json')

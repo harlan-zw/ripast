@@ -119,7 +119,7 @@ async function main() {
     throw new Error('--arm requires both, agent, or ripide')
   const arms: Arm[] = values.arm === 'both' ? ['ripide', 'agent'] : [values.arm as Arm]
   const cases = (values.case ? [values.case as CaseName] : caseNames).map(name => makeCase(name, consumers))
-  const skill = values.skill ? readFileSync(values.skill === 'current' ? join(root, 'packages/cli/skills/ripide/SKILL.md') : resolve(values.skill), 'utf8') : null
+  const skill = values.skill ? readFileSync(values.skill === 'current' ? join(root, 'packages/cli/skills/ripast/SKILL.md') : resolve(values.skill), 'utf8') : null
   const cli = join(root, 'packages/cli/bin/ripide.mjs')
   if (!existsSync(join(root, 'packages/cli/dist/cli.mjs')))
     throw new Error('If the CLI build is missing, run pnpm build')

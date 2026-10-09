@@ -51,6 +51,8 @@ A parser alone does not enable mutation. Semantic services and operation capabil
 ## Operation capabilities
 
 The engine exposes `scan`, `graph`, `declarations`, `unused`, `rename`, `move`, `delete`, `renameFile`, and `replace`.
+It also exposes `runCssClassScan`, `runCssClassFileScan`, `runDoctor`, `buildComponentInventory`, and `buildComponentDetail`.
+These methods use the same injected extensions.
 An extension declares supported mutations through `operations`.
 The optional `supports` callback can refuse a specific typed operation request.
 Parser-only extensions refuse mutation when their files exist.
@@ -69,6 +71,7 @@ Distinct conflicting plans must never silently replace each other.
 
 `setup` synchronously registers typed `hookable` handlers on the engine instance.
 Initialization failures propagate. Hooks run serially in extension registration order.
+Asynchronous setup refuses engine creation.
 
 1. Check source requirements and operation capabilities.
 2. Run `operation:before`.
