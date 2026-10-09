@@ -1,7 +1,10 @@
-# Ripast branding
+# RipIDE branding
 
 The README uses **1I, Shared shoulder**, selected from the Brand Lab on 8 October 2026.
-The r flows into the i. The mark and custom wordmark share that joined shape.
+The mark keeps the original ri ligature.
+The wordmark reads ripIDE, with the original joined ri and p paths.
+IDE sits at the same height as ri and p, with a compact D and curved E.
+All letters share the same stroke weight. The written product name is RipIDE.
 All letters use SVG paths, with no font dependency.
 
 | File | Use |
@@ -32,8 +35,8 @@ Its alternate directions and recommendations are exploration material, not addit
 | Wash | `#fff1ab` | `#3d3823` |
 
 Keep yellow bright in light mode. Use dark ink on yellow fills.
-The README exports preserve 1I's original paths in a horizontal arrangement.
-The standalone ligature can read as an n. Prefer the full wordmark when introducing Ripast.
+The README exports pair 1I's ri mark with the RipIDE wordmark.
+The standalone ligature can read as an n. Prefer the full wordmark when introducing RipIDE.
 
 ## Source
 

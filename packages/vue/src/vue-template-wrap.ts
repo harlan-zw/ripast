@@ -1,4 +1,4 @@
-import type { FileChange } from '@ripast/core/adapter'
+import type { FileChange } from 'ripide-api/adapter'
 
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
@@ -23,9 +23,9 @@ export interface VueTemplateWrapResult {
 function resolveScope(scope: string, cwd: string): string {
   const abs = resolve(cwd, scope)
   if (!existsSync(abs))
-    throw new Error(`ripast: --scope file "${scope}" does not exist`)
+    throw new Error(`ripide: --scope file "${scope}" does not exist`)
   if (!abs.endsWith('.vue'))
-    throw new Error(`ripast: --scope must point at a .vue file (got "${scope}")`)
+    throw new Error(`ripide: --scope must point at a .vue file (got "${scope}")`)
   return abs
 }
 

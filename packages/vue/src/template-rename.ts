@@ -1,4 +1,4 @@
-import type { FileChange } from '@ripast/core/adapter'
+import type { FileChange } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 
 import { basename, relative } from 'node:path'

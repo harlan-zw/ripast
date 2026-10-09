@@ -2,11 +2,11 @@
 
 Create an engine with the extensions the project requires.
 Core loads no optional packages and has no extension registry.
-The CLI detects Vue source and Nuxt configuration before loading `@ripast/vue`.
+The CLI detects Vue source and Nuxt configuration before loading `ripide-vue`.
 
 ```ts
-import { createEngine } from '@ripast/core'
-import vue from '@ripast/vue'
+import { createEngine } from 'ripide-api'
+import vue from 'ripide-vue'
 
 const engine = createEngine({ extensions: [vue] })
 const result = await engine.runRename('before', 'after', { cwd: '/project' })
@@ -16,7 +16,7 @@ engine.apply(result)
 ## Migration
 
 Replace SDK calls that relied on automatic Vue loading with calls on an injected engine.
-Import template wrap and unwrap operations from `@ripast/vue`.
+Import template wrap and unwrap operations from `ripide-vue`.
 Remove SDK `vue` flags. Create an engine without the extension for a script-only project.
 The CLI keeps its Vue flag at the composition boundary.
 

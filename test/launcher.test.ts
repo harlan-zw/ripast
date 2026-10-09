@@ -17,12 +17,12 @@ it('launcher installs missing adapters through pnpm without running npm', () => 
     for (const name of ['npx', 'pnpm']) chmodSync(resolve(fx.dir, name), 0o755)
     const child = spawnSync(process.execPath, [launcher, 'rename', 'old', 'next'], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 0, child.stderr)
     assert.equal(fx.read('manager').trim(), 'pnpm')
-    assert.deepEqual(fx.read('args').trim().split('\n'), ['dlx', '--package=@ripast/cli', '--package=@ripast/vue', 'ripast', 'rename', 'old', 'next'])
+    assert.deepEqual(fx.read('args').trim().split('\n'), ['dlx', '--package=ripide', '--package=ripide-vue', 'ripide', 'rename', 'old', 'next'])
   }
   finally { fx.cleanup() }
 })
@@ -30,14 +30,14 @@ it('launcher installs missing adapters through pnpm without running npm', () => 
 it('installed import-only adapters need no pnpm to show help', () => {
   const fx = makeFixture({
     'package.json': '{"dependencies":{"vue":"*"}}',
-    'node_modules/@ripast/vue/package.json': '{"type":"module","exports":{".":{"types":"./index.d.ts","import":"./index.mjs"}}}',
-    'node_modules/@ripast/vue/index.mjs': '',
+    'node_modules/ripide-vue/package.json': '{"type":"module","exports":{".":{"types":"./index.d.ts","import":"./index.mjs"}}}',
+    'node_modules/ripide-vue/index.mjs': '',
     'bin/.keep': '',
   }, false)
   try {
     const child = spawnSync(process.execPath, [prepareLauncher(fx), '--help'], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 0, child.stderr)
@@ -50,16 +50,16 @@ it('installed import-only adapters need no pnpm to show help', () => {
 it('installs an adapter when its import entry is missing', () => {
   const fx = makeFixture({
     'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
-    'node_modules/@ripast/vue/package.json': '{"exports":{".":{"import":"./missing.mjs"}}}',
+    'node_modules/ripide-vue/package.json': '{"exports":{".":{"import":"./missing.mjs"}}}',
     'pnpm': '#!/bin/sh\necho pnpm > manager\nexit 0\n',
     'bin/.keep': '',
   }, false)
   try {
     prepareLauncher(fx)
     chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
-    const child = spawnSync(process.execPath, [resolve(fx.dir, 'bin/ripast.mjs'), '--help'], {
+    const child = spawnSync(process.execPath, [resolve(fx.dir, 'bin/ripide.mjs'), '--help'], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 0, child.stderr)
@@ -74,9 +74,9 @@ it('built CLI renames a symbol without ripgrep when Vue work is disabled', () =>
     'source.ts': 'export const target = 1',
   })
   try {
-    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripast.mjs'), 'rename', 'target', 'next', '--no-vue', '--no-verify', '--json'], {
+    const child = spawnSync(process.execPath, [resolve('packages/cli/bin/ripide.mjs'), 'rename', 'target', 'next', '--no-vue', '--no-verify', '--json'], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 0, child.stderr)
@@ -95,14 +95,14 @@ it('launcher explains missing package managers when an adapter needs installatio
   try {
     const child = spawnSync(process.execPath, [prepareLauncher(fx), 'scan', 'target'], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 1)
     assert.match(child.stderr, /pnpm.*npm.*PATH/)
-    assert.match(child.stderr, /@ripast\/vue/)
+    assert.match(child.stderr, /ripide-vue/)
     assert.match(child.stderr, /https:\/\/pnpm.io\/installation/)
-    assert.match(child.stderr, /npm install -g @ripast\/cli @ripast\/vue/)
+    assert.match(child.stderr, /npm install -g ripide ripide-vue/)
     assert.match(child.stderr, /--no-vue/)
   }
   finally { fx.cleanup() }
@@ -111,14 +111,14 @@ it('launcher explains missing package managers when an adapter needs installatio
 it('launcher falls back to npm with a separate prefix and preserves project cwd', () => {
   const fx = makeFixture({
     'package.json': '{"dependencies":{"vue":"*"},"devEngines":{"packageManager":{"name":"pnpm","onFail":"error"}}}',
-    'npm': '#!/bin/sh\npwd > cwd\nprintf "%s\\n" "$@" > args\nprintf "%s" "$RIPAST_REEXEC" > reexec\nexit 0\n',
+    'npm': '#!/bin/sh\npwd > cwd\nprintf "%s\\n" "$@" > args\nprintf "%s" "$RIPIDE_REEXEC" > reexec\nexit 0\n',
   }, false)
   try {
     const launcher = prepareLauncher(fx)
     chmodSync(resolve(fx.dir, 'npm'), 0o755)
     const child = spawnSync(process.execPath, [launcher, 'rename', 'old name', 'next'], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 0, child.stderr)
@@ -128,7 +128,7 @@ it('launcher falls back to npm with a separate prefix and preserves project cwd'
     const prefix = args[2].slice('--prefix='.length)
     assert.notEqual(prefix, fx.dir)
     assert.equal(existsSync(prefix), false, 'temporary npm prefix gets removed')
-    assert.deepEqual(args.slice(3), ['--package=@ripast/cli', '--package=@ripast/vue', '--', 'ripast', 'rename', 'old name', 'next'])
+    assert.deepEqual(args.slice(3), ['--package=ripide', '--package=ripide-vue', '--', 'ripide', 'rename', 'old name', 'next'])
     assert.equal(fx.read('cwd').trim(), fx.dir)
     assert.equal(fx.read('reexec'), '1')
   }
@@ -146,7 +146,7 @@ it('launcher does not fall back when pnpm runs and fails', () => {
     for (const name of ['pnpm', 'npm']) chmodSync(resolve(fx.dir, name), 0o755)
     const child = spawnSync(process.execPath, [launcher, 'scan', 'target'], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 17)

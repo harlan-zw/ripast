@@ -37,7 +37,7 @@ function detectFrameworks(cwd) {
 }
 
 function ensureAdapters(needed) {
-  if (process.env.RIPAST_REEXEC)
+  if (process.env.RIPIDE_REEXEC)
     return
   if (!needed.length)
     return
@@ -45,42 +45,42 @@ function ensureAdapters(needed) {
   const missing = []
   for (const name of needed) {
     try {
-      if (!existsSync(new URL(import.meta.resolve(`@ripast/${name}`))))
-        missing.push(`@ripast/${name}`)
+      if (!existsSync(new URL(import.meta.resolve(`ripide-${name}`))))
+        missing.push(`ripide-${name}`)
     }
-    catch { missing.push(`@ripast/${name}`) }
+    catch { missing.push(`ripide-${name}`) }
   }
   if (!missing.length)
     return
 
-  const args = ['dlx', '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), 'ripast', ...process.argv.slice(2)]
-  const options = { stdio: 'inherit', env: { ...process.env, RIPAST_REEXEC: '1' } }
+  const args = ['dlx', '--package=ripide', ...missing.map(p => `--package=${p}`), 'ripide', ...process.argv.slice(2)]
+  const options = { stdio: 'inherit', env: { ...process.env, RIPIDE_REEXEC: '1' } }
   let manager = 'pnpm'
   let res = spawn.sync(manager, args, options)
   if (res.error?.code === 'ENOENT') {
     manager = 'npm'
     // Keep npm's project metadata separate. The executed CLI still uses the caller's cwd.
-    const prefix = mkdtempSync(join(tmpdir(), 'ripast-adapters-'))
+    const prefix = mkdtempSync(join(tmpdir(), 'ripide-adapters-'))
     try {
-      res = spawn.sync(manager, ['exec', '--yes', `--prefix=${prefix}`, '--package=@ripast/cli', ...missing.map(p => `--package=${p}`), '--', 'ripast', ...process.argv.slice(2)], options)
+      res = spawn.sync(manager, ['exec', '--yes', `--prefix=${prefix}`, '--package=ripide', ...missing.map(p => `--package=${p}`), '--', 'ripide', ...process.argv.slice(2)], options)
     }
     finally { rmSync(prefix, { recursive: true, force: true }) }
   }
   if (res.error) {
     if (res.error.code === 'ENOENT') {
       process.stderr.write([
-        `ripast: Neither pnpm nor npm was found on PATH. Missing adapters: ${missing.join(', ')}.`,
+        `ripide: Neither pnpm nor npm was found on PATH. Missing adapters: ${missing.join(', ')}.`,
         'If either package manager is installed, add its directory to PATH.',
         'Install pnpm: https://pnpm.io/installation',
         'Then run pnpm --version and retry.',
         'After installing npm, you can install the CLI and adapters together:',
-        `  npm install -g @ripast/cli ${missing.join(' ')}`,
+        `  npm install -g ripide ${missing.join(' ')}`,
         'For script-only rename, move, or rename-file commands, retry with --no-vue.',
         '',
       ].join('\n'))
     }
     else {
-      process.stderr.write(`ripast: Could not start ${manager}: ${res.error.message}\n`)
+      process.stderr.write(`ripide: Could not start ${manager}: ${res.error.message}\n`)
     }
   }
   process.exit(res.status ?? 1)

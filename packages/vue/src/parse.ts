@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import process from 'node:process'
-import { parseSourceFile as parseScriptSource } from '@ripast/core/adapter'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { parseSourceFile as parseScriptSource } from 'ripide-api/adapter'
 
 export function parseSourceFile(path: string, source: string, cwd = process.cwd()) {
   if (!path.endsWith('.vue'))
@@ -24,7 +24,7 @@ export function inspectionSource(path: string, source: string): {
 } {
   const { descriptor, errors } = parseSfc(source, { filename: path })
   if (errors.length)
-    throw new Error(`ripast delete: cannot inspect ${path.split('/').at(-1)}:1:1 because its Vue source has parse errors.`)
+    throw new Error(`ripide delete: cannot inspect ${path.split('/').at(-1)}:1:1 because its Vue source has parse errors.`)
   const blocks = [descriptor.script, descriptor.scriptSetup].filter(block => block !== null)
   const text = source.replace(/[^\r\n]/g, ' ').split('')
   for (const block of blocks) {

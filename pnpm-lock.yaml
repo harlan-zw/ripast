@@ -121,15 +121,6 @@ importers:
       '@babel/core':
         specifier: ^7.29.7
         version: 7.29.7
-      '@ripast/cli':
-        specifier: workspace:*
-        version: link:packages/cli
-      '@ripast/core':
-        specifier: workspace:*
-        version: link:packages/core
-      '@ripast/vue':
-        specifier: workspace:*
-        version: link:packages/vue
       '@types/babel__core':
         specifier: ^7.20.5
         version: 7.20.5
@@ -178,6 +169,15 @@ importers:
       react-dom:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
+      ripide:
+        specifier: workspace:*
+        version: link:packages/cli
+      ripide-api:
+        specifier: workspace:*
+        version: link:packages/core
+      ripide-vue:
+        specifier: workspace:*
+        version: link:packages/vue
       solid-js:
         specifier: ^1.9.17
         version: 1.9.17
@@ -196,15 +196,15 @@ importers:
 
   packages/cli:
     dependencies:
-      '@ripast/core':
-        specifier: workspace:*
-        version: link:../core
       citty:
         specifier: ^0.2.2
         version: 0.2.2
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
+      ripide-api:
+        specifier: workspace:*
+        version: link:../core
       std-env:
         specifier: ^4.3.0
         version: 4.3.0
@@ -284,7 +284,7 @@ importers:
         specifier: ^3.2.0
         version: 3.2.0
     devDependencies:
-      '@ripast/core':
+      ripide-api:
         specifier: workspace:*
         version: link:../core
 

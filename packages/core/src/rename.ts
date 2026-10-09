@@ -57,12 +57,12 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
   const declarations = timed(profile, 'find declarations', () => findDeclarations(declarationPaths, from, opts.allowMultiple))
   if (!declarations.length) {
     if (opts.scope)
-      throw new Error(`ripast rename: no declaration of "${from}" in ${opts.scope}`)
-    throw new Error(`ripast rename: no declaration of "${from}" found in project`)
+      throw new Error(`ripide rename: no declaration of "${from}" in ${opts.scope}`)
+    throw new Error(`ripide rename: no declaration of "${from}" found in project`)
   }
   const uniqueFiles = new Set(declarations.map(d => relative(cwd, d.filePath)))
   if (uniqueFiles.size > 1 && !opts.allowMultiple) {
-    throw new Error(`ripast rename: "${from}" is declared in multiple files (${[...uniqueFiles].join(', ')}). Pass --scope <file> to pick one, or --all to rename every occurrence.`)
+    throw new Error(`ripide rename: "${from}" is declared in multiple files (${[...uniqueFiles].join(', ')}). Pass --scope <file> to pick one, or --all to rename every occurrence.`)
   }
   if (from !== to) {
     for (const path of scriptCandidates) {
@@ -77,7 +77,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
           if (node.type !== 'Identifier' || node.name !== from || !source.slice(node.start, node.end).includes('\\u'))
             return
           if (!selectedPositions.has(node.start) && !unrelated.has(node.start))
-            throw new Error(`ripast rename: TypeScript cannot resolve escaped references to "${from}" in ${relative(cwd, path)}`)
+            throw new Error(`ripide rename: TypeScript cannot resolve escaped references to "${from}" in ${relative(cwd, path)}`)
         },
       })
     }
@@ -95,7 +95,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
       for (const decl of declarations) {
         const edits = await server.rename(decl.filePath, decl.pos, to)
         if (!edits.size && from !== to)
-          throw new Error(`ripast rename: TypeScript could not rename declaration "${from}" in ${relative(cwd, decl.filePath)}`)
+          throw new Error(`ripide rename: TypeScript could not rename declaration "${from}" in ${relative(cwd, decl.filePath)}`)
         for (const [path, fileEdits] of edits) {
           const unique = editsByPath.get(path) ?? new Map<string, LspTextEdit>()
           for (const edit of fileEdits) {
@@ -350,6 +350,6 @@ function findDeclarations(paths: string[], name: string, allowMultiple = false):
   if (!locals.length)
     locals.push(...parameters)
   if (locals.length > new Set(locals.map(d => d.filePath)).size)
-    throw new Error(`ripast rename: "${name}" has multiple declarations in one file. Pass --all to rename every occurrence.`)
+    throw new Error(`ripide rename: "${name}" has multiple declarations in one file. Pass --all to rename every occurrence.`)
   return locals
 }

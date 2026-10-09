@@ -1,5 +1,5 @@
-import { parseComponentSource } from '@ripast/vue'
 import { parse } from '@vue/compiler-sfc'
+import { parseComponentSource } from 'ripide-vue'
 import { describe, expect, it } from 'vitest'
 import { runVueTemplateUnwrap, runVueTemplateWrap, scan } from './engine-sdk.ts'
 import { makeFixture } from './helpers.ts'

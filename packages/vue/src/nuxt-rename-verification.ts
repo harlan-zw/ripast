@@ -1,8 +1,8 @@
-import type { FileChange, TextEdit } from '@ripast/core/adapter'
+import type { FileChange, TextEdit } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { applyTextEdits } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
+import { applyTextEdits } from 'ripide-api/adapter'
 import { isNuxtBindingTarget, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 
 /** Predict Nuxt prepare declarations for verification. These changes never reach the apply plan. */

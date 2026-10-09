@@ -1,6 +1,6 @@
-import type { CssClassSourceFile, RenameMap } from '@ripast/core/adapter'
-import { applyTextEdits, cssSyntax, encodeAttributeValue, mapIncludesAny, rewriteClassString, rewriteCss, rewriteScriptWithin, rewriteStringsInProgram, visitClassTokens, visitCss, visitProgramClassStrings } from '@ripast/core/adapter'
+import type { CssClassSourceFile, RenameMap } from 'ripide-api/adapter'
 import { parseSync } from 'oxc-parser'
+import { applyTextEdits, cssSyntax, encodeAttributeValue, mapIncludesAny, rewriteClassString, rewriteCss, rewriteScriptWithin, rewriteStringsInProgram, visitClassTokens, visitCss, visitProgramClassStrings } from 'ripide-api/adapter'
 import { parseFile } from './parse.ts'
 
 const CLASS_EXPRESSION_PREFIX = 'cn('
@@ -16,7 +16,7 @@ function parseClassExpression(expression: string): {
   program: any | null
 } {
   const source = `${CLASS_EXPRESSION_PREFIX}${expression})`
-  const { program, errors } = parseSync('ripast-class-expression.ts', source)
+  const { program, errors } = parseSync('ripide-class-expression.ts', source)
   return { source, program: errors.length ? null : program }
 }
 function visitVueClassAttributes(source: string, visit: (value: string, start: number, end: number, dynamic: boolean) => void, parseDescriptor: DescriptorParser): void {

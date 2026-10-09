@@ -26,7 +26,7 @@ interface VueFixture {
 }
 
 function makeVueFixture(files: Record<string, string>): VueFixture {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-vue-test-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-vue-test-'))
   const write = (rel: string, content: string) => {
     const abs = join(dir, rel)
     mkdirSync(dirname(abs), { recursive: true })
@@ -87,7 +87,7 @@ describe('vue sfc rename', () => {
     finally { fx.cleanup() }
   })
 
-  it('skips ripast when no .vue files exist (regression: pure-ts unchanged)', async () => {
+  it('skips ripide when no .vue files exist (regression: pure-ts unchanged)', async () => {
     const fx = makeVueFixture({
       'src/utils.ts': 'export function foo() { return 1 }\n',
       'src/main.ts': 'import { foo } from \'./utils.ts\'\nexport const r = foo()\n',

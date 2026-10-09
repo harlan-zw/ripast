@@ -308,7 +308,7 @@ export function composeAdapters(extensions: readonly FrameworkAdapter[] = []): (
   }
   return combined as FrameworkAdapter & Required<Pick<FrameworkAdapter, 'hasFilesContaining' | 'applyRename' | 'applyImportRewrite' | 'applyFileRenameEdits' | 'regressions'>>
 }
-// Adapter SDK entry. @ripast/<framework> packages import from here.
+// Adapter SDK entry. ripide-<framework> packages import from here.
 export { isInsideAutoImportScope } from './source-policy.ts'
 export { offsetOfPosition } from './ts-server.ts'
 export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'

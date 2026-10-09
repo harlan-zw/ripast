@@ -1,8 +1,8 @@
-import type { Engine } from '@ripast/core'
+import type { Engine } from 'ripide-api'
 import process from 'node:process'
 import { projectEngine } from './composition.ts'
 
-export * from '@ripast/core'
+export * from 'ripide-api'
 export async function scan(...args: Parameters<Engine['scan']>) {
   const options = args.at(-1)
   const cwd = typeof options === 'object' && options && 'cwd' in options ? options.cwd : process.cwd()
@@ -127,12 +127,12 @@ export async function buildComponentDetail(...args: Parameters<Engine['buildComp
   const engine = await projectEngine(cwd, enabled)
   return (engine.buildComponentDetail as (...params: Parameters<Engine['buildComponentDetail']>) => ReturnType<Engine['buildComponentDetail']>)(...args)
 }
-export async function runVueTemplateWrap(...args: Parameters<typeof import('@ripast/vue').runVueTemplateWrap>) {
-  const module = await import('@ripast/vue')
+export async function runVueTemplateWrap(...args: Parameters<typeof import('ripide-vue').runVueTemplateWrap>) {
+  const module = await import('ripide-vue')
   return module.runVueTemplateWrap(...args)
 }
-export async function runVueTemplateUnwrap(...args: Parameters<typeof import('@ripast/vue').runVueTemplateUnwrap>) {
-  const module = await import('@ripast/vue')
+export async function runVueTemplateUnwrap(...args: Parameters<typeof import('ripide-vue').runVueTemplateUnwrap>) {
+  const module = await import('ripide-vue')
   return module.runVueTemplateUnwrap(...args)
 }
 export async function applyOperation(result: Parameters<Engine['apply']>[0]) {

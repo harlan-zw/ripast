@@ -91,7 +91,7 @@ import fs from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 const original = fs.writeFileSync
 fs.writeFileSync = function(path, ...args) {
-  if (String(path).includes('ripast-tmp')) throw new Error('injected write failure')
+  if (String(path).includes('ripide-tmp')) throw new Error('injected write failure')
   return original.call(this, path, ...args)
 }
 syncBuiltinESMExports()

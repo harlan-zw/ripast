@@ -45,7 +45,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   const fromAbs = resolve(cwd, fromPath)
   const toAbs = resolve(cwd, toPath)
   if (fromAbs === toAbs)
-    throw new Error('ripast move: source and destination must be different files')
+    throw new Error('ripide move: source and destination must be different files')
     // Imports may spell identifiers with Unicode escapes. Inspect every script.
   const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, listAll: true, extensions: opts.extensions }))
   const fromOriginal = readFileSync(fromAbs, 'utf8')
@@ -58,7 +58,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     ?? './placeholder.ts'
   const decl = timed(profile, 'find export', () => findMovableExport(parsed.program, symbol))
   if (!decl)
-    throw new Error(`ripast move: no top-level export named "${symbol}" in ${fromPath} (supported: function, class, interface, type, enum, const with single declarator)`)
+    throw new Error(`ripide move: no top-level export named "${symbol}" in ${fromPath} (supported: function, class, interface, type, enum, const with single declarator)`)
   const adapter = extensionsEnabled && tsconfigPath ? composeAdapters(opts.extensions) : null
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
@@ -67,7 +67,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     const referencedBindings = await timedAsync(profile, 'resolve declaration dependencies', () => referencedTopLevelBindings(server, fromAbs, fromSplit, parsed.program, decl))
     const localDeps = timed(profile, 'find local deps', () => findLocalSiblingDeps(parsed.program, decl, referencedBindings))
     if (localDeps.nonExported.length) {
-      throw new Error(`ripast move: "${symbol}" depends on local non-exported symbol(s) [${localDeps.nonExported.join(', ')}] in ${fromPath}. `
+      throw new Error(`ripide move: "${symbol}" depends on local non-exported symbol(s) [${localDeps.nonExported.join(', ')}] in ${fromPath}. `
         + `Export them first, or move them together.`)
     }
     const usedImports = timed(profile, 'collect used imports', () => collectUsedImports(fromSplit, fromAbs, parsed.program, referencedBindings))
@@ -108,7 +108,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
       if (imp.sideEffectOnly || !match || !(await importResolvesTo(server, toAbs, imp, fromAbs)))
         continue
       if (match.alias && match.alias !== symbol)
-        throw new Error(`ripast move: destination imports "${symbol}" as "${match.alias}". Remove the alias before moving it.`)
+        throw new Error(`ripide move: destination imports "${symbol}" as "${match.alias}". Remove the alias before moving it.`)
       const remaining = { ...imp, named: imp.named.filter(binding => binding !== match) }
       replacements.set(imp, isImportEmpty(remaining) ? null : renderImport(remaining))
     }
@@ -116,7 +116,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     server.open(toAbs, toOriginal)
     const unsupportedConsumer = await findUnsupportedModuleConsumer(server, candidatePaths.filter(path => !adapter?.isGeneratedPath?.(cwd, path)), fromAbs, opts.extensions)
     if (unsupportedConsumer)
-      throw new Error(`ripast move: cannot move "${symbol}" while ${relative(cwd, unsupportedConsumer)} uses a namespace or dynamic import of ${fromPath}. Use named imports first.`)
+      throw new Error(`ripide move: cannot move "${symbol}" while ${relative(cwd, unsupportedConsumer)} uses a namespace or dynamic import of ${fromPath}. Use named imports first.`)
     const changes: FileChange[] = []
     if (fromAfter !== fromOriginal)
       changes.push({ path: fromAbs, rel: relative(cwd, fromAbs), before: fromOriginal, after: fromAfter })
@@ -150,7 +150,7 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
           toAbs,
           fromAbs,
           existingChanges: changes,
-          noScriptError: name => new Error(`ripast move: "${name}" is implicitly imported; moving to ${toAbs}`
+          noScriptError: name => new Error(`ripide move: "${name}" is implicitly imported; moving to ${toAbs}`
             + ` removes it from auto-import scope. Either keep it in`
             + ` composables/utils/components, or add explicit imports first.`),
         }))
@@ -458,7 +458,7 @@ function relativeImportTarget(fromFile: string, specifier: string): string | nul
     const candidate = base.replace(/\.[^.]+$/, ext)
     if (statSync(candidate, { throwIfNoEntry: false })?.isFile()) {
       if (statSync(base, { throwIfNoEntry: false })?.isFile())
-        throw new Error(`ripast move: ambiguous module "${specifier}" from ${fromFile}. Both runtime and source files exist.`)
+        throw new Error(`ripide move: ambiguous module "${specifier}" from ${fromFile}. Both runtime and source files exist.`)
       return candidate
     }
   }

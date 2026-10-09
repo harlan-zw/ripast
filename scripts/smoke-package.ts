@@ -10,21 +10,21 @@ const packageDirectory = resolve(process.argv[2])
 const tarballs = readdirSync(packageDirectory).filter(path => path.endsWith('.tgz')).map(path => join(packageDirectory, path))
 assert.equal(tarballs.length, 3, 'Pass the core, CLI, and Vue package tarballs.')
 assert.ok(process.env.npm_execpath?.endsWith('npm-cli.js'), 'Run this smoke check with npm run smoke:package.')
-const cwd = mkdtempSync(join(tmpdir(), 'ripast-package-'))
+const cwd = mkdtempSync(join(tmpdir(), 'ripide-package-'))
 const run = (args: string[], env = process.env) => execFileSync(process.execPath, args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-const cli = join(cwd, 'node_modules/@ripast/cli/bin/ripast.mjs')
+const cli = join(cwd, 'node_modules/ripide/bin/ripide.mjs')
 try {
   writeFileSync(join(cwd, 'package.json'), '{"type":"module","private":true}')
-  const vueTarball = tarballs.find(path => /ripast-vue-/.test(path))!
+  const vueTarball = tarballs.find(path => /ripide-vue-/.test(path))!
   const coreTarballs = tarballs.filter(path => path !== vueTarball)
   run([process.env.npm_execpath!, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...coreTarballs, '@typescript/typescript6@6.0.2', '@types/node@^22'])
   const dependencyGraph = run([process.env.npm_execpath!, 'ls', '--all', '--json'])
-  assert.doesNotMatch(dependencyGraph, /"(?:@vue\/|@volar\/|@ripast\/vue|@sveltejs\/)/)
+  assert.doesNotMatch(dependencyGraph, /"(?:@vue\/|@volar\/|ripide-vue|@sveltejs\/)/)
   process.stdout.write(`Core-only dependency graph:\n${dependencyGraph}\n`)
   writeFileSync(join(cwd, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","module":"NodeNext","types":["node"],"strict":true,"skipLibCheck":true,"noEmit":true,"allowJs":true},"include":["*.ts","*.js"]}')
   writeFileSync(join(cwd, 'source.ts'), 'export const target = 1\n')
   writeFileSync(join(cwd, 'plain.js'), 'export const independent = 2\n')
-  writeFileSync(join(cwd, 'consumer.ts'), `import { createEngine } from '@ripast/core'
+  writeFileSync(join(cwd, 'consumer.ts'), `import { createEngine } from 'ripide-api'
 const engine = createEngine()
 const result = await engine.runRename('target', 'next', { cwd: process.cwd(), verify: false })
 if (!result.changes.some(change => change.after.includes('export const next')))
@@ -35,6 +35,8 @@ console.log(JSON.stringify({ changes: result.changes.length }))
 `)
   run([join(cwd, 'node_modules/@typescript/typescript6/bin/tsc6'), '--project', 'tsconfig.json'])
   const isolated = { ...process.env, PATH: cwd }
+  const named = JSON.parse(run([process.env.npm_execpath!, 'exec', '--offline', '--', 'ripide', 'rename', 'target', 'next', '--no-verify', '--json']))
+  assert.ok(named.changes.some((change: { after: string }) => change.after.includes('export const next')))
   const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-verify', '--json'], isolated))
   assert.ok(renamed.changes.some((change: { after: string }) => change.after.includes('export const next')))
   assert.equal(readFileSync(join(cwd, 'source.ts'), 'utf8'), 'export const target = 1\n')
@@ -42,12 +44,12 @@ console.log(JSON.stringify({ changes: result.changes.length }))
   writeFileSync(join(cwd, 'component.vue'), '<script setup lang="ts">import { target } from "./source"</script><template>{{ target }}</template>\n')
   const missing = spawnSync(process.execPath, [cli, 'rename', 'target', 'next', '--apply', '--no-verify', '--json'], { cwd, env: isolated, encoding: 'utf8' })
   assert.equal(missing.status, 1)
-  assert.match(missing.stderr, /@ripast\/vue/)
+  assert.match(missing.stderr, /ripide-vue/)
   assert.equal(readFileSync(join(cwd, 'source.ts'), 'utf8'), 'export const target = 1\n')
   run([process.env.npm_execpath!, 'install', '--ignore-scripts', '--no-audit', '--no-fund', vueTarball])
-  writeFileSync(join(cwd, 'consumer.ts'), `import { createEngine } from '@ripast/core'
-import vue from '@ripast/vue'
-import { runVueTemplateWrap } from '@ripast/vue'
+  writeFileSync(join(cwd, 'consumer.ts'), `import { createEngine } from 'ripide-api'
+import vue from 'ripide-vue'
+import { runVueTemplateWrap } from 'ripide-vue'
 const engine = createEngine({ extensions: [vue] })
 const result = await engine.runRename('target', 'next', { cwd: process.cwd(), verify: false })
 if (!result.changes.some(change => change.path.endsWith('.vue') && change.after.includes('next')))

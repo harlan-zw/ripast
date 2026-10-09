@@ -7,7 +7,7 @@ import { makeFixture } from './helpers.ts'
 
 // A core-only SDK instance must rewrite ordinary script consumers.
 const { runMove, runRename, runRenameFile } = await import('../packages/core/src/index.ts')
-const { parseSourceFile } = await import('@ripast/core/adapter')
+const { parseSourceFile } = await import('ripide-api/adapter')
 const { writeChanges } = await import('../packages/core/src/util.ts')
 
 const TSCONFIG = JSON.stringify({
@@ -16,7 +16,7 @@ const TSCONFIG = JSON.stringify({
 }, null, 2)
 
 function makeFx(files: Record<string, string>) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-rf-noadapter-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-rf-noadapter-'))
   const write = (rel: string, content: string) => {
     const abs = join(dir, rel)
     mkdirSync(dirname(abs), { recursive: true })

@@ -1,25 +1,25 @@
 {
-  "name": "@ripast/vue",
+  "name": "ripide-vue",
   "type": "module",
   "version": "0.6.1",
-  "description": "Vue (and Nuxt) framework adapter for ripast. Provides Volar/Vue Language Service-backed rename, move, and template rewriting for .vue SFCs.",
+  "description": "Vue (and Nuxt) framework adapter for ripide. Provides Volar/Vue Language Service-backed rename, move, and template rewriting for .vue SFCs.",
   "author": {
     "name": "Harlan Wilton",
     "email": "harlan@harlanzw.com",
     "url": "https://harlanzw.com/"
   },
   "license": "MIT",
-  "homepage": "https://github.com/harlan-zw/ripast#readme",
+  "homepage": "https://github.com/harlan-zw/ripide#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/harlan-zw/ripast.git",
+    "url": "git+https://github.com/harlan-zw/ripide.git",
     "directory": "packages/vue"
   },
   "bugs": {
-    "url": "https://github.com/harlan-zw/ripast/issues"
+    "url": "https://github.com/harlan-zw/ripide/issues"
   },
   "keywords": [
-    "ripast",
+    "ripide",
     "vue",
     "nuxt",
     "volar",
@@ -45,7 +45,7 @@
     "dev:prepare": "obuild --stub"
   },
   "peerDependencies": {
-    "@ripast/core": "workspace:*"
+    "ripide-api": "workspace:*"
   },
   "dependencies": {
     "@typescript/typescript6": "^6.0.2",
@@ -63,6 +63,6 @@
     "vscode-uri": "^3.2.0"
   },
   "devDependencies": {
-    "@ripast/core": "workspace:*"
+    "ripide-api": "workspace:*"
   }
 }

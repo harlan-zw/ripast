@@ -1,10 +1,10 @@
-import type { FrameworkAdapter } from '@ripast/core'
+import type { FrameworkAdapter } from 'ripide-api'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createEngine } from '@ripast/core'
-import { parseSourceFile } from '@ripast/core/adapter'
-import vue from '@ripast/vue'
+import { createEngine } from 'ripide-api'
+import { parseSourceFile } from 'ripide-api/adapter'
+import vue from 'ripide-vue'
 import { expect, it } from 'vitest'
 
 it('isolates extension suffix ownership and authored source positions', () => {

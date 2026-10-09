@@ -754,7 +754,7 @@ function formatMermaidGraph(graph: ScanGraph): string {
   return lines.join('\n')
 }
 function formatDotGraph(graph: ScanGraph): string {
-  const lines = ['digraph ripast_scan {', '  rankdir=LR;']
+  const lines = ['digraph ripide_scan {', '  rankdir=LR;']
   for (const node of graph.nodes) {
     const byKind = summarizeKinds(node.hits)
     lines.push(`  "${escapeDot(node.file)}" [label="${escapeDot(`${node.file}\\n${node.hits.length} hits${byKind ? `: ${byKind}` : ''}`)}"];`)

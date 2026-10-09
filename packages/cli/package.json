@@ -1,5 +1,5 @@
 {
-  "name": "@ripast/cli",
+  "name": "ripide",
   "type": "module",
   "version": "0.6.1",
   "description": "CLI for deterministic refactoring across TypeScript, JavaScript, and installed framework extensions.",
@@ -9,17 +9,17 @@
     "url": "https://harlanzw.com/"
   },
   "license": "MIT",
-  "homepage": "https://github.com/harlan-zw/ripast#readme",
+  "homepage": "https://github.com/harlan-zw/ripide#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/harlan-zw/ripast.git",
+    "url": "git+https://github.com/harlan-zw/ripide.git",
     "directory": "packages/cli"
   },
   "bugs": {
-    "url": "https://github.com/harlan-zw/ripast/issues"
+    "url": "https://github.com/harlan-zw/ripide/issues"
   },
   "keywords": [
-    "ripast",
+    "ripide",
     "cli",
     "ast",
     "refactor",
@@ -35,7 +35,7 @@
   "main": "./dist/cli.mjs",
   "types": "./dist/cli.d.mts",
   "bin": {
-    "ripast": "./bin/ripast.mjs"
+    "ripide": "./bin/ripide.mjs"
   },
   "files": [
     "bin",
@@ -50,9 +50,9 @@
     "dev:prepare": "obuild --stub"
   },
   "dependencies": {
-    "@ripast/core": "workspace:*",
     "citty": "^0.2.2",
     "cross-spawn": "^7.0.6",
+    "ripide-api": "workspace:*",
     "std-env": "^4.3.0"
   }
 }

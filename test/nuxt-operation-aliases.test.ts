@@ -8,7 +8,7 @@ import { it } from 'vitest'
 import { runMove } from './engine-sdk.ts'
 
 function fixture() {
-  const cwd = mkdtempSync(join(tmpdir(), 'ripast-nuxt-operation-'))
+  const cwd = mkdtempSync(join(tmpdir(), 'ripide-nuxt-operation-'))
   const write = (path: string, source: string) => {
     mkdirSync(join(cwd, path, '..'), { recursive: true })
     writeFileSync(join(cwd, path), source)

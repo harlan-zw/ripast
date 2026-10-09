@@ -20,7 +20,7 @@ const VUE_TSCONFIG = JSON.stringify({
 }, null, 2)
 
 function makeFx(files: Record<string, string>) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-renamefile-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-renamefile-'))
   const write = (rel: string, content: string) => {
     const abs = join(dir, rel)
     mkdirSync(dirname(abs), { recursive: true })
@@ -170,13 +170,13 @@ describe('rename-file', () => {
   })
 
   it('rewrites ~/ to relative when consumer lives under an app with its own .nuxt/tsconfig.json (cross-root)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ripast-renamefile-multiapp-'))
+    const dir = mkdtempSync(join(tmpdir(), 'ripide-renamefile-multiapp-'))
     const write = (rel: string, content: string) => {
       const abs = join(dir, rel)
       mkdirSync(dirname(abs), { recursive: true })
       writeFileSync(abs, content)
     }
-    // Workspace tsconfig used by ripast: ~/* maps to workspace root.
+    // Workspace tsconfig used by ripide: ~/* maps to workspace root.
     write('tsconfig.json', JSON.stringify({
       compilerOptions: {
         target: 'ES2022',

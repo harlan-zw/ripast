@@ -1,4 +1,4 @@
-import { scan as coreScan, rgFiles as files, rgFilesMany as many } from '@ripast/core/adapter'
+import { scan as coreScan, rgFiles as files, rgFilesMany as many } from 'ripide-api/adapter'
 import { parseSourceFile } from './parse.ts'
 import { extractTemplateExpressions } from './vue-template.ts'
 

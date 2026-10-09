@@ -1,7 +1,7 @@
-import type { FileChange } from '@ripast/core/adapter'
+import type { FileChange } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 import { basename, relative } from 'node:path'
-import { isInsideAutoImportScope } from '@ripast/core/adapter'
+import { isInsideAutoImportScope } from 'ripide-api/adapter'
 import { rgFiles, scan } from './discovery.ts'
 import { addNuxtExplicitImports, extractTopLevelExportNames } from './nuxt-imports.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
@@ -45,7 +45,7 @@ export async function finalizeVueFileRename(cwd: string, oldAbs: string, newAbs:
         fromAbs: oldAbs,
         existingChanges: mergeView(existingChanges, changes),
         scan,
-        noScriptError: name => new Error(`ripast rename-file: "${name}" is auto-imported in Nuxt; moving ${basename(oldAbs)} to ${newAbs}`
+        noScriptError: name => new Error(`ripide rename-file: "${name}" is auto-imported in Nuxt; moving ${basename(oldAbs)} to ${newAbs}`
           + ` takes it out of auto-import scope but a consumer has no <script> block to receive an explicit import.`
           + ` Add a <script setup> block first, or keep the file in composables/utils.`),
       })
@@ -201,7 +201,7 @@ function hasDefaultImportFromVue(source: string, name: string): boolean {
 function insertVueComponentImport(source: string, name: string, specifier: string): string {
   const match = source.match(/<script(?:\s[^>]*)?>/)
   if (!match || match.index === undefined) {
-    throw new Error(`ripast rename-file: "${name}" is auto-imported in Nuxt; the new path falls outside auto-import scope `
+    throw new Error(`ripide rename-file: "${name}" is auto-imported in Nuxt; the new path falls outside auto-import scope `
       + `but a consumer has no <script> block to receive an explicit import. Add a <script setup> block first.`)
   }
   const insertAt = match.index + match[0].length

@@ -10,7 +10,7 @@ import { runMove, runRename, runRenameFile, scan } from './engine-sdk.ts'
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/nuxt')
 
 function makeNuxtFixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-'))
   cpSync(fixtureRoot, dir, { recursive: true })
   return {
     dir,
@@ -130,7 +130,7 @@ describe('nuxt auto-imports', () => {
       fx.write('pages/template-only.vue', `<template><p>{{ format(1) }}</p></template>\n`)
       await assert.rejects(
         () => runMove('format', 'utils/format.ts', 'lib/format.ts', { cwd: fx.dir, verify: false }),
-        /ripast move: "format" is implicitly imported; moving to .*lib\/format\.ts removes it from auto-import scope/,
+        /ripide move: "format" is implicitly imported; moving to .*lib\/format\.ts removes it from auto-import scope/,
       )
     }
     finally { fx.cleanup() }

@@ -115,12 +115,12 @@ async function main() {
   const timeout = integer(values.timeout, '--timeout') * 1000
   if (values.case && !caseNames.includes(values.case as CaseName))
     throw new Error(`Unknown case: ${values.case}`)
-  if (!['both', 'agent', 'ripast'].includes(values.arm))
-    throw new Error('--arm requires both, agent, or ripast')
-  const arms: Arm[] = values.arm === 'both' ? ['ripast', 'agent'] : [values.arm as Arm]
+  if (!['both', 'agent', 'ripide'].includes(values.arm))
+    throw new Error('--arm requires both, agent, or ripide')
+  const arms: Arm[] = values.arm === 'both' ? ['ripide', 'agent'] : [values.arm as Arm]
   const cases = (values.case ? [values.case as CaseName] : caseNames).map(name => makeCase(name, consumers))
   const skill = values.skill ? readFileSync(values.skill === 'current' ? join(root, 'packages/cli/skills/ripast/SKILL.md') : resolve(values.skill), 'utf8') : null
-  const cli = join(root, 'packages/cli/bin/ripast.mjs')
+  const cli = join(root, 'packages/cli/bin/ripide.mjs')
   if (!existsSync(join(root, 'packages/cli/dist/cli.mjs')))
     throw new Error('If the CLI build is missing, run pnpm build')
   const tsc = join(root, 'node_modules/@typescript/native/bin/tsc')
@@ -128,7 +128,7 @@ async function main() {
     throw new Error('If the compiler is missing, run pnpm install')
   const scratch = join(homedir(), 'scratch')
   mkdirSync(scratch, { recursive: true })
-  const out = values.out ? resolve(values.out) : mkdtempSync(join(scratch, 'ripast-evals-'))
+  const out = values.out ? resolve(values.out) : mkdtempSync(join(scratch, 'ripide-evals-'))
   if (existsSync(out) && readdirSync(out).length)
     throw new Error('If the output directory contains files, choose a fresh --out directory')
   mkdirSync(out, { recursive: true })
@@ -138,7 +138,7 @@ async function main() {
     consumers,
     opencode: values.preflight ? null : commandVersion('opencode'),
     node: process.version,
-    ripast: (JSON.parse(readFileSync(join(root, 'packages/cli/package.json'), 'utf8')) as { version: string }).version,
+    ripide: (JSON.parse(readFileSync(join(root, 'packages/cli/package.json'), 'utf8')) as { version: string }).version,
     revision: commandVersion('git', ['-C', root, 'rev-parse', 'HEAD']),
     started: new Date().toISOString(),
     timeoutMs: timeout,
@@ -164,7 +164,7 @@ async function main() {
     const pkg = '{"name":"refactor-fixture","private":true,"type":"module"}\n'
     writeFiles(project, { ...evalCase.initial, 'tsconfig.json': tsconfig, 'package.json': pkg })
     // A local launcher avoids npm install time and measures this exact checkout.
-    writeFileSync(join(bin, 'ripast'), `#!/bin/sh\nexec '${process.execPath.replaceAll('\'', '\'\\\'\'')}' '${cli.replaceAll('\'', '\'\\\'\'')}' "$@"\n`, { mode: 0o755 })
+    writeFileSync(join(bin, 'ripide'), `#!/bin/sh\nexec '${process.execPath.replaceAll('\'', '\'\\\'\'')}' '${cli.replaceAll('\'', '\'\\\'\'')}' "$@"\n`, { mode: 0o755 })
     const config = {
       $schema: 'https://opencode.ai/config.json',
       provider: provider ?? {},
@@ -197,16 +197,16 @@ async function main() {
       evalCase.task,
       'Preserve the unrelated calculateTotal in src/decoy.ts and the string in src/labels.ts.',
       'Do not change configuration or add dependencies. Work only in this fixture. Do not read external Skills or repositories.',
-      arm === 'ripast' && skill
-        ? `Use the provided Ripast Skill. The ripast executable is on PATH.\n<skill>\n${skill}\n</skill>`
-        : arm === 'ripast'
-          ? `Use the local ripast CLI for this refactor. It is on PATH. Run: ${evalCase.command}. You may inspect files and use --help.`
-          : 'Use your normal read, edit, and shell tools. You may write scripts. Do not use Ripast or another refactor CLI.',
+      arm === 'ripide' && skill
+        ? `Use the provided RipIDE Skill. The ripide executable is on PATH.\n<skill>\n${skill}\n</skill>`
+        : arm === 'ripide'
+          ? `Use the local ripide CLI for this refactor. It is on PATH. Run: ${evalCase.command}. You may inspect files and use --help.`
+          : 'Use your normal read, edit, and shell tools. You may write scripts. Do not use RipIDE or another refactor CLI.',
       `After the refactor, run this typecheck: ${checkCommand}. Give a brief result.`,
     ].join('\n')
     writeFileSync(join(dir, 'prompt.txt'), prompt)
     const execution = values.preflight
-      ? await run('ripast', evalCase.command.split(' ').slice(1), project, env, timeout)
+      ? await run('ripide', evalCase.command.split(' ').slice(1), project, env, timeout)
       : await run('opencode', ['run', '--format', 'json', '--dir', project, '--auto', '--pure', '-m', values.model, prompt], project, env, timeout)
     writeFileSync(join(dir, 'events.jsonl'), execution.stdout)
     writeFileSync(join(dir, 'stderr.log'), execution.stderr)
@@ -220,11 +220,11 @@ async function main() {
       issues.push('Typecheck failed')
     if (readFileSync(join(project, 'tsconfig.json'), 'utf8') !== tsconfig || readFileSync(join(project, 'package.json'), 'utf8') !== pkg)
       issues.push('Configuration changed')
-    const usedRipast = transcript.commands.some(c => /\bripast(?:\s|$)/.test(c))
-    if (arm === 'ripast' && !usedRipast)
-      issues.push('Ripast arm did not invoke Ripast')
-    if (arm === 'agent' && usedRipast)
-      issues.push('Agent arm invoked Ripast')
+    const usedRipIDE = transcript.commands.some(c => /\bripide(?:\s|$)/.test(c))
+    if (arm === 'ripide' && !usedRipIDE)
+      issues.push('RipIDE arm did not invoke RipIDE')
+    if (arm === 'agent' && usedRipIDE)
+      issues.push('Agent arm invoked RipIDE')
     if (!values.preflight && !transcript.commands.some(c => c.includes(tsc) && c.includes('--noEmit')))
       issues.push('Agent did not run the requested typecheck')
     const result: Result = {
@@ -249,23 +249,23 @@ async function main() {
   // Sequential runs avoid competition for CPU. Alternate the first arm to reduce ordering bias.
   for (let repetition = 1; repetition <= (values.preflight ? 1 : repetitions); repetition++) {
     for (const [index, evalCase] of cases.entries()) {
-      const order = values.preflight ? ['ripast' as const] : (repetition + index) % 2 ? arms : [...arms].reverse()
+      const order = values.preflight ? ['ripide' as const] : (repetition + index) % 2 ? arms : [...arms].reverse()
       for (const arm of order)
         await execute(evalCase, arm, repetition)
     }
   }
   const lines = [
-    '# Ripast OpenCode eval',
+    '# RipIDE OpenCode eval',
     '',
     `Model: ${metadata.model}. OpenCode: ${metadata.opencode}. Consumers per task: ${consumers}.`,
     `Revision: ${metadata.revision}. Repetitions: ${values.preflight ? 1 : repetitions}.`,
     '',
-    '| Task | Ripast pass | Agent pass | Ripast seconds | Agent seconds | Speedup | Ripast tokens | Agent tokens | Token reduction |',
+    '| Task | RipIDE pass | Agent pass | RipIDE seconds | Agent seconds | Speedup | RipIDE tokens | Agent tokens | Token reduction |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ]
   for (const evalCase of cases) {
     const s = summarize(results.filter(r => r.caseName === evalCase.name))
-    lines.push(`| ${evalCase.name} | ${s.ripast.passed}/${s.ripast.runs} | ${s.agent.passed}/${s.agent.runs} | ${format(s.ripast.seconds)} | ${format(s.agent.seconds)} | ${s.speedup === null ? 'n/a' : `${format(s.speedup, 2)}x`} | ${format(s.ripast.tokens, 0)} | ${format(s.agent.tokens, 0)} | ${s.tokenReduction === null ? 'n/a' : `${format(s.tokenReduction * 100)}%`} |`)
+    lines.push(`| ${evalCase.name} | ${s.ripide.passed}/${s.ripide.runs} | ${s.agent.passed}/${s.agent.runs} | ${format(s.ripide.seconds)} | ${format(s.agent.seconds)} | ${s.speedup === null ? 'n/a' : `${format(s.speedup, 2)}x`} | ${format(s.ripide.tokens, 0)} | ${format(s.agent.tokens, 0)} | ${s.tokenReduction === null ? 'n/a' : `${format(s.tokenReduction * 100)}%`} |`)
   }
   lines.push('', 'Times and tokens use medians of correct runs only. Compare each task separately.', 'Time includes OpenCode startup, agent inspection, refactor, and the requested typecheck. The independent grading check is excluded.', 'Tokens include input, output, reasoning, cache reads, and cache writes. Raw categories and provider cost remain in run.json.', 'Cache state is shared. Repetition order alternates. This is a small synthetic sample, not a general speed claim.', 'The CLI is prebuilt. Dependency installation and Skill loading are excluded. Each arm receives direct workflow instructions.', 'AST checks accept formatting and quote changes. They preserve symbols, aliases, imports, and strings. Comments are not graded.', '', ...results.filter(r => !r.passed).map(r => `- ${r.caseName} ${r.arm} #${r.repetition}: ${r.issues.join('; ')}`))
   writeFileSync(join(out, 'report.md'), `${lines.join('\n')}\n`)

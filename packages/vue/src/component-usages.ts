@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import process from 'node:process'
-import { posToLineCol } from '@ripast/core/adapter'
+import { posToLineCol } from 'ripide-api/adapter'
 import { rgFilesMany } from './discovery.ts'
 import { parseSourceFile } from './parse.ts'
 import { hyphenateVueName, parseVueTemplateAst } from './vue-template.ts'

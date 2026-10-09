@@ -1,9 +1,9 @@
-import type { AutoImportRenamePlan, FrameworkAdapter, TextEdit } from '@ripast/core/adapter'
+import type { AutoImportRenamePlan, FrameworkAdapter, TextEdit } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { applyTextEdits } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
 import { compileScript, compileTemplate, parse, registerTS } from '@vue/compiler-sfc'
+import { applyTextEdits } from 'ripide-api/adapter'
 import { rgFiles } from './discovery.ts'
 import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { inspectScript, inspectSetup } from './nuxt-consumers.ts'
@@ -51,7 +51,7 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
         plans.set(path, { before, references, edits: [] })
         continue
       }
-      throw new Error(`ripast rename: cannot resolve auto-import metadata for "${from}" in ${context}. Run Nuxt prepare first.`)
+      throw new Error(`ripide rename: cannot resolve auto-import metadata for "${from}" in ${context}. Run Nuxt prepare first.`)
     }
     const ownsName = active.some(binding => binding._tag === 'Resolved' && binding.names.includes(from))
     if (!ownsName && importEdits.length)
@@ -72,16 +72,16 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
     if (edits.length) {
       runtimeBinding ??= hasLibraryValue(to)
       if (runtimeBinding)
-        throw new Error(`ripast rename: "${to}" has a runtime binding. Use an explicit import alias first.`)
+        throw new Error(`ripide rename: "${to}" has a runtime binding. Use an explicit import alias first.`)
       if (hasGeneratedName(context, to, path))
-        throw new Error(`ripast rename: "${to}" has a Nuxt binding in ${context}. Use an explicit import alias first.`)
+        throw new Error(`ripide rename: "${to}" has a Nuxt binding in ${context}. Use an explicit import alias first.`)
       const after = applyTextEdits(before, edits)
       const freeTargets = new Set(renameReferences(path, after, new Set([to])).filter(reference => reference.free).map(reference => reference.start))
       let shift = 0
       for (const edit of edits) {
         const targetStart = edit.start + shift + edit.targetOffset
         if (!importEdits.includes(edit) && !freeTargets.has(targetStart))
-          throw new Error(`ripast rename: "${to}" would capture a Nuxt reference in ${relative(cwd, path)}. Use an explicit import alias first.`)
+          throw new Error(`ripide rename: "${to}" would capture a Nuxt reference in ${relative(cwd, path)}. Use an explicit import alias first.`)
         shift += edit.replacement.length - (edit.end - edit.start)
       }
       changes.push({ path, rel: relative(cwd, path), before, after })
@@ -97,7 +97,7 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
       if (!plan)
         return semanticEdits
       if (source !== plan.before)
-        throw new Error(`ripast rename: source changed while planning ${relative(cwd, path)}`)
+        throw new Error(`ripide rename: source changed while planning ${relative(cwd, path)}`)
       // Semantic edits still own explicit imports. Local and implicit references use this scope plan.
       return [...semanticEdits.filter(edit => ![...plan.references, ...plan.edits].some(reference => edit.start < reference.end && edit.end > reference.start)), ...plan.edits]
     },
@@ -145,7 +145,7 @@ function generatedImportEdits(path: string, source: string, from: string, to: st
   return out
 }
 function hasLibraryValue(name: string): boolean {
-  const path = '/__ripast_globals__.ts'
+  const path = '/__ripide_globals__.ts'
   const options: ts.CompilerOptions = { target: ts.ScriptTarget.Latest, types: [] }
   const host = ts.createCompilerHost(options)
   const getSourceFile = host.getSourceFile
@@ -186,11 +186,11 @@ function renameReferences(path: string, source: string, names: Set<string>): Ref
   if (errors.length)
     throw errors[0]
   if (descriptor.template?.src)
-    throw new Error(`ripast rename: cannot inspect an external Nuxt template in ${path}. Use an inline template first.`)
+    throw new Error(`ripide rename: cannot inspect an external Nuxt template in ${path}. Use an inline template first.`)
   if (descriptor.script?.src || descriptor.scriptSetup?.src)
-    throw new Error(`ripast rename: cannot inspect an external Nuxt script in ${path}. Use an inline script first.`)
+    throw new Error(`ripide rename: cannot inspect an external Nuxt script in ${path}. Use an inline script first.`)
   if (descriptor.template?.lang && descriptor.template.lang !== 'html')
-    throw new Error(`ripast rename: cannot inspect the Nuxt template language in ${path}. Use an HTML template first.`)
+    throw new Error(`ripide rename: cannot inspect the Nuxt template language in ${path}. Use an HTML template first.`)
   const extension = [descriptor.script?.lang, descriptor.scriptSetup?.lang].some(lang => lang === 'tsx' || lang === 'jsx') ? 'tsx' : 'ts'
   const normal = inspectScript(`${path}.${extension}`, descriptor.script?.content ?? '')
   if (descriptor.script)

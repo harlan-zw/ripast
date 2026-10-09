@@ -50,7 +50,7 @@ export function listComponents(cwd: string, opts: ListComponentsOptions = {}): V
   const manifestPresent = existsSync(manifestPath)
   if (source === 'manifest' || (source === 'auto' && manifestPresent)) {
     if (!manifestPresent) {
-      warn(`ripast components: ${MANIFEST_PATH} not found at ${cwd}; cannot use manifest source.`)
+      warn(`ripide components: ${MANIFEST_PATH} not found at ${cwd}; cannot use manifest source.`)
       return []
     }
     const fromManifest = readManifest(cwd, manifestPath)
@@ -58,7 +58,7 @@ export function listComponents(cwd: string, opts: ListComponentsOptions = {}): V
     return [...fromManifest, ...overlay].sort(sortComponents)
   }
   if (source === 'auto')
-    warn(`ripast components: ${MANIFEST_PATH} not found; falling back to filesystem glob. Run \`nuxi prepare\` for accurate resolution.`)
+    warn(`ripide components: ${MANIFEST_PATH} not found; falling back to filesystem glob. Run \`nuxi prepare\` for accurate resolution.`)
   return filesystemOnly(cwd, opts.glob ?? DEFAULT_VUE_GLOB).sort(sortComponents)
 }
 function readManifest(cwd: string, manifestPath: string): VueComponent[] {
