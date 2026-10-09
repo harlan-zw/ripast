@@ -114,3 +114,15 @@ describe('rename-file without a framework adapter', () => {
     finally { fx.cleanup() }
   })
 })
+
+it('warns about unchecked Vue directory-index consumers without an adapter', async () => {
+  const fx = makeFixture({
+    'utils/index.ts': 'export const amount = 1',
+    'Consumer.vue': '<script setup lang="ts">import { amount } from "./utils"</script><template>{{ amount }}</template>',
+  })
+  try {
+    const result = await runRenameFile('utils/index.ts', 'utils/value.ts', { cwd: fx.dir, verify: false })
+    assert.deepEqual(result.warnings, ['1 .vue file(s) were not checked; install ripide-vue to rewrite .vue import sites'])
+  }
+  finally { fx.cleanup() }
+})
