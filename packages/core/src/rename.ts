@@ -120,7 +120,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
         if (isVue(path))
           continue
         const before = readFileSync(path, 'utf8')
-        const fileEdits = await preserveConsumerBindings(server, path, before, [...(editsByPath.get(path)?.values() ?? [])], from, to, declarations)
+        const fileEdits = await preserveConsumerBindings(server, path, before, [...(editsByPath.get(path)?.values() ?? [])], from, to, declarations, editsByPath)
         const after = autoImportPlan
           ? applyTextEdits(before, autoImportPlan.transformEdits(path, before, fileEdits.map(edit => ({
               start: offsetOfPosition(before, edit.range.start),
@@ -184,7 +184,7 @@ const isVue = isVuePath
 
 // A shorthand binding has two names: the source property and its local value.
 // Preserve the local name when the renamed declaration belongs to the source.
-async function preserveConsumerBindings(server: TsServer, path: string, source: string, edits: LspTextEdit[], from: string, to: string, declarations: Declaration[]): Promise<LspTextEdit[]> {
+async function preserveConsumerBindings(server: TsServer, path: string, source: string, edits: LspTextEdit[], from: string, to: string, declarations: Declaration[], editsByPath: Map<string, Map<string, LspTextEdit>>): Promise<LspTextEdit[]> {
   if (from === to)
     return edits
   const selectedPositions = new Set(declarations.filter(declaration => declaration.filePath === path).map(declaration => declaration.pos))
@@ -225,12 +225,22 @@ async function preserveConsumerBindings(server: TsServer, path: string, source: 
     if (cached)
       return cached
     const offsets = new Set<number>()
-    walk(parseSource(sitePath, server.textOf(sitePath)).program, {
-      enter(node: any, parent: any) {
-        if (node.type === 'Identifier' && ['ImportSpecifier', 'ImportDefaultSpecifier', 'ImportNamespaceSpecifier', 'ExportSpecifier'].includes(parent?.type))
-          offsets.add(node.start)
-      },
-    })
+    const sourceText = server.textOf(sitePath)
+    const changed = new Set([...(editsByPath.get(sitePath)?.values() ?? [])]
+      .filter(edit => edit.newText === to)
+      .map(edit => offsetOfPosition(sourceText, edit.range.start)))
+    if (changed.size) {
+      walk(parseSource(sitePath, sourceText).program, {
+        enter(node: any, parent: any) {
+          if (node.type !== 'Identifier')
+            return
+          if (parent?.type === 'ExportSpecifier' && changed.has(parent.exported.start))
+            offsets.add(node.start)
+          if (['ImportSpecifier', 'ImportDefaultSpecifier', 'ImportNamespaceSpecifier'].includes(parent?.type) && changed.has(parent.local.start))
+            offsets.add(node.start)
+        },
+      })
+    }
     aliasOffsetsByPath.set(sitePath, offsets)
     return offsets
   }

@@ -48,3 +48,30 @@ export function load() {
   }
   finally { fx.cleanup() }
 })
+
+it.each([
+  ['default export', 'export default class Store { value = 7 }', 'export { default as Store } from \'./store.js\''],
+  ['named export', 'export class Store { value = 7 }', 'import { Store as Original } from \'./store.js\'; export { Original as Store }'],
+  ['explicit export', 'export class Store { value = 7 }', 'export { Store as Store } from \'./store.js\'', 'AppStore'],
+  ['explicit import', 'export class Store { value = 7 }', 'import { Store as Store } from \'./store.js\'; export { Store }', 'AppStore'],
+])('rename respects the public name of a %s alias', async (_, declaration, barrel, publicName = 'Store') => {
+  const fx = makeFixture({
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: { allowJs: true, checkJs: true, noEmit: true, target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler' },
+      include: ['**/*.js'],
+    }),
+    'store.js': `${declaration}\n`,
+    'barrel.js': `${barrel}\n`,
+    'load.js': 'import * as barrel from \'./barrel.js\'; const { Store } = barrel; export const load = () => new Store().value\n',
+  })
+  try {
+    const result = await runRename('Store', 'AppStore', { cwd: fx.dir, scope: 'store.js', vue: false })
+    assert.deepEqual(result.regressions, [])
+    writeChanges(result.changes)
+    const consumer = await import(pathToFileURL(`${fx.dir}/load.js`).href)
+    assert.equal(consumer.load(), 7)
+    const exported = await import(pathToFileURL(`${fx.dir}/barrel.js`).href)
+    assert.equal(new exported[publicName]().value, 7)
+  }
+  finally { fx.cleanup() }
+})
