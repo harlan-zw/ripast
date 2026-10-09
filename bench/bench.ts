@@ -1,7 +1,7 @@
-import type { ProfileEvent, ProfileSink } from '@ripast/core'
+import type { ProfileEvent, ProfileSink } from 'ripide-api'
 import type { BenchFixture } from './fixture.ts'
 import { performance } from 'node:perf_hooks'
-import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, runMove, runRename, runRenameFile, scan } from '@ripast/core'
+import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, runMove, runRename, runRenameFile, scan } from 'ripide-api'
 import { makeBenchFixture } from './fixture.ts'
 
 interface BenchCase {
@@ -27,9 +27,9 @@ interface PhaseResult {
   pct: number
 }
 
-const FILE_COUNT = Number(process.env.RIPAST_BENCH_FILES ?? 500)
-const IMPORTERS_PER_SYMBOL = Number(process.env.RIPAST_BENCH_IMPORTERS ?? 160)
-const RUNS = Number(process.env.RIPAST_BENCH_RUNS ?? 5)
+const FILE_COUNT = Number(process.env.RIPIDE_BENCH_FILES ?? 500)
+const IMPORTERS_PER_SYMBOL = Number(process.env.RIPIDE_BENCH_IMPORTERS ?? 160)
+const RUNS = Number(process.env.RIPIDE_BENCH_RUNS ?? 5)
 const SCAN_HITS_PER_SYMBOL = IMPORTERS_PER_SYMBOL * 2 + 1
 
 const benches: BenchCase[] = [
@@ -112,7 +112,7 @@ const benches: BenchCase[] = [
 async function main(): Promise<void> {
   const fixture = makeBenchFixture({ files: FILE_COUNT, importersPerSymbol: IMPORTERS_PER_SYMBOL })
   try {
-    console.log(`ripast bench: ${FILE_COUNT} files, ${IMPORTERS_PER_SYMBOL} importers/symbol, ${RUNS} runs`)
+    console.log(`ripide bench: ${FILE_COUNT} files, ${IMPORTERS_PER_SYMBOL} importers/symbol, ${RUNS} runs`)
     console.log(`fixture: ${fixture.dir}`)
   }
   finally {

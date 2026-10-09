@@ -3,14 +3,14 @@
 <h1>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./branding/logo-dark.svg">
-    <img src="./branding/logo-light.svg" alt="ripast" width="432" height="112">
+    <img src="./branding/logo-light.svg" alt="RipIDE" width="432" height="112">
   </picture>
 </h1>
 
-[![npm version](https://img.shields.io/npm/v/@ripast/cli?style=flat-square&labelColor=334155&color=334155)](https://npmjs.com/package/@ripast/cli)
-[![npm downloads](https://img.shields.io/npm/dm/@ripast/cli?style=flat-square&labelColor=334155&color=334155)](https://npm.chart.dev/@ripast/cli)
-[![license](https://img.shields.io/github/license/harlan-zw/ripast?style=flat-square&labelColor=334155&color=334155)](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md)
-[![Agent skill on skilld.dev](https://img.shields.io/badge/Skill_repo-skilld.dev-334155?style=flat-square&labelColor=334155)](https://skilld.dev/gh/harlan-zw/ripast)
+[![npm version](https://img.shields.io/npm/v/ripide?style=flat-square&labelColor=334155&color=334155)](https://npmjs.com/package/ripide)
+[![npm downloads](https://img.shields.io/npm/dm/ripide?style=flat-square&labelColor=334155&color=334155)](https://npm.chart.dev/ripide)
+[![license](https://img.shields.io/github/license/harlan-zw/ripide?style=flat-square&labelColor=334155&color=334155)](https://github.com/harlan-zw/ripide/blob/main/LICENSE.md)
+[![Agent skill on skilld.dev](https://img.shields.io/badge/Skill_repo-skilld.dev-334155?style=flat-square&labelColor=334155)](https://skilld.dev/gh/harlan-zw/ripide)
 
 > Typesafe IDE-like refactoring for agents.
 
@@ -21,8 +21,8 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 ## Features
 
-- ✂️ **Typesafe Agent Refactoring tools.** Rename symbols, move declarations, find usages, replace imports, rename files, and migrate CSS classes.
-- 📉 **Lower agent overhead.** Median reductions by model: **59% to 71% fewer tokens**, **48% to 56% less time** ([benchmarks](#agent-benchmarks)).
+- ✂️ **IDE refactoring for your coding agent.** Rename functions, move files, and automatically update references across your project.
+- 📉 **Less time, fewer tokens.** In [local tests](./bench/README.md), typical refactors took about half the time and used less than half the tokens.
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
 - 🏎️ Rename in **209 ms**, move in **169 ms**, including type checking ([500-file benchmark](./bench/bench.ts)).[^benchmark]
@@ -30,37 +30,39 @@ Follow me <a href="https://twitter.com/harlan_zw">@harlan_zw</a> 🐦 • Join <
 
 [^benchmark]: Local medians across five runs, with 160 importers per symbol.
 
-## Why ripast?
+## Why RipIDE?
 
-Renaming a symbol can affect imports, type references, JSX components, and Vue templates across a project.
-Text search finds the spelling, but a rename needs to distinguish references from unrelated names.
+Agents can refactor code well, but finding references and editing files takes time and tokens.
+RipIDE handles that work in one command, so your agent spends less time reading and editing files.
 
-Ripast gives coding agents one scoped command to rename a symbol and update its imports and references.
-Preview the diff before writing changes. Unrelated strings keep their spelling.
+In local benchmarks, median reductions by model were **59% to 71% fewer tokens** and **48% to 56% less time**.
+See the [benchmark setup and results](#agent-benchmarks).
+
+Rename functions, move files, and update imports and references together. Preview the diff before writing changes.
 Use a plain edit for a small, local change, or `rg` for text inside strings and comments.
 
 ## Installation
 
 Requires Node 22.13+.
 
-1. Install Ripast:
+1. Install RipIDE:
 
    ```bash
-   npm install -g @ripast/cli
+   npm install -g ripide
    ```
 
-2. Install the [Ripast Agent Skill](./packages/cli/skills/ripast/SKILL.md) in your project with your preferred installer:
+2. Install the [RipIDE Agent Skill](./packages/cli/skills/ripast/SKILL.md) in your project with your preferred installer:
 
-   With [skilld](https://skilld.dev/gh/harlan-zw/ripast):
+   With [skilld](https://skilld.dev/gh/harlan-zw/ripide):
 
    ```bash
-   npx skilld add @ripast/cli
+   npx skilld add ripide
    ```
 
    Or with [skills.sh](https://skills.sh):
 
    ```bash
-   npx skills add harlan-zw/ripast --skill ripast
+   npx skills add harlan-zw/ripide --skill ripast
    ```
 
 3. Optionally install [ripgrep](https://github.com/BurntSushi/ripgrep#installation) for faster searches.
@@ -76,7 +78,7 @@ Requires Node 22.13+.
 Run commands from your project root. Commands preview changes by default; pass `--apply` to write.
 Use `--profile full` to see the full diff in an agent environment.
 
-### What can ripast do?
+### What can RipIDE do?
 
 <details>
 <summary><b>🔍 Find every usage of a symbol</b></summary>
@@ -85,9 +87,9 @@ Find matching identifiers, strings, properties, and JSX references.
 The scan includes Vue template interpolations and directive expressions.
 
 ```bash
-ripast scan useStore
-ripast scan useStore --kind identifier-reference,import-specifier
-ripast scan useStore --graph mermaid
+ripide scan useStore
+ripide scan useStore --kind identifier-reference,import-specifier
+ripide scan useStore --graph mermaid
 ```
 
 `--graph mermaid|dot` draws relative import/export edges between hit files for quick triage.
@@ -102,14 +104,14 @@ Property keys change only when they refer to the same symbol.
 
 ```bash
 # Preview the changes
-ripast rename useStore useAppStore
+ripide rename useStore useAppStore
 
 # Write changes after type checking
-ripast rename useStore useAppStore --apply
+ripide rename useStore useAppStore --apply
 
 # Ambiguous declarations? Pick one or rename all
-ripast rename useStore useAppStore --scope src/store.ts --apply
-ripast rename useStore useAppStore --all --apply
+ripide rename useStore useAppStore --scope src/store.ts --apply
+ripide rename useStore useAppStore --all --apply
 ```
 
 Imports and references change together. The unrelated string keeps its spelling:
@@ -132,7 +134,7 @@ Imports and references change together. The unrelated string keeps its spelling:
 <summary><b>🔁 Replace an imported symbol with another export</b></summary>
 
 Replace an imported binding with a project export, such as replacing `eventHandler(...)` with `defineAdminApiHandler(...)`.
-Ripast updates references and imports, then removes the old import.
+RipIDE updates references and imports, then removes the old import.
 It preserves the call arguments and function body.
 
 New imports preserve the replaced relative import's extension policy.
@@ -142,14 +144,14 @@ JavaScript paths keep emitted `.js`, `.mjs`, or `.cjs` endings for TypeScript ta
 Review mixed import policies in the dry run before applying.
 
 ```bash
-ripast replace eventHandler defineAdminApiHandler
-ripast replace eventHandler defineAdminApiHandler --apply
+ripide replace eventHandler defineAdminApiHandler
+ripide replace eventHandler defineAdminApiHandler --apply
 
 # Ambiguous target exports? Pick the declaring file
-ripast replace eventHandler defineAdminApiHandler --target-scope layers/admin/server/utils/admin-api.ts --apply
+ripide replace eventHandler defineAdminApiHandler --target-scope layers/admin/server/utils/admin-api.ts --apply
 
 # Route an existing binding through a named barrel and a framework alias
-ripast replace getSiteConfig getSiteConfig --target-scope ../nuxt-site-config/src/runtime/server/index.ts --target-import '#site-config/server' --apply
+ripide replace getSiteConfig getSiteConfig --target-scope ../nuxt-site-config/src/runtime/server/index.ts --target-import '#site-config/server' --apply
 ```
 
 `--target-scope` can select a named re-export barrel outside the consumer project.
@@ -163,15 +165,15 @@ Default discovery still selects direct declarations and keeps the relative impor
 <summary><b>🏔️ Refactor Nuxt auto-imports</b></summary>
 
 Run `nuxi prepare` first to generate Nuxt's type declarations.
-Ripast uses these files to resolve auto-imported composables, utilities, and components used in pages and other consumers.
-If a move requires an explicit import in a Vue file without a script block, Ripast refuses it.
+RipIDE uses these files to resolve auto-imported composables, utilities, and components used in pages and other consumers.
+If a move requires an explicit import in a Vue file without a script block, RipIDE refuses it.
 
 ```bash
 # A composable used in pages with no explicit import
-ripast rename useCounter useTally --tsconfig .nuxt/tsconfig.json --apply
+ripide rename useCounter useTally --tsconfig .nuxt/tsconfig.json --apply
 
 # Moving out of utils/composables/components adds explicit imports to consumers
-ripast move format --from utils/format.ts --to lib/format.ts --apply
+ripide move format --from utils/format.ts --to lib/format.ts --apply
 ```
 
 </details>
@@ -180,11 +182,11 @@ ripast move format --from utils/format.ts --to lib/format.ts --apply
 <summary><b>📦 Move an exported declaration</b></summary>
 
 Move a top-level export and update its imports.
-Ripast splits declarations such as `export const a = 1, b = 2` and preserves aliases.
+RipIDE splits declarations such as `export const a = 1, b = 2` and preserves aliases.
 It copies required imports and removes unused ones. If the symbol depends on a local, unexported helper, it refuses the move.
 
 ```bash
-ripast move helper --from src/utils/a.ts --to src/utils/helpers.ts --apply
+ripide move helper --from src/utils/a.ts --to src/utils/helpers.ts --apply
 ```
 
 </details>
@@ -196,7 +198,7 @@ Update import paths when moving or renaming a file.
 The Vue adapter also updates component tags in PascalCase and kebab-case.
 
 ```bash
-ripast rename-file src/utils.ts src/lib/helpers.ts --apply
+ripide rename-file src/utils.ts src/lib/helpers.ts --apply
 ```
 
 </details>
@@ -205,12 +207,12 @@ ripast rename-file src/utils.ts src/lib/helpers.ts --apply
 <summary><b>🧹 Delete an unused declaration</b></summary>
 
 Delete a top-level declaration after checking for references, then remove imports used only by that declaration.
-If references remain, Ripast prints their locations and refuses the deletion.
+If references remain, RipIDE prints their locations and refuses the deletion.
 Omit `--apply` to preview the changes.
 
 ```bash
-ripast delete helper --from src/utils.ts
-ripast delete helper --from src/utils.ts --apply
+ripide delete helper --from src/utils.ts
+ripide delete helper --from src/utils.ts --apply
 ```
 
 </details>
@@ -219,23 +221,23 @@ ripast delete helper --from src/utils.ts --apply
 <summary><b>🎨 Migrate Tailwind / CSS class tokens</b></summary>
 
 Rename class tokens in string literals, Vue `class` and `:class` attributes, and CSS `@apply` directives.
-Ripast preserves variant prefixes (`hover:`, `dark:md:`), `!` important markers, and arbitrary values.
+RipIDE preserves variant prefixes (`hover:`, `dark:md:`), `!` important markers, and arbitrary values.
 
 ```bash
 # Single pair
-ripast css-class-rename bg-gray-500 bg-neutral-500 --apply
+ripide css-class-rename bg-gray-500 bg-neutral-500 --apply
 
 # Bulk design-token migration
-ripast css-class-rename --map tokens.json --apply
+ripide css-class-rename --map tokens.json --apply
 
 # Seed the map by listing every class in the repo
-ripast css-class-scan --json > tokens.raw.json
+ripide css-class-scan --json > tokens.raw.json
 
 # Find barely used classes to clean up
-ripast css-class-scan --sort count-asc
+ripide css-class-scan --sort count-asc
 
 # Find files introducing the most unique class tokens
-ripast css-class-scan --by file
+ripide css-class-scan --by file
 ```
 
 </details>
@@ -246,8 +248,8 @@ ripast css-class-scan --by file
 List declarations by file. Use `--exports exported` for exports or `--exports local` for declarations without exports.
 
 ```bash
-ripast tree --exports exported
-ripast tree --exports local --glob '*.ts'
+ripide tree --exports exported
+ripide tree --exports local --glob '*.ts'
 ```
 
 In agent environments (`std-env`'s `isAgent`), defaults to a compact architecture summary.
@@ -261,9 +263,9 @@ Report top-level declarations with no semantic project references.
 Review each result before deleting it. External callers, frameworks, dynamic registries, and entrypoints may still use these declarations.
 
 ```bash
-ripast unused
-ripast unused --exports local
-ripast unused --exports all --json
+ripide unused
+ripide unused --exports local
+ripide unused --exports all --json
 ```
 
 </details>
@@ -275,7 +277,7 @@ ripast unused --exports all --json
 If verification finds new type errors, the command refuses `--apply` and exits with a non-zero status.
 
 ```bash
-ripast rename useStore useAppStore --apply --json
+ripide rename useStore useAppStore --apply --json
 # {
 #   "applied": true, "dryRun": false, "blockedByRegression": false,
 #   "scanned": 47, "summary": "12 files, +23 -23 lines",
@@ -304,23 +306,23 @@ Agents get compact summaries; terminals get full diffs and trees.
 
 | Command | Purpose |
 | --- | --- |
-| `ripast scan <pattern>` | Classify every occurrence (identifier vs string vs property vs JSX). Optional `--graph mermaid\|dot`. |
-| `ripast tree` | Print a project declaration tree, grouped by file. |
-| `ripast unused` | Find unreferenced top-level declarations. |
-| `ripast rename <from> <to>` | Scope-aware symbol rename via the native TypeScript server. |
-| `ripast replace <from> <to>` | Replace an imported symbol with another project export; rewrites imports and references. |
-| `ripast move <symbol> --from <a> --to <b>` | Move a top-level export and rewrite every import site. |
-| `ripast delete <symbol> --from <file>` | Delete an unused top-level declaration; refuses if references remain. |
-| `ripast rename-file <old> <new>` | Rename a file and rewrite every import site (including `.vue` consumers). |
-| `ripast css-class-rename <from> <to> \| --map <file.json>` | Rename tailwind/CSS utility class tokens repo-wide. |
-| `ripast css-class-scan` | List class tokens; use `--sort count-asc` for rare tokens or `--by file` for files with the most unique classes. |
+| `ripide scan <pattern>` | Classify every occurrence (identifier vs string vs property vs JSX). Optional `--graph mermaid\|dot`. |
+| `ripide tree` | Print a project declaration tree, grouped by file. |
+| `ripide unused` | Find unreferenced top-level declarations. |
+| `ripide rename <from> <to>` | Scope-aware symbol rename via the native TypeScript server. |
+| `ripide replace <from> <to>` | Replace an imported symbol with another project export; rewrites imports and references. |
+| `ripide move <symbol> --from <a> --to <b>` | Move a top-level export and rewrite every import site. |
+| `ripide delete <symbol> --from <file>` | Delete an unused top-level declaration; refuses if references remain. |
+| `ripide rename-file <old> <new>` | Rename a file and rewrite every import site (including `.vue` consumers). |
+| `ripide css-class-rename <from> <to> \| --map <file.json>` | Rename tailwind/CSS utility class tokens repo-wide. |
+| `ripide css-class-scan` | List class tokens; use `--sort count-asc` for rare tokens or `--by file` for files with the most unique classes. |
 
-Run `ripast --help` for all commands, or `ripast <command> --help` for its options.
+Run `ripide --help` for all commands, or `ripide <command> --help` for its options.
 
 ## Programmatic API
 
 ```ts
-import { runRename, runReplace, scan } from '@ripast/core'
+import { runRename, runReplace, scan } from 'ripide-api'
 
 const hits = scan('useStore', { cwd: process.cwd() })
 
@@ -337,20 +339,20 @@ The [core exports](./packages/core/src/index.ts) include refactors, scans, decla
 **Scoping with `--glob`.** Pass comma-separated patterns. Prefix a pattern with `!` to exclude matching files:
 
 ```bash
-ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**,!**/*.d.ts,!**/dist/**'
+ripide tree --exports exported --glob '*.ts,*.vue,!.nuxt/**,!**/*.d.ts,!**/dist/**'
 ```
 
 **Nuxt projects.** Point `--tsconfig` at the generated config so path aliases and layer references resolve correctly:
 
 ```bash
 # After `nuxi prepare`
-ripast rename useFoo useBar --tsconfig .nuxt/tsconfig.json --apply
-ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
+ripide rename useFoo useBar --tsconfig .nuxt/tsconfig.json --apply
+ripide tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 ```
 
-`ripast components` reads `.nuxt/components.d.ts` when available. Without it, the command discovers components from file paths.
+`ripide components` reads `.nuxt/components.d.ts` when available. Without it, the command discovers components from file paths.
 
-**Encoding.** ripast assumes UTF-8 + LF. CRLF and BOM files are untested; convert with `dos2unix` / strip BOM before running mutating commands.
+**Encoding.** RipIDE assumes UTF-8 + LF. CRLF and BOM files are untested; convert with `dos2unix` / strip BOM before running mutating commands.
 
 ## Credits
 
@@ -361,12 +363,12 @@ ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 
 ## License
 
-Licensed under the [MIT license](https://github.com/harlan-zw/ripast/blob/main/LICENSE.md).
+Licensed under the [MIT license](https://github.com/harlan-zw/ripide/blob/main/LICENSE.md).
 
 ## Agent benchmarks
 
-Forty runs compared Ripast with ordinary editing on ten matched project tasks using both models.
-Ripast passed **20/20** runs. Ordinary editing passed **19/20**.
+Forty runs compared RipIDE with ordinary editing on ten matched project tasks using both models.
+RipIDE passed **20/20** runs. Ordinary editing passed **19/20**.
 
 | Model | Completed pairs | Fewer total tokens | Less total time |
 | --- | --- | --- | --- |

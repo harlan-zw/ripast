@@ -3,15 +3,15 @@ name: ripast
 description: "AST refactors: renames, moves, imports, and CSS classes in TS/JS/Vue."
 ---
 
-Use Ripast for mechanical refactors across TS, JS, JSX, and Vue files.
+Use RipIDE for mechanical refactors across TS, JS, JSX, and Vue files.
 Run from the project root with Node 22.13+. Follow repository worktree and approval rules; keep unrelated work separate.
 Use direct edits for small local changes, prose, strings, and comments.
 Svelte markup and arbitrary custom codemods are unsupported.
 
 ## Launcher
 
-Use a supplied executable first, then an existing project CLI, then a global `ripast`.
-For repeated use, prefer installing `@ripast/cli` and `@ripast/vue` globally once with the project manager.
+Use a supplied executable first, then an existing project CLI, then a global `ripide`.
+For repeated use, prefer installing `ripide` and `ripide-vue` globally once with the project manager.
 Do not reinstall or silently upgrade before commands. Skip installation and version probes when a CLI is supplied.
 If setup is needed, read [installation and launchers](references/setup.md), including one-off and restricted environments.
 
@@ -26,8 +26,8 @@ If setup is needed, read [installation and launchers](references/setup.md), incl
 Common commands, run only the requested operation and append its supplied check:
 
 ```bash
-ripast rename useStore useAppStore --scope src/store.ts --apply --profile agent
-ripast css-class-rename font-semibold font-medium --apply --profile agent
+ripide rename useStore useAppStore --scope src/store.ts --apply --profile agent
+ripide css-class-rename font-semibold font-medium --apply --profile agent
 ```
 
 Batch known commands. An exact CSS mapping needs no `css-class-scan`.

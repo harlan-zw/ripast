@@ -16,9 +16,9 @@ Use the same visual structure. Replace the task, source files, measurements, and
 ## Evidence before editing
 
 1. Choose a narrow, useful task with at least two affected files.
-2. Record the source commit, Ripast version, Skill revision, runner, model, and reasoning setting.
+2. Record the source commit, RipIDE version, Skill revision, runner, model, and reasoning setting.
 3. Give both methods identical source and the same task.
-4. Give only the Ripast method its Skill. Record this difference.
+4. Give only the RipIDE method its Skill. Record this difference.
 5. Run each method once per source copy. Retain failures and raw output.
 6. Check expected edits, unrelated content, and type diagnostics independently.
 7. Record elapsed time and total tokens. Keep cached input visible in the method notes.
@@ -51,13 +51,13 @@ The [9 October evidence](../evals/results/2026-10-09.json) records these results
 | Method | Elapsed time | Total tokens | Result |
 | --- | --- | --- | --- |
 | Codex with ordinary editing tools | 48.1900 s | 74,264 | Passed |
-| Codex with Ripast | 8.3327 s | 30,284 | Passed |
+| Codex with RipIDE | 8.3327 s | 30,284 | Passed |
 
 Both used GPT-6 Luna with medium reasoning.
-The measured task used this Ripast operation, followed by the independent source check:
+The measured task used this RipIDE operation, followed by the independent source check:
 
 ```sh
-ripast rename loadDotenv loadProjectDotenv --scope src/dotenv.ts --apply --profile agent
+ripide rename loadDotenv loadProjectDotenv --scope src/dotenv.ts --apply --profile agent
 ```
 
 Use these figures only for the C12 example.
@@ -78,15 +78,15 @@ If the agent UI has no reliable token display, show the final total after comple
 
 - Start with a 1440 × 1080 composition at 30 fps for the Twitter feed.
 - Start with the task and both code panes already visible.
-- Put ordinary editing on the left and Ripast on the right.
+- Put ordinary editing on the left and RipIDE on the right.
 - Label both panes. Use the same font size and crop scale.
 - Crop to the command, changed code, and check result.
 - Hide sidebars, tabs, unrelated output, and editor chrome.
 - Use changed identifiers at 56 px or larger. Crop surrounding syntax when it reduces readability.
 - Use labels at 36 px or larger. Keep method notes readable.
-- Use Ripast's [existing palette](../branding/README.md).
+- Use RipIDE's [existing palette](../branding/README.md).
 - Use one shared start and the same playback speed for both recordings.
-- Keep the Ripast result visible while the other method finishes.
+- Keep the RipIDE result visible while the other method finishes.
 - Show elapsed time explicitly. Do not imply playback time equals execution time after speeding footage up.
 
 Prefer a fixed, tight crop. Add a small zoom only if it makes the changed identifier easier to read.
@@ -106,12 +106,12 @@ Choose one compression factor for the entire paired recording.
 
 If using C12's full recorded totals, 6× compression turns 48.2 seconds into about 8 seconds.
 Show `6× playback` throughout that comparison.
-Do not stretch the Ripast run or speed up only one method.
+Do not stretch the RipIDE run or speed up only one method.
 
 Use a safe preview command in the close when asking viewers to try their own project:
 
 ```sh
-pnpm dlx @ripast/cli rename OLD NEW --scope PATH --profile full
+pnpm dlx ripide rename OLD NEW --scope PATH --profile full
 ```
 
 Explain that the names and declaration path must match the viewer's project.
@@ -128,7 +128,7 @@ The expected result must distinguish all of these cases.
 Run the Vue file rename from the fixture's project root:
 
 ```sh
-pnpm dlx @ripast/cli rename-file src/components/UserCard.vue src/components/ProfileCard.vue --profile full
+pnpm dlx ripide rename-file src/components/UserCard.vue src/components/ProfileCard.vue --profile full
 ```
 
 Review the diff. If it matches the task, add `--apply`, then run the project's type and build checks.
@@ -186,11 +186,11 @@ Render approval does not authorize posting.
 
 > Same TypeScript rename. Same model. Same source.
 >
-> Codex: 48.2s with ordinary edits, 8.3s with Ripast.
+> Codex: 48.2s with ordinary edits, 8.3s with RipIDE.
 >
 > Preview the diff. Update imports and references together.
 >
-> One C12 source-slice pair. Setup excluded. Details: github.com/harlan-zw/ripast#agent-benchmarks
+> One C12 source-slice pair. Setup excluded. Details: github.com/harlan-zw/ripide#agent-benchmarks
 
 Attach the paired clip. Keep the benchmark qualifier beside the claim.
 
@@ -198,19 +198,19 @@ Attach the paired clip. Keep the benchmark qualifier beside the claim.
 
 Suggested title:
 
-> Renaming a Vue component across imports and template tags with Ripast
+> Renaming a Vue component across imports and template tags with RipIDE
 
 Suggested body:
 
-> Ripast previews a component file rename across imports, PascalCase tags, and kebab-case tags.
+> RipIDE previews a component file rename across imports, PascalCase tags, and kebab-case tags.
 >
 > The clip compares the same rename with ordinary agent edits.
 > It also shows unrelated text staying unchanged.
 >
-> Source and command: github.com/harlan-zw/ripast
+> Source and command: github.com/harlan-zw/ripide
 
 Replace the draft's behavioral claims with the measured capture's actual result before publication.
-Add its runner, model, check scope, and timing limits. Disclose the author's connection to Ripast.
+Add its runner, model, check scope, and timing limits. Disclose the author's connection to RipIDE.
 
 ## Follow-up demonstrations
 

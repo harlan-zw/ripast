@@ -3,7 +3,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { cpSync, mkdirSync, readFileSync, renameSync, symlinkSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { resolveNativeTsc, runMove, runRename, runRenameFile, scan, writeChanges } from '@ripast/core'
+import { resolveNativeTsc, runMove, runRename, runRenameFile, scan, writeChanges } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 

@@ -114,7 +114,7 @@ it('formatScanGraph emits mermaid and dot formats', () => {
     assert.match(mermaid, /-->\|\.\/a\.ts\|/)
 
     const dot = formatScanGraph(graph, 'dot')
-    assert.match(dot, /^digraph ripast_scan/)
+    assert.match(dot, /^digraph ripide_scan/)
     assert.match(dot, /"src\/b\.ts" -> "src\/a\.ts" \[label="\.\/a\.ts"\];/)
   }
   finally { fx.cleanup() }

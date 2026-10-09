@@ -1,9 +1,9 @@
-import type { FileChange, ScanFn } from '@ripast/core/adapter'
+import type { FileChange, ScanFn } from 'ripide-api/adapter'
 import type { PathAlias } from './nuxt-paths.ts'
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
-import { rgFiles } from '@ripast/core/adapter'
 import { parse } from '@vue/compiler-sfc'
+import { rgFiles } from 'ripide-api/adapter'
 import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 import { unboundNuxtSymbols } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
@@ -47,11 +47,11 @@ export function addNuxtExplicitImports(ctx: ExplicitImportContext): FileChange[]
             names = undefined
             break
           }
-          throw new Error(`ripast: cannot resolve Nuxt auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
+          throw new Error(`ripide: cannot resolve Nuxt auto-import metadata for "${symbol}" in ${context}. Run Nuxt prepare first.`)
         }
         for (const name of binding.names) {
           if (names.has(name) && names.get(name) !== symbol)
-            throw new Error(`ripast: cannot resolve the Nuxt auto-import binding "${name}". Run Nuxt prepare first.`)
+            throw new Error(`ripide: cannot resolve the Nuxt auto-import binding "${name}". Run Nuxt prepare first.`)
           names.set(name, symbol)
         }
       }

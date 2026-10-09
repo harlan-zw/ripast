@@ -1,4 +1,4 @@
-import { rgFiles } from '@ripast/core/adapter'
+import { rgFiles } from 'ripide-api/adapter'
 
 export function hasVueFilesContaining(cwd: string, pattern: string): boolean {
   return listVueFilesContaining(cwd, pattern).length > 0

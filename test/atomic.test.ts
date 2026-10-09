@@ -17,7 +17,7 @@ it('writeChanges creates missing parent dirs for new target files', () => {
     ])
     assert.equal(readFileSync(join(fx.dir, 'a.ts'), 'utf8'), 'new-a\n')
     assert.equal(readFileSync(join(fx.dir, 'missing-dir/b.ts'), 'utf8'), 'new-b\n')
-    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripast-tmp'))
+    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripide-tmp'))
     assert.equal(leftover.length, 0, `no tmp files leaked: ${leftover.join(', ')}`)
   }
   finally { fx.cleanup() }
@@ -35,7 +35,7 @@ it('writeChanges applies all changes successfully when every target is writable'
     ])
     assert.equal(fx.read('a.ts'), 'new-a\n')
     assert.equal(fx.read('b.ts'), 'new-b\n')
-    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripast-tmp'))
+    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripide-tmp'))
     assert.equal(leftover.length, 0, 'no tmp files left after success')
   }
   finally { fx.cleanup() }

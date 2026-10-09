@@ -3,12 +3,12 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unli
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runDelete } from '@ripast/core'
+import { runDelete } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
 
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-delete-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-delete-'))
   cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
   writeFileSync(join(dir, 'pages/index.vue'), '<template><p>Unused</p></template>')
   return dir
@@ -93,12 +93,12 @@ it('refuses deletion of a live provider whose generated global uses a bare packa
   try {
     mkdirSync(join(dir, 'lib'), { recursive: true })
     writeFileSync(join(dir, 'lib/value.ts'), 'export const value = 7')
-    writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const value: typeof import('ripast-live-provider').value } export {}`)
+    writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const value: typeof import('ripide-live-provider').value } export {}`)
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-    pkg.name = 'ripast-live-provider'
+    pkg.name = 'ripide-live-provider'
     writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg, null, 2))
-    mkdirSync(join(dir, 'node_modules/ripast-live-provider'), { recursive: true })
-    writeFileSync(join(dir, 'node_modules/ripast-live-provider/package.json'), JSON.stringify({ name: 'ripast-live-provider', version: '1.0.0', main: '../../lib/value.ts', types: '../../lib/value.ts' }))
+    mkdirSync(join(dir, 'node_modules/ripide-live-provider'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules/ripide-live-provider/package.json'), JSON.stringify({ name: 'ripide-live-provider', version: '1.0.0', main: '../../lib/value.ts', types: '../../lib/value.ts' }))
     writeFileSync(join(dir, 'pages/index.vue'), '<template>{{ value(7) }}</template>')
     const before = readFileSync(join(dir, 'lib/value.ts'), 'utf8')
     await assert.rejects(() => runDelete('value', 'lib/value.ts', { cwd: dir, verify: false }), /reference/)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
-import { rgFiles, rgFilesMany } from '@ripast/core/adapter'
+import { rgFiles, rgFilesMany } from 'ripide-api/adapter'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 

@@ -1,6 +1,6 @@
-import { runVueTemplateUnwrap, runVueTemplateWrap, scan } from '@ripast/core'
-import { parseComponentSource } from '@ripast/vue'
 import { parse } from '@vue/compiler-sfc'
+import { runVueTemplateUnwrap, runVueTemplateWrap, scan } from 'ripide-api'
+import { parseComponentSource } from 'ripide-vue'
 import { describe, expect, it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 

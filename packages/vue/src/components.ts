@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { hyphenateVueName, rgFiles } from '@ripast/core/adapter'
+import { hyphenateVueName, rgFiles } from 'ripide-api/adapter'
 import { loadNuxtPathAliases } from './nuxt-paths.ts'
 
 export type ComponentKind = 'sfc' | 'define-component'
@@ -60,7 +60,7 @@ export function listComponents(cwd: string, opts: ListComponentsOptions = {}): V
 
   if (source === 'manifest' || (source === 'auto' && manifestPresent)) {
     if (!manifestPresent) {
-      warn(`ripast components: ${MANIFEST_PATH} not found at ${cwd}; cannot use manifest source.`)
+      warn(`ripide components: ${MANIFEST_PATH} not found at ${cwd}; cannot use manifest source.`)
       return []
     }
     const fromManifest = readManifest(cwd, manifestPath)
@@ -69,7 +69,7 @@ export function listComponents(cwd: string, opts: ListComponentsOptions = {}): V
   }
 
   if (source === 'auto')
-    warn(`ripast components: ${MANIFEST_PATH} not found; falling back to filesystem glob. Run \`nuxi prepare\` for accurate resolution.`)
+    warn(`ripide components: ${MANIFEST_PATH} not found; falling back to filesystem glob. Run \`nuxi prepare\` for accurate resolution.`)
 
   return filesystemOnly(cwd, opts.glob ?? DEFAULT_VUE_GLOB).sort(sortComponents)
 }

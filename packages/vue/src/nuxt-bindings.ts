@@ -25,7 +25,7 @@ export function nuxtImportMetadataPaths(cwd: string, consumerPath?: string): str
       return inDirectory(join(cwd, fallback))
     const parsed = ts.parseConfigFileTextToJson(configPath, readFileSync(configPath, 'utf8'))
     if (parsed.error)
-      throw new Error(`ripast: cannot read Nuxt runtime configuration in ${configPath}. Run Nuxt prepare first.`)
+      throw new Error(`ripide: cannot read Nuxt runtime configuration in ${configPath}. Run Nuxt prepare first.`)
     const matches = (patterns: unknown): boolean => Array.isArray(patterns) && patterns.some((pattern: unknown) => {
       if (typeof pattern !== 'string')
         return false

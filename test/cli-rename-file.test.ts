@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { runRenameFile } from '@ripast/core'
+import { runRenameFile } from 'ripide-api'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
@@ -91,7 +91,7 @@ import fs from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 const original = fs.writeFileSync
 fs.writeFileSync = function(path, ...args) {
-  if (String(path).includes('ripast-tmp')) throw new Error('injected write failure')
+  if (String(path).includes('ripide-tmp')) throw new Error('injected write failure')
   return original.call(this, path, ...args)
 }
 syncBuiltinESMExports()

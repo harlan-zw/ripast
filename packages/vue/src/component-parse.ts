@@ -1,6 +1,6 @@
 import type { PropsResolution } from './components.ts'
 import { readFileSync } from 'node:fs'
-import { parseSourceFile } from '@ripast/core/adapter'
+import { parseSourceFile } from 'ripide-api/adapter'
 
 export interface PropSig {
   name: string

@@ -103,7 +103,7 @@ function runRipgrep(args: string[], cwd: string, fallback: () => string[]): stri
   const result = spawnSync('rg', ['--null', ...args], { cwd, encoding: 'utf8' })
   if (result.error) {
     if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
-      process.stderr.write('ripast: rg was not found on PATH. Using Node file search; it may be slower.\n')
+      process.stderr.write('ripide: rg was not found on PATH. Using Node file search; it may be slower.\n')
       return fallback()
     }
     throw new Error(`Could not start rg: ${result.error.message}`, { cause: result.error })
@@ -222,7 +222,7 @@ export function writeChanges(changes: FileChange[]): void {
   try {
     for (const [target, change] of targets) {
       mkdirSync(dirname(target), { recursive: true })
-      const directory = mkdtempSync(join(dirname(target), '.ripast-tmp-'))
+      const directory = mkdtempSync(join(dirname(target), '.ripide-tmp-'))
       const tmp = join(directory, 'after')
       const backup = existsSync(target) ? join(directory, 'before') : null
       staged.push({ directory, tmp, target, backup })
@@ -254,7 +254,7 @@ export function writeChanges(changes: FileChange[]): void {
     }
     // Keep backups available if the filesystem also prevents restoration.
     if (failures.length > 1)
-      throw new AggregateError(failures, 'Could not restore every file. Original files remain in .ripast-tmp- directories.')
+      throw new AggregateError(failures, 'Could not restore every file. Original files remain in .ripide-tmp- directories.')
     for (const { directory } of staged)
       rmSync(directory, { recursive: true, force: true })
     throw err

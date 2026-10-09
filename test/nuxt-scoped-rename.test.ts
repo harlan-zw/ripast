@@ -3,13 +3,13 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { runRename } from '@ripast/core'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
+import { runRename } from 'ripide-api'
 import ts from 'typescript'
 import { it } from 'vitest'
 
 function fixture() {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-scoped-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-scoped-'))
   cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
   writeFileSync(join(dir, 'pages/index.vue'), '<template>Unused</template>')
   return dir
@@ -178,10 +178,10 @@ it('preserves BOM, CRLF, and escaped identifiers across both script blocks', asy
 it('renames a provider whose name matches the old synthetic setup wrapper', async () => {
   const dir = fixture()
   try {
-    writeFileSync(join(dir, 'utils/format.ts'), 'export function __ripastSetup(value: number) { return "#" + value }')
-    writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const __ripastSetup: typeof import('../utils/format')['__ripastSetup'] } export {}`)
-    writeFileSync(join(dir, 'pages/index.vue'), '<script setup lang="ts">const label = __ripastSetup(1)</script><template>{{ __ripastSetup(2) }}</template>')
-    const result = await runRename('__ripastSetup', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify: false })
+    writeFileSync(join(dir, 'utils/format.ts'), 'export function __ripideSetup(value: number) { return "#" + value }')
+    writeFileSync(join(dir, '.nuxt/imports.d.ts'), `declare global { const __ripideSetup: typeof import('../utils/format')['__ripideSetup'] } export {}`)
+    writeFileSync(join(dir, 'pages/index.vue'), '<script setup lang="ts">const label = __ripideSetup(1)</script><template>{{ __ripideSetup(2) }}</template>')
+    const result = await runRename('__ripideSetup', 'pretty', { cwd: dir, scope: 'utils/format.ts', verify: false })
     assert.equal(setup(result.changes.find(change => change.rel === 'pages/index.vue')!.after, { pretty: (value: number) => `#${value}` }).label, '#1')
   }
   finally { rmSync(dir, { recursive: true, force: true }) }

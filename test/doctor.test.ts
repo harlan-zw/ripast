@@ -1,4 +1,4 @@
-import { buildDoctorFixes, runDoctor } from '@ripast/core'
+import { buildDoctorFixes, runDoctor } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
@@ -115,10 +115,10 @@ describe('doctor: inconsistent-import-path', () => {
 })
 
 describe('doctor: ignore comments', () => {
-  it('suppresses all findings on a file with ripast-doctor-ignore-file', async () => {
+  it('suppresses all findings on a file with ripide-doctor-ignore-file', async () => {
     const fx = makeFixture({
       'a.ts': 'export const Foo = 1',
-      'b.ts': '// ripast-doctor-ignore-file\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
+      'b.ts': '// ripide-doctor-ignore-file\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
     const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
     fx.cleanup()
@@ -128,7 +128,7 @@ describe('doctor: ignore comments', () => {
   it('suppresses only listed checks', async () => {
     const fx = makeFixture({
       'a.ts': 'export const Foo = 1',
-      'b.ts': '// ripast-doctor-ignore-file: duplicate-export\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
+      'b.ts': '// ripide-doctor-ignore-file: duplicate-export\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
     const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
     fx.cleanup()
@@ -291,7 +291,7 @@ describe('doctor: ignore-next-line directive', () => {
   it('suppresses a stale-import on the line immediately below', async () => {
     const fx = makeFixture({
       'a.ts': 'export const Foo = 1',
-      'b.ts': '// ripast-doctor-ignore-next-line\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
+      'b.ts': '// ripide-doctor-ignore-next-line\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
     const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
     fx.cleanup()
@@ -301,7 +301,7 @@ describe('doctor: ignore-next-line directive', () => {
   it('only suppresses listed checks when given names', async () => {
     const fx = makeFixture({
       'a.ts': 'export const Foo = 1',
-      'b.ts': '// ripast-doctor-ignore-next-line: duplicate-export\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
+      'b.ts': '// ripide-doctor-ignore-next-line: duplicate-export\nimport { Foo, Bar } from \'./a\'\nconsole.log(Foo, Bar)',
     })
     const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
     fx.cleanup()
@@ -311,7 +311,7 @@ describe('doctor: ignore-next-line directive', () => {
   it('does not suppress findings on lines beyond the targeted one', async () => {
     const fx = makeFixture({
       'a.ts': 'export const Foo = 1',
-      'b.ts': '// ripast-doctor-ignore-next-line\nconst noise = 1\nimport { Bar } from \'./a\'\nconsole.log(noise, Bar)',
+      'b.ts': '// ripide-doctor-ignore-next-line\nconst noise = 1\nimport { Bar } from \'./a\'\nconsole.log(noise, Bar)',
     })
     const report = await runDoctor({ cwd: fx.dir, noAdapters: true, checks: ['stale-import'] })
     fx.cleanup()

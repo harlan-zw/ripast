@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import process from 'node:process'
-import { runCssClassRename, runCssClassScan } from '@ripast/core'
+import { runCssClassRename, runCssClassScan } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 

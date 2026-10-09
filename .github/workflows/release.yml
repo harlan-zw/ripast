@@ -43,9 +43,9 @@ jobs:
         run: node --experimental-strip-types scripts/release.ts plan "$RELEASE_TAG"
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
+      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripide-pack"
       - run: npm install --global npm@12
       - name: Publish packages through OIDC
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: npm run release:publish -- "$RELEASE_TAG" "${{ runner.temp }}/ripast-pack"
+        run: npm run release:publish -- "$RELEASE_TAG" "${{ runner.temp }}/ripide-pack"

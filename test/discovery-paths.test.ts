@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
-import { buildDeclarationTree, buildScanGraph, scan } from '@ripast/core'
-import { rgFilesMany } from '@ripast/core/adapter'
+import { buildDeclarationTree, buildScanGraph, scan } from 'ripide-api'
+import { rgFilesMany } from 'ripide-api/adapter'
 import { it } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
