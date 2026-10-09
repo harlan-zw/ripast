@@ -711,10 +711,34 @@ function findInconsistentImportPaths(index: DoctorIndex, cwd: string): DoctorFin
 
 type ImportFlavour = 'alias' | 'relative' | 'relative-ext'
 
+function parseDoctorAdapter(value: unknown, name: FrameworkName): DoctorAdapter {
+  const packageName = `ripide-${name === 'nuxt' ? 'vue' : name}`
+  const definition = value && typeof value === 'object' ? value as Record<string, unknown> : null
+  const checks = definition?.checks
+  if (!Array.isArray(checks) || checks.some(check => typeof check !== 'string' || !check.trim() || check.trim() !== check)) {
+    throw new Error(`Adapter ${packageName}: doctor.checks must be an array of nonempty check names. Update the adapter registration.`)
+  }
+  for (const field of ['entryFiles', 'extraFindings', 'filterFinding'] as const) {
+    if (definition?.[field] !== undefined && typeof definition?.[field] !== 'function')
+      throw new Error(`Adapter ${packageName}: doctor.${field} must be a function. Update the adapter registration.`)
+  }
+  return value as DoctorAdapter
+}
+
 async function loadDoctorAdapters(cwd: string, opts: DoctorOptions): Promise<DoctorAdapter[]> {
   if (opts.noAdapters)
     return []
-  const adapters = opts.engine?.extensions.flatMap(extension => extension.semantic?.doctor ? [extension.semantic.doctor] : []) ?? []
+  const seen = new Set<DoctorAdapter>()
+  const adapters: DoctorAdapter[] = []
+  for (const extension of opts.engine?.extensions ?? []) {
+    if (!extension.semantic || extension.semantic.doctor === undefined)
+      continue
+    const doctor = parseDoctorAdapter(extension.semantic.doctor, extension.semantic.name)
+    if (seen.has(doctor))
+      continue
+    seen.add(doctor)
+    adapters.push(doctor)
+  }
   return adapters
 }
 

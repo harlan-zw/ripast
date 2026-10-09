@@ -113,3 +113,15 @@ describe('rename-file without a framework adapter', () => {
     finally { fx.cleanup() }
   })
 })
+
+it('refuses unchecked Vue directory-index consumers without an extension', async () => {
+  const fx = makeFixture({
+    'utils/index.ts': 'export const amount = 1',
+    'Consumer.vue': '<script setup lang="ts">import { amount } from "./utils"</script><template>{{ amount }}</template>',
+  })
+  try {
+    await assert.rejects(runRenameFile('utils/index.ts', 'utils/value.ts', { cwd: fx.dir, verify: false }), /Required extension missing/)
+    assert.equal(fx.read('utils/index.ts'), 'export const amount = 1')
+  }
+  finally { fx.cleanup() }
+})
