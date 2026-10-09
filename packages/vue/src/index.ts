@@ -16,9 +16,10 @@ import { listComponents } from './components.ts'
 import { doctor } from './doctor.ts'
 import { finalizeVueFileRename } from './finalize-rename.ts'
 import { loadNuxtProviderPaths, nuxtConsumerContext } from './nuxt-bindings.ts'
+import { configProperty, literalNuxtConfig, literalString } from './nuxt-config.ts'
 import { inspectNuxtAutoImportConsumers, validateNuxtAutoImportRename } from './nuxt-delete.ts'
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
-import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
+import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, loadNuxtPathAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
 import { planNuxtAutoImportRename } from './nuxt-rename.ts'
 
 export { parseComponent, parseComponentSource } from './component-parse.ts'
@@ -49,6 +50,13 @@ const adapter: FrameworkAdapter = {
   validateAutoImportRename: validateNuxtAutoImportRename,
   planAutoImportRename: planNuxtAutoImportRename,
   filterGeneratedChanges: removeGeneratedNuxtChanges,
+  isPlannedImportTarget(cwd, consumer, specifier, target) {
+    if (!isNuxtProject(cwd))
+      return false
+    const aliases = loadNuxtPathAliases(nuxtConsumerContext(consumer, cwd))
+    const consistent = aliases.filter(alias => aliases.every(other => other.pattern !== alias.pattern || JSON.stringify(other.targets) === JSON.stringify(alias.targets)))
+    return aliasResolvesToTarget(consistent, specifier, target)
+  },
   addExplicitImports: ctx => addNuxtExplicitImports({ ...ctx, scan }),
   async finalizeFileRename(cwd, oldAbs, newAbs, existingChanges) {
     const scopes = isNuxtProject(cwd) ? nuxtAutoImportScopes(cwd) : new Set<string>()
@@ -125,50 +133,6 @@ function defaultNuxtSourceDir(context: string, config: ts.Expression | undefined
   const directories = ['assets', 'layouts', 'middleware', 'pages', 'plugins']
     .map(name => literalString(configProperty(configProperty(config, 'dir'), name)) ?? name)
   return directories.some(directory => existsSync(resolve(context, directory))) ? '.' : 'app'
-}
-
-function literalNuxtConfig(source: string): ts.Expression | undefined {
-  const file = ts.createSourceFile('nuxt.config.ts', source, ts.ScriptTarget.Latest, true)
-  const exported = file.statements.find(ts.isExportAssignment)
-  if (!exported)
-    return undefined
-  const expression = exported.expression
-  const variables = new Map<string, ts.Expression>()
-  for (const statement of file.statements) {
-    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const))
-      continue
-    for (const declaration of statement.declarationList.declarations) {
-      if (ts.isIdentifier(declaration.name) && declaration.initializer)
-        variables.set(declaration.name.text, declaration.initializer)
-    }
-  }
-  const resolve = (value: ts.Expression, seen = new Set<string>()): ts.Expression | undefined => {
-    if (!ts.isIdentifier(value) || seen.has(value.text))
-      return value
-    const initializer = variables.get(value.text)
-    if (!initializer)
-      return undefined
-    seen.add(value.text)
-    return resolve(initializer, seen)
-  }
-  const config = ts.isCallExpression(expression) ? expression.arguments[0] : expression
-  return config && resolve(config)
-}
-
-function configProperty(expression: ts.Expression | undefined, name: string): ts.Expression | undefined {
-  if (!expression)
-    return undefined
-  if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression))
-    return configProperty(expression.expression, name)
-  if (!ts.isObjectLiteralExpression(expression))
-    return undefined
-  const property = expression.properties.find(property => ts.isPropertyAssignment(property)
-    && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) && property.name.text === name)
-  return property && ts.isPropertyAssignment(property) ? property.initializer : undefined
-}
-
-function literalString(expression: ts.Expression | undefined): string | undefined {
-  return expression && (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) ? expression.text : undefined
 }
 
 function configuredNuxtDirs(config: ts.Expression | undefined): string[] {

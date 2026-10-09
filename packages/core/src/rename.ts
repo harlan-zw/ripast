@@ -169,7 +169,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
       regressions.push(...vueRegs)
     }
 
-    const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob))
+    const warnings = timed(profile, 'stale consumer scan', () => detectStaleConsumers(cwd, from, changes, opts.glob, autoImportPlan?.unrelatedGeneratedImports))
 
     return { changes, scanned: candidatePaths.length, regressions, warnings }
   }
@@ -259,7 +259,7 @@ function preserveConsumerBindings(path: string, source: string, edits: LspTextEd
 // outside that set (sibling test dirs, other packages) keeps the old name and
 // the server never sees it. Re-scan with rg and flag any file that still
 // imports the old name but was not rewritten.
-function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined): string[] {
+function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined, unrelatedGeneratedImports?: Set<string>): string[] {
   const rewritten = new Set(changes.map(c => c.path))
   const stale: string[] = []
   for (const path of rgFiles(from, { cwd, glob })) {
@@ -275,6 +275,8 @@ function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], 
     const { program } = parseSourceFile(path, text, cwd)
     const importsName = program?.body.some((node: any) => {
       if (!node.source || (node.type !== 'ImportDeclaration' && node.type !== 'ExportNamedDeclaration'))
+        return false
+      if (node.source.value === '#imports' && unrelatedGeneratedImports?.has(path))
         return false
       return node.specifiers.some((specifier: any) => {
         const imported = specifier.type === 'ImportSpecifier' ? specifier.imported : specifier.local

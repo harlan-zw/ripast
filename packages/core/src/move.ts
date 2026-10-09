@@ -184,7 +184,9 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
       // Native module resolution reads disk, so a new directory cannot resolve yet.
       // Ignore only changed consumers pointing at this planned destination.
       const consumers = new Set(scriptChanges.filter(change => change.path !== toAbs).map(change => change.path))
-      regressions.push(...verified.filter(regression => !consumers.has(regression.file) || !isUnresolvedMoveTarget(regression, toAbs)))
+      regressions.push(...verified.filter(regression => !consumers.has(regression.file)
+        || (!isUnresolvedMoveTarget(regression, toAbs) && !(regression.code === 2307
+          && vueAdapter?.isPlannedImportTarget?.(cwd, regression.file, /Cannot find module '([^']+)'/.exec(regression.message)?.[1] ?? '', toAbs)))))
     }
 
     if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {

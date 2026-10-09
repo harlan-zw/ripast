@@ -1,9 +1,9 @@
 import type { FileChange, TextEdit } from '@ripast/core/adapter'
-import { existsSync, readFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { relative } from 'node:path'
 import { applyTextEdits } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
-import { isNuxtBindingTarget } from './nuxt-bindings.ts'
+import { isNuxtBindingTarget, nuxtImportMetadataPaths } from './nuxt-bindings.ts'
 
 /** Predict Nuxt prepare declarations for verification. These changes never reach the apply plan. */
 export function nuxtRenameVerificationChanges(
@@ -15,9 +15,7 @@ export function nuxtRenameVerificationChanges(
 ): FileChange[] {
   const changes: FileChange[] = []
   for (const context of contexts) {
-    for (const path of [join(context, '.nuxt/imports.d.ts'), join(context, '.nuxt/types/imports.d.ts')]) {
-      if (!existsSync(path))
-        continue
+    for (const path of nuxtImportMetadataPaths(context)) {
       const before = readFileSync(path, 'utf8')
       const source = ts.createSourceFile(path, before, ts.ScriptTarget.Latest, true)
       const edits: TextEdit[] = []
