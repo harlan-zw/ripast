@@ -12,7 +12,7 @@ import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 import { walk } from 'oxc-walker'
-import { loadAdapter } from './adapter.ts'
+import { loadAdapter, needsVueAdapter } from './adapter.ts'
 import { declarationText, isPropertyNamePosition, listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { addOrMergeImport, appendStatement, computeSpecifier, isImportEmpty, listImports, parseProgram, pruneUnusedImports, renderImport, rewriteImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
@@ -66,7 +66,11 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
   if (!decl)
     throw new Error(`ripide move: no top-level export named "${symbol}" in ${fromPath} (supported: function, class, interface, type, enum, const with single declarator)`)
 
-  const vueAdapter = vueEnabled && tsconfigPath ? await loadAdapter('vue') : null
+  const vueCandidates = vueEnabled
+    ? timed(profile, 'vue candidates', () => rgFiles(basename(fromAbs, extname(fromAbs)), { cwd, glob: '*.vue' }))
+    : []
+  const vueNeeded = vueEnabled && tsconfigPath && timed(profile, 'vue requirements', () => needsVueAdapter(cwd, vueCandidates, verifyMode === 'project'))
+  const vueAdapter = vueNeeded ? await timedAsync(profile, 'vue adapter', () => loadAdapter('vue')) : null
   const server = await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath ?? undefined }))
   try {
     // Splitting a declaration changes offsets. Resolve against the exact source overlay.
@@ -196,10 +200,10 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     }
 
     if (vueEnabled && verifyMode === 'project') {
-      regressions.push(...await findVueRegressions(cwd, changes, tsconfigPath, async () => vueAdapter, verification.vue))
+      regressions.push(...await timedAsync(profile, 'vue verify', () => findVueRegressions(cwd, changes, tsconfigPath, async () => vueAdapter, verification.vue)))
     }
     else if (vueAdapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isVuePath(c.path))) {
-      const vueRegs = await vueAdapter.regressions(tsconfigPath, cwd, changes, verification.vue)
+      const vueRegs = await timedAsync(profile, 'vue verify', () => vueAdapter.regressions(tsconfigPath, cwd, changes, verification.vue))
       regressions.push(...vueRegs)
     }
 

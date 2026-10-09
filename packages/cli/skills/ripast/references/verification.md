@@ -20,6 +20,21 @@ If the receipt covers your required scope, do not repeat that diagnostic check w
 Run builds or tests when the task requires checks outside that receipt.
 Batch known commands. Inspect more files only when results expose uncertainty.
 Repeat a successful check only after another edit or new failure.
+If a check fails, repair its cause and run the focused proving check before broad verification.
+Keep meaningful failing-first tests. Run required final checks against the submitted source tree.
+If source and inputs are unchanged, do not repeat a failing lint command.
+
+## Package moves and incomplete output
+
+Before moving across packages, inspect the destination manifest, imports, and exported entry points.
+Add required dependencies and update the workspace lockfile when the graph changes.
+If public types or exports change, rebuild affected declarations before downstream typechecks.
+Do not reinstall dependencies when their graph is unchanged.
+
+If output is incomplete or malformed, preserve stdout, stderr, and the actual process exit separately.
+Recover complete diagnostics through a preview or focused inspection before deciding what failed.
+Never infer a false positive from missing diagnostics. Never disable verification to bypass a refusal.
+Preserve all diagnostics in an artifact. Give the model the cause, relevant locations, and artifact path.
 
 ## Nuxt and adapters
 

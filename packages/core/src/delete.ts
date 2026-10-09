@@ -1,3 +1,4 @@
+import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Verification } from './verification.ts'
@@ -12,6 +13,7 @@ import { detectFrameworks, loadAdapter } from './adapter.ts'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
+import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
@@ -19,6 +21,7 @@ import { createVerification } from './verification.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 
 export interface DeleteOptions {
+  profile?: ProfileSink
   cwd?: string
   verify?: boolean | VerifyMode
 }
@@ -38,10 +41,11 @@ export interface DeleteResult {
 
 export async function runDelete(symbol: string, fromPath: string, opts: DeleteOptions = {}): Promise<DeleteResult> {
   const cwd = opts.cwd ?? process.cwd()
+  const profile = opts.profile
   const verifyMode = resolveVerifyMode(opts.verify)
   const fromAbs = resolve(cwd, fromPath)
   // Escaped identifiers and namespace use need not contain the symbol's text.
-  const candidatePaths = rgFiles('', { cwd, listAll: true })
+  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, listAll: true }))
 
   const before = readFileSync(fromAbs, 'utf8')
   const parsed = parseSource(fromAbs, before)
@@ -57,7 +61,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
 
   const nuxt = decl.exported && (detectFrameworks(cwd).includes('nuxt')
     || ['.nuxt', 'nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mts', 'nuxt.config.mjs'].some(path => existsSync(join(cwd, path))))
-  const nuxtAdapter = nuxt ? await loadAdapter('nuxt') : null
+  const nuxtAdapter = nuxt ? await timedAsync(profile, 'nuxt adapter', () => loadAdapter('nuxt')) : null
   let inspectedScopes = false
   if (nuxt) {
     if (!nuxtAdapter?.autoImportScopes || !nuxtAdapter.inspectAutoImportConsumers)
@@ -71,7 +75,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     }
   }
 
-  const server = await startTsServer(cwd)
+  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd))
   try {
     const vueScripts = new Map<string, string>()
     const scripts: { path: string, source: string, script: string, imports: ReturnType<typeof listImports> }[] = []
@@ -204,9 +208,9 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     const verification = createVerification(verifyMode, !!changes.length)
     const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd) : [fromAbs], verification.typescript)
+      : await timedAsync(profile, 'verify', () => findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd) : [fromAbs], verification.typescript))
     if (verifyMode === 'project')
-      regressions.push(...await findVueRegressions(cwd, changes, findTsconfig(cwd), async () => nuxtAdapter ?? await loadAdapter('vue'), verification.vue))
+      regressions.push(...await timedAsync(profile, 'vue verify', () => findVueRegressions(cwd, changes, findTsconfig(cwd), async () => nuxtAdapter ?? await loadAdapter('vue'), verification.vue)))
 
     return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions, verification: verification.result() }
   }

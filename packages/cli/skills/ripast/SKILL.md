@@ -6,6 +6,7 @@ description: "AST refactors: renames, moves, imports, and CSS classes in TS/JS/V
 Use RipIDE for mechanical refactors across TS, JS, JSX, and Vue files.
 Run from the project root with Node 22.13+. Follow repository worktree and approval rules; keep unrelated work separate.
 Use direct edits for small local changes, prose, strings, and comments.
+During architecture work, design contracts with direct edits. Use RipIDE for the supported mechanical steps.
 Svelte markup and arbitrary custom codemods are unsupported.
 
 ## Launcher
@@ -17,7 +18,7 @@ If setup is needed, read [installation and launchers](references/setup.md), incl
 
 ## Workflow
 
-1. If the CLI is ready and the target and command are known, run the mutation first. Skip listings, globs, scans, and declaration reads.
+1. If a move crosses packages, first check destination dependencies and exports. Otherwise, run a known mutation without redundant discovery.
 2. If uncertain, resolve the target and review a dry run first. Read [command syntax and examples](references/commands.md) when needed.
 3. Use `--apply --profile agent`; keep type verification enabled. Use `--scope` for a known declaration file.
 4. If a check is supplied, append it with `&&` in the mutation's shell call. Do not run it separately or invent checks.
@@ -35,6 +36,7 @@ CSS and template transforms have no type verification; run their project checks.
 If no files changed, resolve the target, root, or configuration before retrying.
 If diagnostics increased, inspect the cause. Never disable verification to force success.
 Inspect more files only when results expose uncertainty. Repeat a successful check only after another edit or new failure.
+Search for one uncertainty that can change the next step. Keep full output in artifacts; read relevant evidence only.
 Read `<launcher> <command> --help` only when a needed flag is unclear.
 
 For Nuxt auto-imports or verification scope and output limits, read [verification and Nuxt](references/verification.md).

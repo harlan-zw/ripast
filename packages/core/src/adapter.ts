@@ -4,6 +4,7 @@ import type { Regression } from './verify.ts'
 import type { TemplateExpression } from './vue-template.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { rgFiles } from './util.ts'
 
 export { diagnosticRegressions } from './diagnostic-matching.ts'
 // Adapter SDK entry. ripide-<framework> packages import from here.
@@ -277,6 +278,17 @@ export function detectFrameworks(cwd: string): FrameworkName[] {
     dir = parent
   }
   return out
+}
+
+/** Preserve Vue consumers, project verification, and Nuxt auto-import semantics. */
+export function needsVueAdapter(cwd: string, candidates: readonly string[], projectVerification: boolean): boolean {
+  if (candidates.some(path => path.endsWith('.vue')))
+    return true
+  if (projectVerification && rgFiles('', { cwd, glob: '*.vue', listAll: true }).length)
+    return true
+  if (existsSync(join(cwd, '.nuxt')) || detectFrameworks(cwd).includes('nuxt'))
+    return true
+  return rgFiles('', { cwd, glob: 'nuxt.config.{ts,js,mts,mjs,cts,cjs}', listAll: true }).length > 0
 }
 
 export function resetAdapterCache(): void {

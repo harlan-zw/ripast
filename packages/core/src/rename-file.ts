@@ -1,3 +1,4 @@
+import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
@@ -6,16 +7,18 @@ import type { Regression } from './verify.ts'
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { loadAdapter } from './adapter.ts'
+import { loadAdapter, needsVueAdapter } from './adapter.ts'
 import { computeSpecifier } from './imports.ts'
+import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { mergeFileChanges, rgFiles } from './util.ts'
+import { mergeFileChanges, rgFiles, rgFilesMany } from './util.ts'
 import { createVerification } from './verification.ts'
 import { findRegressions, findVueRegressions } from './verify.ts'
 import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
 export interface RenameFileOptions {
+  profile?: ProfileSink
   cwd?: string
   /** Configured project used for import rewrites and verification. */
   tsconfig?: string
@@ -41,6 +44,7 @@ export interface RenameFileResult {
 
 export async function runRenameFile(oldPath: string, newPath: string, opts: RenameFileOptions = {}): Promise<RenameFileResult> {
   const cwd = opts.cwd ?? process.cwd()
+  const profile = opts.profile
   const oldAbs = resolve(cwd, oldPath)
   const inferredNewPath = extname(newPath) ? newPath : `${newPath}${extname(oldPath)}`
   const newAbs = resolve(cwd, inferredNewPath)
@@ -66,18 +70,21 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   if (target && !caseOnlyRename)
     throw new Error(`ripide rename-file: target "${newPath}" already exists`)
 
-  const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
+  const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
   if (!tsconfigPath)
     throw new Error('ripide rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
   const verifyMode = resolveVerifyMode(opts.verify)
-  const vueAdapter = opts.vue === false ? null : await loadAdapter('vue')
+  const name = basename(oldAbs, extname(oldAbs))
+  const vueCandidates = opts.vue === false ? [] : timed(profile, 'vue candidates', () => rgFilesMany([name, hyphenateVueName(name)], { cwd, glob: '*.vue' }))
+  const vueNeeded = opts.vue !== false && timed(profile, 'vue requirements', () => needsVueAdapter(cwd, [oldAbs, newAbs, ...vueCandidates], verifyMode === 'project'))
+  const vueAdapter = vueNeeded ? await timedAsync(profile, 'vue adapter', () => loadAdapter('vue')) : null
   const warnings: string[] = []
-  const server = !vueAdapter || verifyMode !== 'none' ? await startTsServer(cwd, { tsconfig: tsconfigPath }) : null
+  const server = !vueAdapter || verifyMode !== 'none' ? await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath })) : null
   try {
     let consumerChanges: FileChange[]
     if (vueAdapter) {
-      consumerChanges = await vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
+      consumerChanges = await timedAsync(profile, 'file rename transform', () => vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs))
       const templateChanges = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, consumerChanges)
       mergeFileChanges(consumerChanges, templateChanges)
       if (vueAdapter.finalizeFileRename) {
@@ -92,7 +99,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       // server rewrites every importing file on its own.
       if (oldAbs.endsWith('.vue') || newAbs.endsWith('.vue'))
         throw new Error('ripide rename-file: renaming .vue files requires the Vue adapter (install ripide-vue)')
-      consumerChanges = await tsOnlyFileRename(server!, cwd, oldAbs, newAbs)
+      consumerChanges = await timedAsync(profile, 'file rename transform', () => tsOnlyFileRename(server!, cwd, oldAbs, newAbs))
       const vueConsumers = rgFiles(basename(oldAbs, extname(oldAbs)), { cwd, glob: '*.vue' })
       if (vueConsumers.length)
         warnings.push(`${vueConsumers.length} .vue file(s) reference this name and were not checked; install ripide-vue to rewrite .vue import sites`)
@@ -115,12 +122,12 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
         after: selfChange?.after ?? readFileSync(oldAbs, 'utf8'),
       }]
       if (opts.vue !== false && verifyMode === 'project') {
-        regressions.push(...await findVueRegressions(cwd, vueChanges, tsconfigPath, async () => vueAdapter, verification.vue))
+        regressions.push(...await timedAsync(profile, 'vue verify', () => findVueRegressions(cwd, vueChanges, tsconfigPath, async () => vueAdapter, verification.vue)))
       }
       else if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue'))) {
-        regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, vueChanges, verification.vue))
+        regressions.push(...await timedAsync(profile, 'vue verify', () => vueAdapter.regressions(tsconfigPath, cwd, vueChanges, verification.vue)))
       }
-      regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode, (consumer, specifier) => vueAdapter?.isPlannedImportTarget?.(cwd, consumer, specifier, newAbs) ?? false, verification))
+      regressions.push(...await timedAsync(profile, 'verify', () => verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode, (consumer, specifier) => vueAdapter?.isPlannedImportTarget?.(cwd, consumer, specifier, newAbs) ?? false, verification)))
     }
 
     return {
