@@ -1,5 +1,10 @@
 import type { ProfileEvent, ProfileSink } from 'ripide-api'
 import type { BenchFixture } from './fixture.ts'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpus, loadavg, platform, release } from 'node:os'
+import { join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, createEngine, runMove, runRename, runRenameFile, scan } from 'ripide-api'
 import { createVueExtension } from 'ripide-vue'
@@ -120,22 +125,34 @@ async function main(): Promise<void> {
     fixture.cleanup()
   }
 
+  const started = new Date().toISOString()
+  const initialLoad = loadavg()
+  const raw: { name: string, round: number, warmup: boolean, milliseconds: number, phases: ProfileEvent[] }[] = []
   const results: BenchResult[] = []
   for (const bench of benches) {
-    await measure(bench)
+    raw.push({ name: bench.name, round: -1, warmup: true, milliseconds: await measure(bench), phases: [] })
     const times: number[] = []
     const profiles: ProfileEvent[][] = []
     const runs = bench.runs ?? RUNS
     for (let i = 0; i < runs; i++) {
       const events: ProfileEvent[] = []
       const profile = bench.profile ? (event: ProfileEvent) => events.push(event) : undefined
-      times.push(await measure(bench, profile))
+      const milliseconds = await measure(bench, profile)
+      times.push(milliseconds)
+      raw.push({ name: bench.name, round: i, warmup: false, milliseconds, phases: events })
       if (bench.profile)
         profiles.push(events)
     }
     results.push(summarize(bench.name, times, profiles))
   }
 
+  if (process.env.RIPIDE_BENCH_OUT) {
+    const root = process.cwd()
+    const hash = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex')
+    const artifactPaths = ['bench/bench.ts', 'bench/fixture.ts', 'pnpm-lock.yaml', ...readdirSync(join(root, 'packages/core/dist')).filter(name => name.endsWith('.mjs')).map(name => `packages/core/dist/${name}`)]
+    const report = { kind: 'warm-sdk-microbenchmark', started, completed: new Date().toISOString(), config: { files: FILE_COUNT, importers: IMPORTERS_PER_SYMBOL, requestedRuns: RUNS }, revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), trackedChanges: execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean), node: process.version, platform: platform(), kernel: release(), cpus: cpus().map(cpu => cpu.model), initialLoad, finalLoad: loadavg(), artifacts: artifactPaths.map(path => ({ path, sha256: hash(join(root, path)) })), raw, summaries: results, boundary: 'Fresh fixture creation and cleanup excluded. One warmup per case. SDK operation only. No writes, model, CLI startup, installation, or agent work.' }
+    writeFileSync(resolve(process.env.RIPIDE_BENCH_OUT), `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+  }
   const nameWidth = Math.max(...results.map(r => r.name.length), 'case'.length)
   console.log('')
   console.log(`${pad('case', nameWidth)}  runs  median    min       max`)

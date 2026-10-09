@@ -170,10 +170,10 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
     }
 
     if (verifyMode === 'project') {
-      regressions.push(...await findExtensionRegressions(cwd, verificationChanges, tsconfigPath, engine, verification.extension))
+      regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, verificationChanges, tsconfigPath, engine, verification.extension)))
     }
     else if (adapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isExtensionFile(c.path, engine))) {
-      const extensionRegressions = await adapter.regressions(tsconfigPath, cwd, verificationChanges, verification.extension(adapter.name))
+      const extensionRegressions = await timedAsync(profile, 'extension verify', () => adapter.regressions(tsconfigPath, cwd, verificationChanges, verification.extension(adapter.name)))
       regressions.push(...extensionRegressions)
     }
 

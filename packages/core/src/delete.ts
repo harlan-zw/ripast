@@ -1,4 +1,5 @@
 import type { EngineServices } from './engine.ts'
+import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
 import type { Verification } from './verification.ts'
@@ -10,6 +11,7 @@ import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, parseSource, removeDeclaration } from './declarations.ts'
 import { listImports, pruneUnusedImports } from './imports.ts'
+import { timed, timedAsync } from './profile.ts'
 import { assertSourceSupport, findTsconfig, isExtensionPath, isInsideAutoImportScope, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
@@ -18,6 +20,7 @@ import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface DeleteOptions {
   engine?: EngineServices
+  profile?: ProfileSink
   cwd?: string
   verify?: boolean | VerifyMode
 }
@@ -37,13 +40,14 @@ export interface DeleteResult {
 
 export async function runDelete(symbol: string, fromPath: string, opts: DeleteOptions = {}): Promise<DeleteResult> {
   const cwd = opts.cwd ?? process.cwd()
+  const profile = opts.profile
   const engine = opts.engine
   assertSourceSupport(cwd, engine)
   engine?.assertOperation({ operation: 'delete', symbol, from: fromPath }, cwd)
   const verifyMode = resolveVerifyMode(opts.verify)
   const fromAbs = resolve(cwd, fromPath)
   // Escaped identifiers and namespace use need not contain the symbol's text.
-  const candidatePaths = rgFiles('', { cwd, engine, listAll: true })
+  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, engine, listAll: true }))
 
   const before = readFileSync(fromAbs, 'utf8')
   const parsed = parseSource(fromAbs, before)
@@ -71,7 +75,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     }
   }
 
-  const server = await startTsServer(cwd)
+  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd))
   try {
     const authoredScripts = new Map<string, string>()
     const scripts: { path: string, source: string, script: string, imports: ReturnType<typeof listImports> }[] = []
@@ -185,9 +189,9 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
     const verification = createVerification(verifyMode, !!changes.length)
     const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd, undefined, engine) : [fromAbs], verification.typescript)
+      : await timedAsync(profile, 'verify', () => findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd, undefined, engine) : [fromAbs], verification.typescript))
     if (verifyMode === 'project')
-      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine, verification.extension))
+      regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine, verification.extension)))
 
     return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions, verification: verification.result() }
   }

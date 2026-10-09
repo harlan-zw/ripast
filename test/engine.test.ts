@@ -61,6 +61,21 @@ it('discovers a third suffix with authored positions and isolated registrations'
   expect(custom.scan('shared', { cwd })).toMatchObject([{ file: 'view.custom', line: 2, col: 14 }])
   expect(ordinary.scan('shared', { cwd })).toEqual([])
 })
+it('shares authored parsing between doctor declarations and its dependency index', async () => {
+  const cwd = fixture()
+  writeFileSync(join(cwd, 'source.ts'), 'export const shared = 2\n')
+  let parses = 0
+  const engine = createEngine({ extensions: [{ ...extension, parse(input) {
+    parses++
+    return extension.parse(input)
+  } }] })
+  const report = await engine.runDoctor({ cwd, checks: ['duplicate-export', 'circular-dep'] })
+  expect(parses).toBe(1)
+  expect(report.findings).toEqual(expect.arrayContaining([
+    expect.objectContaining({ check: 'duplicate-export', file: 'view.custom', line: 2 }),
+    expect.objectContaining({ check: 'duplicate-export', file: 'source.ts', line: 1 }),
+  ]))
+})
 it('reports diagnostics from the final hook-modified plan', async () => {
   const cwd = fixture()
   writeFileSync(join(cwd, 'source.ts'), 'export const provider = 1\n')

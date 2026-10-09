@@ -1,4 +1,5 @@
 import type { EngineServices } from './engine.ts'
+import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
@@ -8,6 +9,7 @@ import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { computeSpecifier } from './imports.ts'
+import { timed, timedAsync } from './profile.ts'
 import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { isCaseOnlyFileRename, mergeFileChanges } from './util.ts'
@@ -16,6 +18,7 @@ import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface RenameFileOptions {
   engine?: EngineServices
+  profile?: ProfileSink
   cwd?: string
   /** Configured project used for import rewrites and verification. */
   tsconfig?: string
@@ -43,6 +46,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   const engine = opts.engine
   assertSourceSupport(cwd, engine)
   engine?.assertOperation({ operation: 'renameFile', from: oldPath, to: newPath }, cwd)
+  const profile = opts.profile
   const oldAbs = resolve(cwd, oldPath)
   const inferredNewPath = extname(newPath) ? newPath : `${newPath}${extname(oldPath)}`
   const newAbs = resolve(cwd, inferredNewPath)
@@ -61,18 +65,18 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
   if (target && !isCaseOnlyFileRename(oldAbs, newAbs))
     throw new Error(`ripide rename-file: target "${newPath}" already exists`)
 
-  const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
+  const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
   if (!tsconfigPath)
     throw new Error('ripide rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
   const verifyMode = resolveVerifyMode(opts.verify)
   const adapter = engine?.adapter ?? null
   const warnings: string[] = []
-  const server = !adapter || verifyMode !== 'none' ? await startTsServer(cwd, { tsconfig: tsconfigPath }) : null
+  const server = !adapter || verifyMode !== 'none' ? await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath })) : null
   try {
     let consumerChanges: FileChange[]
     if (adapter) {
-      consumerChanges = await adapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
+      consumerChanges = await timedAsync(profile, 'file rename transform', () => adapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs))
       if (adapter.finalizeFileRename) {
         const finalize = await adapter.finalizeFileRename(cwd, oldAbs, newAbs, consumerChanges)
         mergeFileChanges(consumerChanges, finalize.changes)
@@ -80,7 +84,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       }
     }
     else {
-      consumerChanges = await tsOnlyFileRename(server!, cwd, oldAbs, newAbs)
+      consumerChanges = await timedAsync(profile, 'file rename transform', () => tsOnlyFileRename(server!, cwd, oldAbs, newAbs))
     }
 
     const selfChangeRaw = consumerChanges.find(c => c.path === oldAbs || c.path === newAbs)
@@ -100,12 +104,12 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
         after: selfChange?.after ?? readFileSync(oldAbs, 'utf8'),
       }]
       if (verifyMode === 'project') {
-        regressions.push(...await findExtensionRegressions(cwd, extensionChanges, tsconfigPath, engine, verification.extension))
+        regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, extensionChanges, tsconfigPath, engine, verification.extension)))
       }
       else if (adapter && consumerNoSelf.some(c => engine?.owns(c.path))) {
-        regressions.push(...await adapter.regressions(tsconfigPath, cwd, extensionChanges, verification.extension(adapter.name)))
+        regressions.push(...await timedAsync(profile, 'extension verify', () => adapter.regressions(tsconfigPath, cwd, extensionChanges, verification.extension(adapter.name))))
       }
-      regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode, (consumer, specifier) => adapter?.isPlannedImportTarget?.(cwd, consumer, specifier, newAbs) ?? false, verification))
+      regressions.push(...await timedAsync(profile, 'verify', () => verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode, (consumer, specifier) => adapter?.isPlannedImportTarget?.(cwd, consumer, specifier, newAbs) ?? false, verification)))
     }
 
     return {

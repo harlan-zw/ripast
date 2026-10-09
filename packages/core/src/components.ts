@@ -1,7 +1,9 @@
 import type { ComponentInfo, ComponentUsageInfo, FrameworkAdapter } from './adapter.ts'
 import type { EngineServices } from './engine.ts'
+import type { OutputSelection } from './output.ts'
 import { isAbsolute, relative, sep } from 'node:path'
 import process from 'node:process'
+import { formatOutputPage, selectOutput } from './output.ts'
 
 export interface ComponentsListOptions {
   engine?: EngineServices
@@ -113,17 +115,20 @@ export function formatInventory(inv: ComponentInventory): string {
   return lines.join('\n')
 }
 
-export function formatAgentInventory(inv: ComponentInventory): string {
-  const lines = ['components']
+export function formatAgentInventory(inv: ComponentInventory, options: OutputSelection = { limit: 40 }): string {
+  const page = selectOutput(inv.components, options, component => component.rel)
+  const lines = ['components', formatOutputPage(page)]
+  for (const component of page.results)
+    lines.push(`  ${component.name} ${component.rel}${component.shadowed ? ' (shadowed)' : ''}`)
   lines.push(`total: ${inv.components.length}, duplicates: ${inv.duplicates.length}, shadowed: ${inv.shadowed.length}`)
   if (inv.duplicates.length) {
-    lines.push('duplicates:')
-    for (const dup of inv.duplicates)
-      lines.push(`  ${dup.name}: ${dup.entries.map(e => `${e.rel}${e.shadowed ? '*' : ''}`).join(', ')}`)
+    lines.push(`duplicates: ${formatOutputPage(selectOutput(inv.duplicates, options))}`)
+    for (const dup of selectOutput(inv.duplicates, options).results)
+      lines.push(`  ${dup.name}: ${`${selectOutput(dup.entries, { limit: options.limit ?? 40 }).results.map(e => `${e.rel}${e.shadowed ? '*' : ''}`).join(', ')}; entries: ${formatOutputPage(selectOutput(dup.entries, { limit: options.limit ?? 40 }))}`}`)
   }
   if (inv.shadowed.length) {
-    lines.push('shadowed:')
-    for (const s of inv.shadowed)
+    lines.push(`shadowed: ${formatOutputPage(selectOutput(inv.shadowed, options))}`)
+    for (const s of selectOutput(inv.shadowed, options, component => component.rel).results)
       lines.push(`  ${s.rel} -> ${s.shadowedBy ? relativeToCwd(s.shadowedBy) : '?'}`)
   }
   return lines.join('\n')
@@ -135,7 +140,8 @@ function relativeToCwd(abs: string): string {
   return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) ? rel : abs
 }
 
-export function formatDetail(detail: ComponentDetail): string {
+export function formatDetail(detail: ComponentDetail, options: OutputSelection = { limit: 50 }): string {
+  const page = selectOutput(detail.usages, options, usage => usage.rel)
   const lines: string[] = []
   const c = detail.component
   lines.push(`${c.name}${c.shadowed ? ' (shadowed)' : ''}`)
@@ -145,7 +151,9 @@ export function formatDetail(detail: ComponentDetail): string {
   lines.push(`  source: ${c.source}, scope: ${c.scope}`)
   if (detail.candidates.length > 1) {
     lines.push(`  other candidates with same name:`)
-    for (const cand of detail.candidates) {
+    const candidates = selectOutput(detail.candidates, options, candidate => candidate.rel)
+    lines.push(`  candidates: ${formatOutputPage(candidates)}`)
+    for (const cand of candidates.results) {
       if (cand.id === c.id)
         continue
       lines.push(`    ${cand.rel}${cand.shadowed ? ' (shadowed)' : ''}`)
@@ -159,10 +167,11 @@ export function formatDetail(detail: ComponentDetail): string {
     lines.push(`  ${form.padEnd(20)} ${n}`)
   if (detail.usages.length) {
     lines.push('')
-    for (const u of detail.usages.slice(0, 50))
+    for (const u of page.results)
       lines.push(`  ${u.rel}:${u.line}:${u.col}  ${u.form}${u.binding ? `  ${u.binding}` : ''}`)
-    if (detail.usages.length > 50)
-      lines.push(`  ... ${detail.usages.length - 50} more`)
+    lines.push(formatOutputPage(page))
+    if (page.omitted)
+      lines.push('Retrieve more with --offset, --limit, or --file.')
   }
   return lines.join('\n')
 }

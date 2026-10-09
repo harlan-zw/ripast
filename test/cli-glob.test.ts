@@ -30,6 +30,8 @@ it.each([
       '--glob',
       glob,
       '--json',
+      '--profile',
+      'full',
     ], { cwd: fixture.dir, encoding: 'utf8' })
     const hits = JSON.parse(output) as Array<{ file: string }>
     assert.deepEqual([...new Set(hits.map(hit => hit.file))].sort(), files)

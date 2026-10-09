@@ -167,7 +167,11 @@ describe('runCssClassScan', () => {
       { file: 'src/b.ts', unique: 1, count: 1, tokens: ['flex'] },
     ]
     assert.match(formatFileScanHits(hits, false), /src\/a\.ts\s+3 unique\s+4 total/)
-    assert.match(formatAgentFileScanHits(hits, 1), /^class-files files=2 top=1 format=file=unique\/total\nsrc\/a\.ts=3\/4\n\+1 more$/)
+    const compact = formatAgentFileScanHits(hits, 1)
+    assert.match(compact, /files=2 top=1/)
+    assert.match(compact, /omitted=1/)
+    assert.match(compact, /src\/a\.ts=3\/4/)
+    assert.doesNotMatch(compact, /src\/b\.ts=1\/1/)
   })
 
   it('does not emit numbers or other non-class tokens', async () => {

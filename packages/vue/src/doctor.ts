@@ -183,6 +183,7 @@ function isAutoImportRel(rel: string): boolean {
 }
 
 export const doctor: DoctorAdapter = {
+  checks: ['shadowed-component', 'phantom-component', 'cross-realm-import', 'stale-nuxt-config-ref'],
   entryFiles(cwd) {
     if (!isNuxtProject(cwd))
       return []
@@ -197,11 +198,11 @@ export const doctor: DoctorAdapter = {
     return true
   },
 
-  extraFindings(cwd, ctx) {
+  extraFindings(cwd, ctx, checks) {
     if (!isNuxtProject(cwd))
       return []
     const out: DoctorFinding[] = []
-    try {
+    if (checks.has('shadowed-component')) {
       const components = listComponents(cwd, { source: 'auto' })
       const byName = new Map<string, typeof components>()
       for (const c of components) {
@@ -225,21 +226,12 @@ export const doctor: DoctorAdapter = {
         }
       }
     }
-    catch {}
-    try {
+    if (checks.has('phantom-component'))
       out.push(...findPhantomComponents(cwd))
-    }
-    catch {}
-    if (ctx) {
-      try {
-        out.push(...findCrossRealmImports(cwd, ctx))
-      }
-      catch {}
-    }
-    try {
+    if (checks.has('cross-realm-import') && ctx)
+      out.push(...findCrossRealmImports(cwd, ctx))
+    if (checks.has('stale-nuxt-config-ref'))
       out.push(...findStaleNuxtConfigRefs(cwd))
-    }
-    catch {}
     return out
   },
 }

@@ -1,5 +1,6 @@
 import type { EngineServices } from './engine.ts'
 import type { ImportInfo } from './imports.ts'
+import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { SourceSite, TsServer } from './ts-server.ts'
 import type { FileChange, TextEdit } from './util.ts'
@@ -11,6 +12,7 @@ import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
+import { timed, timedAsync } from './profile.ts'
 import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
@@ -19,6 +21,7 @@ import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
   engine?: EngineServices
+  profile?: ProfileSink
   cwd?: string
   glob?: string | string[]
   verify?: boolean | VerifyMode
@@ -43,21 +46,22 @@ interface ReplacementTarget {
 
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
   const cwd = opts.cwd ?? process.cwd()
+  const profile = opts.profile
   const engine = opts.engine
   assertSourceSupport(cwd, engine)
   engine?.assertOperation({ operation: 'replace', from, to }, cwd)
   const verifyMode = resolveVerifyMode(opts.verify === undefined || opts.verify === true ? 'project' : opts.verify)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : rgFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine))
+    : timed(profile, 'target discovery', () => rgFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine)))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripide replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
-  const server = await startTsServer(cwd)
+  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd))
   try {
-    const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
+    const target = await timedAsync(profile, 'resolve replacement', () => findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope))
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = rgFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine) && !target.declarationFiles.includes(path))
+    const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine) && !target.declarationFiles.includes(path)))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     const referenceCache = new Map<string, SourceSite[]>()
@@ -70,9 +74,9 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
     const verification = createVerification(verifyMode, !!changes.length)
     const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), engine), verification.typescript)
+      : await timedAsync(profile, 'verify', () => findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), engine), verification.typescript))
     if (verifyMode === 'project')
-      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine, verification.extension))
+      regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine, verification.extension)))
     return { changes, scanned: candidatePaths.length, regressions, verification: verification.result() }
   }
   finally {

@@ -1,4 +1,7 @@
 import type { EngineServices } from './engine.ts'
+import type { OutputSelection } from './output.ts'
+import type { ProfileSink } from './profile.ts'
+import type { ParsedFile } from './util.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -6,6 +9,8 @@ import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifierRanges, parseSource } from './declarations.ts'
 import { listImports } from './imports.ts'
+import { formatOutputPage, selectOutput } from './output.ts'
+import { timed, timedAsync } from './profile.ts'
 import { startTsServer } from './ts-server.ts'
 import { parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 
@@ -19,6 +24,7 @@ export interface ScanHit {
 
 export interface ScanOptions {
   engine?: EngineServices
+  profile?: ProfileSink
   cwd?: string
   glob?: string | string[]
   kinds?: string[]
@@ -154,39 +160,41 @@ export interface UnusedDeclarations {
 
 export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob })
-  const hits: ScanHit[] = []
-  for (const f of files) {
-    const file = parseFile(f, cwd, opts.engine)
-    const seen = new Set<string>()
-    if (file.program) {
-      walk(file.program as any, {
-        enter(node: any, parent: any) {
-          const kind = classify(node, parent, pattern)
-          if (!kind)
-            return
-          if (opts.kinds && !opts.kinds.includes(kind))
-            return
-          const abs = node.start + file.scriptStart
-          const key = `${abs}:${node.end + file.scriptStart}:${kind}`
-          if (seen.has(key))
-            return
-          seen.add(key)
-          pushHit(hits, file.rel, file.fullSource, abs, kind)
-        },
-      })
+  const files = timed(opts.profile, 'scan discovery', () => rgFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob }))
+  return timed(opts.profile, 'scan parse', () => {
+    const hits: ScanHit[] = []
+    for (const f of files) {
+      const file = parseFile(f, cwd, opts.engine)
+      const seen = new Set<string>()
+      if (file.program) {
+        walk(file.program as any, {
+          enter(node: any, parent: any) {
+            const kind = classify(node, parent, pattern)
+            if (!kind)
+              return
+            if (opts.kinds && !opts.kinds.includes(kind))
+              return
+            const abs = node.start + file.scriptStart
+            const key = `${abs}:${node.end + file.scriptStart}:${kind}`
+            if (seen.has(key))
+              return
+            seen.add(key)
+            pushHit(hits, file.rel, file.fullSource, abs, kind)
+          },
+        })
+      }
+      if (file.isSfc)
+        scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen, opts.engine)
     }
-    if (file.isSfc)
-      scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen, opts.engine)
-  }
-  return hits
+    return hits
+  })
 }
 
 export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGraph {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob })
+  const files = timed(opts.profile, 'graph discovery', () => rgFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob }))
   const hitsByFile = new Map<string, ScanHit[]>()
-  const parsed = files.map((f) => {
+  const parsed = timed(opts.profile, 'graph parse', () => files.map((f) => {
     const file = parseFile(f, cwd, opts.engine)
     const seen = new Set<string>()
     const hits: ScanHit[] = []
@@ -212,7 +220,7 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
     if (hits.length)
       hitsByFile.set(file.path, hits)
     return file
-  })
+  }))
 
   const nodePathSet = new Set(hitsByFile.keys())
   const edges = new Map<string, ScanGraphEdge>()
@@ -243,13 +251,16 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
 
 export function buildDeclarationTree(opts: DeclarationTreeOptions = {}): DeclarationTree {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true })
+  const files = timed(opts.profile, 'tree discovery', () => rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
   const exportFilter = opts.exports ?? 'all'
-  return buildDeclarationTreeForPaths(cwd, files, exportFilter, opts.engine, opts.cache)
+  return timed(opts.profile, 'tree parse', () => buildDeclarationTreeForPaths(cwd, files, exportFilter, opts.engine, opts.cache))
 }
 
 function inspectDeclarationFile(abs: string, source: string, cwd: string, engine?: EngineServices): DeclarationFileAnalysis | null {
-  const file = parseSourceFile(abs, source, cwd, engine)
+  return inspectParsedDeclarationFile(parseSourceFile(abs, source, cwd, engine))
+}
+
+function inspectParsedDeclarationFile(file: ParsedFile): DeclarationFileAnalysis | null {
   if (!file.program)
     return null
   return {
@@ -260,13 +271,30 @@ function inspectDeclarationFile(abs: string, source: string, cwd: string, engine
 }
 
 function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter: ExportFilter, engine?: EngineServices, cache?: DeclarationCache): DeclarationTree {
-  const out: DeclarationTreeFile[] = []
+  const analyses: DeclarationTreeFile[] = []
   for (const abs of files) {
     const source = readFileSync(abs, 'utf8')
     const analysis = cache ? cache.inspect(abs, source, cwd, engine) : inspectDeclarationFile(abs, source, cwd, engine)
     if (!analysis)
       continue
-    const declarations = analysis.declarations
+    analyses.push({ file: relative(cwd, abs), ...analysis })
+  }
+  return declarationTreeFromAnalyses(analyses, exportFilter)
+}
+
+/** Build declarations from the operation's already parsed source snapshot. */
+export function buildDeclarationTreeFromParsedFiles(files: readonly ParsedFile[], exportFilter: ExportFilter = 'all'): DeclarationTree {
+  const analyses = files.flatMap((file) => {
+    const analysis = inspectParsedDeclarationFile(file)
+    return analysis ? [{ file: file.rel, ...analysis }] : []
+  })
+  return declarationTreeFromAnalyses(analyses, exportFilter)
+}
+
+function declarationTreeFromAnalyses(files: DeclarationTreeFile[], exportFilter: ExportFilter): DeclarationTree {
+  const out: DeclarationTreeFile[] = []
+  for (const file of files) {
+    const declarations = file.declarations
       .filter((d) => {
         if (exportFilter === 'exported')
           return d.exported
@@ -274,11 +302,11 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
           return !d.exported
         return true
       })
-    const { imports, reexports } = analysis
+    const { imports, reexports } = file
     if (!declarations.length && !imports.length && !reexports.length)
       continue
     out.push({
-      file: relative(cwd, abs),
+      file: file.file,
       imports,
       reexports,
       declarations,
@@ -291,15 +319,15 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
 export async function buildUnusedDeclarations(opts: DeclarationTreeOptions = {}): Promise<UnusedDeclarations> {
   const cwd = opts.cwd ?? process.cwd()
   const exportFilter = opts.exports ?? 'local'
-  const sources = rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true })
+  const sources = timed(opts.profile, 'unused discovery', () => rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
   const candidates = sources.filter(path => !opts.engine?.owns(path))
-  const tree = buildDeclarationTreeForPaths(cwd, candidates, exportFilter, opts.engine, opts.cache)
+  const tree = timed(opts.profile, 'unused parse', () => buildDeclarationTreeForPaths(cwd, candidates, exportFilter, opts.engine, opts.cache))
   const treeByFile = new Map(tree.files.map(file => [resolve(cwd, file.file), file]))
   const potentialReferenceNames = buildPotentialReferenceNames(sources, cwd, opts.engine)
   const importedNames = buildImportedNames(sources, cwd, opts.engine)
 
   const unusedByFile = new Map<string, Set<string>>()
-  const server = await startTsServer(cwd)
+  const server = await timedAsync(opts.profile, 'server start', () => startTsServer(cwd))
   try {
     for (const path of candidates) {
       if (!treeByFile.has(path))
@@ -518,7 +546,9 @@ export function formatHits(hits: ScanHit[], json: boolean): string {
   return lines.join('\n')
 }
 
-export function formatAgentHits(hits: ScanHit[]): string {
+export function formatAgentHits(hits: ScanHit[], options: OutputSelection = { limit: 40 }): string {
+  const page = selectOutput(hits, options, hit => hit.file)
+  const visibleFiles = new Set(page.results.map(hit => hit.file))
   const files = new Set(hits.map(h => h.file))
   const byKind: Record<string, number> = {}
   const byFile = new Map<string, ScanHit[]>()
@@ -533,12 +563,15 @@ export function formatAgentHits(hits: ScanHit[]): string {
   if (hits.length) {
     lines.push(`kinds: ${Object.entries(byKind).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ')}`)
     lines.push('files:')
-    for (const [file, fileHits] of [...byFile.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))) {
+    for (const [file, fileHits] of [...byFile.entries()].filter(([file]) => visibleFiles.has(file)).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))) {
       const kinds = summarizeKinds(fileHits)
       const first = fileHits[0]
       lines.push(`  ${file}: ${fileHits.length} (${kinds}); first L${first.line}:${first.col}`)
     }
   }
+  lines.push(formatOutputPage(page))
+  if (page.omitted)
+    lines.push('Retrieve more with --offset, --limit, or --file.')
   return lines.join('\n')
 }
 
@@ -592,9 +625,10 @@ export function formatUnusedDeclarations(unused: UnusedDeclarations, json: boole
   return lines.join('\n')
 }
 
-export function formatAgentDeclarationTree(tree: DeclarationTree, exportFilter: ExportFilter = 'exported'): string {
-  const lines = ['architecture']
-  for (const file of tree.files) {
+export function formatAgentDeclarationTree(tree: DeclarationTree, exportFilter: ExportFilter = 'exported', options: OutputSelection = { limit: 40 }): string {
+  const page = selectOutput(tree.files, options, file => file.file)
+  const lines = ['architecture', formatOutputPage(page)]
+  for (const file of page.results) {
     const exported = file.declarations.filter(d => d.exported)
     const local = file.declarations.filter(d => !d.exported)
     const localImports = file.imports.filter(i => i.startsWith('.'))

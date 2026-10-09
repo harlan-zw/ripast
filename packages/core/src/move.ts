@@ -195,10 +195,10 @@ export async function runMove(symbol: string, fromPath: string, toPath: string, 
     }
 
     if (verifyMode === 'project') {
-      regressions.push(...await findExtensionRegressions(cwd, changes, tsconfigPath, engine, verification.extension))
+      regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, changes, tsconfigPath, engine, verification.extension)))
     }
     else if (adapter && verifyMode !== 'none' && tsconfigPath && changes.some(c => isExtensionPath(c.path, engine))) {
-      const extensionRegressions = await adapter.regressions(tsconfigPath, cwd, changes, verification.extension(adapter.name))
+      const extensionRegressions = await timedAsync(profile, 'extension verify', () => adapter.regressions(tsconfigPath, cwd, changes, verification.extension(adapter.name)))
       regressions.push(...extensionRegressions)
     }
 

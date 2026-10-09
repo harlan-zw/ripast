@@ -15,7 +15,7 @@ it.each(['pnpm', 'npm'] as const)('launcher runs %s shims with literal arguments
       ? fx.write(`${manager}.cmd`, `@echo off\r\n"${process.execPath}" --experimental-strip-types "${script}" %*\r\n`)
       : fx.write(manager, `#!/bin/sh\nexec "${process.execPath}" --experimental-strip-types "${script}" "$@"\n`)
     chmodSync(command, 0o755)
-    const args = ['scan', 'space & (literal)', '--glob', 'src/{a,b}.ts']
+    const args = ['rename', 'space & (literal)', 'next', '--glob', 'src/{a,b}.ts']
     const child = spawnSync(process.execPath, [prepareLauncher(fx), ...args], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
