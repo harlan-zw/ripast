@@ -11,13 +11,8 @@ const packageNames = { core: 'ripide-api', vue: 'ripide-vue', cli: 'ripide' } as
 interface ReleasePackage { name: string, version: string }
 interface RegistryResponse { status: number | null, stdout: string }
 
-function parseRegistryValue(output: string): unknown {
-  const value: unknown = JSON.parse(output)
-  return Array.isArray(value) && value.length === 1 ? value[0] : value
-}
-
 export function assertReplacementPublished(response: RegistryResponse, version: string) {
-  if (response.status !== 0 || !response.stdout.trim() || parseRegistryValue(response.stdout) !== version)
+  if (response.status !== 0 || !response.stdout.trim() || JSON.parse(response.stdout) !== version)
     throw new Error('Publish the replacement release before deprecating legacy packages.')
 }
 
@@ -57,7 +52,7 @@ export function planRelease(tag: string, packages: ReleasePackage[]) {
 export function publicationDecision(response: RegistryResponse, integrity: string): 'publish' | 'skip' {
   if (response.status === null || !response.stdout.trim())
     throw new Error('Registry lookup failed. Retry after checking npm connectivity.')
-  const value = parseRegistryValue(response.stdout)
+  const value: unknown = JSON.parse(response.stdout)
   if (response.status !== 0) {
     if (typeof value === 'object' && value !== null && 'error' in value
       && typeof value.error === 'object' && value.error !== null
@@ -66,7 +61,8 @@ export function publicationDecision(response: RegistryResponse, integrity: strin
     }
     throw new Error('Registry lookup failed. Resolve the npm error before publishing.')
   }
-  if (value !== integrity)
+  const publishedIntegrity = Array.isArray(value) && value.length === 1 ? value[0] : value
+  if (publishedIntegrity !== integrity)
     throw new Error('This version contains a different artifact. Use a new version.')
   return 'skip'
 }
