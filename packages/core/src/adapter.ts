@@ -1,16 +1,20 @@
 import type { FileChange, TextEdit } from './util.ts'
+import type { DiagnosticRecorder } from './verification.ts'
 import type { Regression } from './verify.ts'
 
 export { cssSyntax, encodeAttributeValue, mapIncludesAny, rewriteCss, rewriteStringsInProgram, visitCss, visitProgramClassStrings } from './css-class-source.ts'
 export type { CssClassSourceFile } from './css-class-source.ts'
 
-export type ScanFn = typeof import('./scan.ts').scan
 export { completeClassBounds, rewriteClassString, visitClassTokens } from './css-class-token.ts'
 export type { RenameMap } from './css-class-token.ts'
+
+export type ScanFn = typeof import('./scan.ts').scan
+export { diagnosticRegressions } from './diagnostic-matching.ts'
 // Adapter SDK entry. ripide-<framework> packages import from here.
 export { scan } from './scan.ts'
 export type { ScanHit, ScanOptions } from './scan.ts'
 export { offsetOfPosition } from './ts-server.ts'
+export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 
 export type FrameworkName = string
 
@@ -71,6 +75,7 @@ export interface FrameworkAdapter {
     tsconfigPath: string,
     cwd: string,
     changes: FileChange[],
+    onChecked?: DiagnosticRecorder,
   ) => Promise<Regression[]>
 
   autoImportScopes?: (cwd: string) => Set<string>
@@ -195,8 +200,8 @@ export interface ComponentUsageInfo {
   binding?: string
 }
 
-export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
 export type { TextEdit } from './util.ts'
-
 export type { FileChange } from './util.ts'
+
+export type { DiagnosticRecorder } from './verification.ts'
 export type { Regression } from './verify.ts'

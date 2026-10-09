@@ -45,6 +45,8 @@ describe('encoded class key discovery', () => {
         token,
         'new-token',
         '--apply',
+        '--profile',
+        'full',
         '--json',
       ], { cwd: fx.dir, encoding: 'utf8' })
       expect(result.error).toBeUndefined()

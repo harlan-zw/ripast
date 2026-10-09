@@ -271,14 +271,25 @@ ripide unused --exports all --json
 <summary><b>🤖 Drive from an AI agent</b></summary>
 
 `--json` emits machine-readable output. `--profile agent` returns compact summaries and is selected automatically in detected agent environments.
+For mutating commands, agent JSON returns `[path, lines]` tuples instead of full source files.
+If line ranges shift, tuples include both ranges: `[path, beforeLines, afterLines]`.
+Lines are one-based and inclusive. `"3,10-12"` identifies separate ranges; `"3+"` marks a gap after line 3.
+File moves appear separately as `moves: [[from, to]]`.
+Results include `mode` and `verification`. Empty warnings and regressions are omitted.
+Verification entries use `[checker, scope, files, newErrors]`.
+An optional fifth number counts errors excluded from the result.
+Skipped checks return `"disabled"`, `"no-changes"`, or `"not-applicable"`.
+After applying, earlier file reads are outdated. Read changed ranges only when you need current code.
+If an editing tool requires a fresh read, follow that requirement.
+Use `--profile full --json` for complete before/after content.
 If verification finds new type errors, the command refuses `--apply` and exits with a non-zero status.
 
 ```bash
-ripide rename useStore useAppStore --apply --json
+ripide rename useStore useAppStore --apply --profile agent --json
 # {
-#   "applied": true, "dryRun": false, "blockedByRegression": false,
-#   "scanned": 47, "summary": "12 files, +23 -23 lines",
-#   "changes": [...], "regressions": []
+#   "mode": "applied",
+#   "changes": [["src/store.ts", "12"], ["src/app.ts", "1,8"]],
+#   "verification": [["typescript", "touched", 2, 0]]
 # }
 ```
 
@@ -288,6 +299,12 @@ ripide rename useStore useAppStore --apply --json
 
 `rename`, `replace`, `move`, `delete`, and `rename-file` enable verification by default.
 They compare type errors before and after the change, then refuse `--apply` if new errors appear.
+The receipt identifies the checker, scope, checked file count, and new error count.
+Full JSON uses named check fields. Agent JSON uses the compact tuples shown above.
+`typescript` uses TypeScript's native language server diagnostics. `vue` uses the Vue adapter's diagnostics.
+These checks compare error diagnostics against proposed content before writing files.
+They do not run `tsc --noEmit`, a build, or tests.
+If the receipt covers your required scope, do not repeat that diagnostic check without another edit.
 `replace` checks the project by default, including unchanged consumers of modified exports.
 Other refactors check touched files by default. Use `--verify-mode project` for broader checks, including unchanged Vue consumers.
 Project verification respects file discovery ignores. Refactor globs limit edits without narrowing project verification.
@@ -342,6 +359,23 @@ engine.commit(result)
 
 The CLI loads relevant optional packages. The SDK never loads optional packages automatically.
 Read the [extension contract and migration guide](./docs/engine.md) before adding a language.
+
+Reuse declaration analysis during repeated SDK inspection:
+
+```ts
+import { buildDeclarationTree, createDeclarationCache } from 'ripide-api'
+
+const cache = createDeclarationCache({ maxEntries: 1024, maxBytes: 16 * 1024 * 1024 })
+const tree = buildDeclarationTree({ cwd: process.cwd(), cache })
+const exported = buildDeclarationTree({ cwd: process.cwd(), cache, exports: 'exported' })
+console.log(cache.stats())
+cache.clear()
+```
+
+Each inspection discovers files again and checks their current content.
+The cache retains declaration metadata, imports, and re-exports. It does not retain type or reference results.
+It also works with `buildUnusedDeclarations`; only declaration analysis is cached.
+Instances belong to the caller. Independent CLI processes do not share this cache.
 
 ## Limitations
 

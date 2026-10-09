@@ -1,7 +1,7 @@
-import type { AutoImportRenamePlan, FileChange, Regression, RenameSite } from 'ripide-api/adapter'
+import type { AutoImportRenamePlan, DiagnosticRecorder, FileChange, Regression, RenameSite } from 'ripide-api/adapter'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { posToLineCol } from 'ripide-api/adapter'
+import { diagnosticRegressions, posToLineCol } from 'ripide-api/adapter'
 import { URI } from 'vscode-uri'
 import { createVueService, vueProjectConfigs, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
 import { hasVueFilesContaining, listVueFiles, listVueFilesContaining } from './vue-files.ts'
@@ -128,6 +128,7 @@ export async function vueRegressions(
   tsconfigPath: string,
   cwd: string,
   pendingChanges: FileChange[],
+  onChecked?: DiagnosticRecorder,
 ): Promise<Regression[]> {
   const vueFiles = listVueFiles(cwd)
   const pendingVue = pendingChanges.filter(change => change.path.endsWith('.vue'))
@@ -142,6 +143,7 @@ export async function vueRegressions(
     projects[0].files.push(change.path)
   }
   const out: Regression[] = []
+  const checkedFiles = new Set<string>()
   for (const project of projects) {
     const selected = new Set(project.files)
     const files = [...new Set([...vueFiles, ...pendingVue.map(change => change.path)])].filter(file => selected.has(file))
@@ -156,8 +158,10 @@ export async function vueRegressions(
           continue
         vue.setSnapshot(change.path, change.before)
       }
+      for (const file of files)
+        checkedFiles.add(file)
       const baseline = new Map(await withFilteredConsoleWarn(() => Promise.all(
-        files.map(async file => [file, await collectDiagKeys(vue, file)] as const),
+        files.map(async file => [file, (await getDiags(vue, file)).filter(diagnostic => diagnostic.severity === 1)] as const),
       )))
       for (const c of pendingChanges) {
         if (c.path.endsWith('.vue') && !selected.has(c.path))
@@ -167,49 +171,16 @@ export async function vueRegressions(
       const postPairs = await withFilteredConsoleWarn(() => Promise.all(
         files.map(async file => [file, await getDiags(vue, file)] as const),
       ))
-      for (const [file, post] of postPairs) {
-        const before = baseline.get(file) ?? new Map<string, number>()
-        const seen = new Map<string, number>()
-        for (const d of post) {
-          const key = diagKey(d)
-          if (d.severity !== 1)
-            continue
-          const count = (seen.get(key) ?? 0) + 1
-          seen.set(key, count)
-          if (count <= (before.get(key) ?? 0))
-            continue
-          out.push({
-            file,
-            line: d.range.start.line + 1,
-            col: d.range.start.character + 1,
-            code: typeof d.code === 'number' ? d.code : 0,
-            message: typeof d.message === 'string' ? d.message : String(d.message),
-          })
-        }
-      }
+      const after = new Map(postPairs.map(([file, diagnostics]) => [file, diagnostics.filter(diagnostic => diagnostic.severity === 1)]))
+      out.push(...diagnosticRegressions(baseline, after, pendingChanges))
     }
     finally { vue.dispose() }
   }
+  onChecked?.({ files: checkedFiles.size, newErrors: out.length })
   return out
 }
 
-async function collectDiagKeys(vue: ReturnType<typeof createVueService>, fileName: string): Promise<Map<string, number>> {
-  const diags = await getDiags(vue, fileName)
-  const counts = new Map<string, number>()
-  for (const diagnostic of diags) {
-    if (diagnostic.severity !== 1)
-      continue
-    const key = diagKey(diagnostic)
-    counts.set(key, (counts.get(key) ?? 0) + 1)
-  }
-  return counts
-}
-
-async function getDiags(vue: ReturnType<typeof createVueService>, fileName: string): Promise<{ range: { start: { line: number, character: number } }, severity?: number, code?: string | number, message: string }[]> {
+async function getDiags(vue: ReturnType<typeof createVueService>, fileName: string): Promise<{ range: { start: { line: number, character: number }, end: { line: number, character: number } }, severity?: number, code?: string | number, message: string }[]> {
   const uri = URI.file(fileName)
   return await vue.service.getDiagnostics(uri) as any
-}
-
-function diagKey(d: { range: { start: { line: number, character: number } }, code?: string | number, message: string }): string {
-  return `${d.code ?? ''}:${d.message}`
 }

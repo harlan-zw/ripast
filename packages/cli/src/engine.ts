@@ -1,16 +1,17 @@
 import type { Extension } from 'ripide-api'
+import type * as VueOperations from 'ripide-vue'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { createEngine } from 'ripide-api'
 import { rgFiles } from 'ripide-api/adapter'
 
-export async function createCliEngine(cwd = process.cwd(), enabled = true) {
+export async function createCliEngine(cwd = process.cwd(), enabled = true, imports?: { importModule: (specifier: string) => Promise<Pick<typeof VueOperations, 'createVueExtension'>> }) {
   const authored = rgFiles('', { cwd, glob: '*.vue', listAll: true }).length > 0
   const needed = authored || (enabled && hasVueDependency(cwd))
   const extensions: Extension[] = []
   if (enabled && needed) {
-    const { createVueExtension } = await import('ripide-vue')
+    const { createVueExtension } = await (imports?.importModule('ripide-vue') ?? import('ripide-vue'))
     extensions.push(createVueExtension())
   }
   return createEngine({ extensions, requiredSuffixes: authored ? ['.vue'] : [] })

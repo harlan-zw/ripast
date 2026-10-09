@@ -26,6 +26,24 @@ it('discovers a third suffix with authored positions and isolated registrations'
   expect(custom.scan('shared', { cwd })).toMatchObject([{ file: 'view.custom', line: 2, col: 14 }])
   expect(ordinary.scan('shared', { cwd })).toEqual([])
 })
+it('reports diagnostics from the final hook-modified plan', async () => {
+  const cwd = fixture()
+  writeFileSync(join(cwd, 'source.ts'), 'export const provider = 1\n')
+  const engine = createEngine({ extensions: [{
+    ...extension,
+    operations: ['rename'],
+    verify: async () => [],
+    setup(hooks) {
+      hooks.hook('plan:ready', ({ changes }) => {
+        changes[0]!.after += 'const broken: string = 1\n'
+      })
+    },
+  }] })
+  const result = await engine.rename('provider', 'next', { cwd })
+  expect(result.regressions).toHaveLength(1)
+  expect(result.verification).toEqual({ _tag: 'Checked', checks: [{ checker: 'typescript', scope: 'project', files: 1, newErrors: 1 }] })
+  expect(() => engine.commit(result)).toThrow(/Verification failed/)
+})
 it('rejects duplicate suffix ownership before mutation', () => {
   const cwd = fixture()
   expect(() => createEngine({ extensions: [extension, { ...extension, name: 'second' }] })).toThrow(/ownership/)

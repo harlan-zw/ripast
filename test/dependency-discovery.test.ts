@@ -38,6 +38,8 @@ it.each([false, true])('cLI CSS rename preserves dependencies with apply=%s', (a
       'css-class-rename',
       'card',
       'panel',
+      '--profile',
+      'full',
       '--json',
       ...(apply ? ['--apply'] : []),
     ], { cwd: fx.dir, encoding: 'utf8' })

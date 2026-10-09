@@ -10,6 +10,7 @@ import type { RenameOptions, RenameResult } from './rename.ts'
 import type { ReplaceOptions } from './replace.ts'
 import type { ScanOptions } from './scan.ts'
 import type { FileChange } from './util.ts'
+import type { DiagnosticCheck, Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { extname, resolve } from 'node:path'
@@ -27,6 +28,7 @@ import { runReplace } from './replace.ts'
 import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, scan } from './scan.ts'
 import { startTsServer } from './ts-server.ts'
 import { rgFiles, writeChanges, writeFileRename } from './util.ts'
+import { createVerification } from './verification.ts'
 import { findRegressions } from './verify.ts'
 
 export interface SourceRegion {
@@ -67,7 +69,7 @@ export interface Extension {
   operations?: readonly Operation[]
   supports?: (request: OperationRequest, cwd: string) => boolean
   verify?: (input: PlanContext) => Promise<Regression[]>
-  planRename?: (input: { from: string, to: string, options: RenameOptions, services: EngineServices }) => Promise<RenameResult>
+  planRename?: (input: { from: string, to: string, options: RenameOptions, services: EngineServices }) => Promise<Omit<RenameResult, 'verification'>>
   setup?: (hooks: Hookable<EngineHooks>) => void
 }
 export interface EngineServices {
@@ -160,6 +162,7 @@ export function createEngine(options: EngineOptions = {}) {
     validateChanges(result.changes)
     await hooks.callHook('verify:before', context)
     validateChanges(result.changes)
+    const verification = createVerification(resolveVerifyMode(opts.verify), !!result.changes.length || isFileRenameResult(result))
     if (resolveVerifyMode(opts.verify) !== 'none') {
       // Hook-added plans share the same verification boundary as native plans.
       const scripts = result.changes.filter(change => !services.owns(change.path))
@@ -167,10 +170,10 @@ export function createEngine(options: EngineOptions = {}) {
         const server = await startTsServer(cwd, { tsconfig: tsconfig ?? undefined })
         try {
           if (isFileRenameResult(result)) {
-            result.regressions.push(...await verifyFileRename(server, cwd, result.fileMove.from, result.fileMove.to, result.changes, result.selfChange, resolveVerifyMode(opts.verify), (consumer, specifier) => services.adapter?.isPlannedImportTarget?.(cwd, consumer, specifier, result.fileMove.to) ?? false))
+            result.regressions.push(...await verifyFileRename(server, cwd, result.fileMove.from, result.fileMove.to, result.changes, result.selfChange, resolveVerifyMode(opts.verify), (consumer, specifier) => services.adapter?.isPlannedImportTarget?.(cwd, consumer, specifier, result.fileMove.to) ?? false, verification))
           }
           else {
-            result.regressions.push(...await findRegressions(server, scripts, projectScriptFiles(cwd, undefined, services)))
+            result.regressions.push(...await findRegressions(server, scripts, projectScriptFiles(cwd, undefined, services), verification.extension('typescript')))
           }
         }
         finally { server.dispose() }
@@ -184,13 +187,15 @@ export function createEngine(options: EngineOptions = {}) {
           if (!config && rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
             throw new Error(`Extension ${extension.name} verification requires a tsconfig`)
           if (config)
-            result.regressions.push(...await extension.semantic.regressions(config, cwd, result.changes))
+            result.regressions.push(...await extension.semantic.regressions(config, cwd, result.changes, verification.extension(extension.semantic.name)))
         }
         else if (result.changes.some(change => extension.suffixes.some(suffix => change.path.endsWith(suffix)))) {
           throw new Error(`Extension ${extension.name} cannot verify its plan`)
         }
       }
     }
+    if ('verification' in result)
+      result.verification = combineVerification([result.verification as Verification, verification.result()])
     result.regressions = [...new Map(result.regressions.map(regression => [JSON.stringify(regression), regression])).values()]
     plans.set(result, { fingerprint: JSON.stringify(result), movedSource: isFileRenameResult(result) ? readFileSync(result.fileMove.from, 'utf8') : null })
     return result
@@ -213,7 +218,7 @@ export function createEngine(options: EngineOptions = {}) {
       if (coreBindings || !planners.length)
         results.push(await runRename(from, to, { ...opts, engine: services }))
       for (const extension of planners)
-        results.push(await extension.planRename!({ from, to, options: opts, services }))
+        results.push({ ...await extension.planRename!({ from, to, options: opts, services }), verification: { _tag: 'Skipped', reason: resolveVerifyMode(opts.verify) === 'none' ? 'disabled' : 'not-applicable' } })
       return combineRenameResults(results)
     }),
     move: (symbol: string, from: string, to: string, opts: MoveOptions = {}) => execute({ operation: 'move', symbol, from, to }, opts, () => runMove(symbol, from, to, { ...opts, engine: services })),
@@ -250,7 +255,18 @@ function mergePlans(plans: FileChange[][]): FileChange[] {
   return [...new Map(changes.map(change => [change.path, change])).values()]
 }
 function combineRenameResults(results: RenameResult[]): RenameResult {
-  return { changes: mergePlans(results.map(result => result.changes)), regressions: results.flatMap(result => result.regressions), warnings: results.flatMap(result => result.warnings), scanned: results.reduce((sum, result) => sum + result.scanned, 0) }
+  return { changes: mergePlans(results.map(result => result.changes)), regressions: results.flatMap(result => result.regressions), warnings: results.flatMap(result => result.warnings), scanned: results.reduce((sum, result) => sum + result.scanned, 0), verification: combineVerification(results.map(result => result.verification)) }
+}
+function combineVerification(receipts: Verification[]): Verification {
+  const checks = new Map<string, DiagnosticCheck>()
+  for (const receipt of receipts) {
+    if (receipt._tag === 'Checked') {
+      for (const check of receipt.checks)
+        checks.set(check.checker, check)
+    }
+  }
+  const [first, ...rest] = checks.values()
+  return first ? { _tag: 'Checked', checks: [first, ...rest] } : receipts.at(-1) ?? { _tag: 'Skipped', reason: 'not-applicable' }
 }
 function combineAdapters(adapters: FrameworkAdapter[]): FrameworkAdapter | null {
   if (!adapters.length)

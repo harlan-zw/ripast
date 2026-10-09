@@ -1,3 +1,4 @@
+import type { Verification } from 'ripide-api'
 import type { FileChange } from 'ripide-api/adapter'
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
@@ -15,6 +16,7 @@ export interface VueTemplateWrapOptions {
 export interface VueTemplateWrapResult {
   changes: FileChange[]
   scanned: number
+  verification: Verification
   regressions: never[]
 }
 
@@ -60,7 +62,7 @@ export async function runVueTemplateWrap(selector: string, wrapper: string, opts
     if (after !== before)
       changes.push({ path, rel: relative(cwd, path), before, after })
   }
-  return { changes, scanned: files.length, regressions: [] }
+  return { changes, scanned: files.length, regressions: [], verification: { _tag: 'Skipped', reason: changes.length ? 'not-applicable' : 'no-changes' } }
 }
 
 export async function runVueTemplateUnwrap(selector: string, opts: VueTemplateWrapOptions = {}): Promise<VueTemplateWrapResult> {
@@ -75,5 +77,5 @@ export async function runVueTemplateUnwrap(selector: string, opts: VueTemplateWr
     if (after !== before)
       changes.push({ path, rel: relative(cwd, path), before, after })
   }
-  return { changes, scanned: files.length, regressions: [] }
+  return { changes, scanned: files.length, regressions: [], verification: { _tag: 'Skipped', reason: changes.length ? 'not-applicable' : 'no-changes' } }
 }

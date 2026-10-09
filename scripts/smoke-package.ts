@@ -33,10 +33,10 @@ console.log(JSON.stringify({ changes: result.changes.length, vueMatch: extension
   const cliManifest = JSON.parse(readFileSync(join(cliPackage, 'package.json'), 'utf8'))
   const cli = join(cliPackage, cliManifest.bin.ripide)
   const isolated = { ...process.env, PATH: cwd }
-  const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-verify', '--json'], isolated))
+  const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-verify', '--json', '--profile', 'full'], isolated))
   assert.ok(renamed.changes.some((change: { after: string }) => change.after.includes('export const next')))
   assert.equal(readFileSync(join(cwd, 'source.ts'), 'utf8'), 'export const target = 1\n')
-  const named = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-verify', '--json']))
+  const named = JSON.parse(run([cli, 'rename', 'target', 'next', '--no-verify', '--json', '--profile', 'full']))
   assert.ok(named.changes.some((change: { after: string }) => change.after.includes('export const next')))
   const sdk = JSON.parse(run(['--experimental-strip-types', 'consumer.ts']))
   assert.ok(sdk.changes > 0)

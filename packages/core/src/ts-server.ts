@@ -72,6 +72,12 @@ export interface TsServer {
 export interface TsServerOptions {
   /** Path to the native `tsc` binary. Defaults to the bundled `typescript-native` platform package. */
   binary?: string
+  /** Arguments for an explicitly supplied server executable. */
+  args?: string[]
+  /** Maximum wait for each request, including initialization. Defaults to 30 seconds. */
+  requestTimeoutMs?: number
+  /** Cancels all work and terminates this operation-owned server. */
+  signal?: AbortSignal
   /** Configured project to load before serving refactor requests. */
   tsconfig?: string
 }
@@ -117,28 +123,39 @@ interface OpenDocument {
 }
 
 export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Promise<TsServer> {
+  const requestTimeoutMs = opts.requestTimeoutMs ?? 30_000
+  if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0)
+    throw new Error('TypeScript request deadline must be a positive number')
+  if (opts.signal?.aborted)
+    throw new Error('TypeScript server startup cancelled', { cause: opts.signal.reason })
   const binary = opts.binary ?? resolveNativeTsc()
   const tsconfig = opts.tsconfig ? resolve(cwd, opts.tsconfig) : undefined
   const tsconfigText = tsconfig ? readFileSync(tsconfig, 'utf8') : undefined
   const preferences = tsconfig ? { ...PREFERENCES, customConfigFileName: basename(tsconfig) } : PREFERENCES
-  const proc: ChildProcessWithoutNullStreams = spawn(binary, ['--lsp', '--stdio'], { cwd, stdio: 'pipe' })
+  const proc: ChildProcessWithoutNullStreams = spawn(binary, opts.args ?? ['--lsp', '--stdio'], { cwd, stdio: 'pipe' })
   const pending = new Map<number, Pending>()
   const documents = new Map<string, OpenDocument>()
   const stderrTail: string[] = []
   let seq = 0
   let buffer = Buffer.alloc(0)
   let terminalError: Error | undefined
+  let shutdownTimer: ReturnType<typeof setTimeout> | undefined
 
   const stop = (error: Error): void => {
     if (terminalError)
       return
     terminalError = error
+    opts.signal?.removeEventListener('abort', abort)
     for (const entry of pending.values())
       entry.reject(error)
     pending.clear()
     // Cancel queued writes before terminating the reader on every platform.
     proc.stdin.destroy()
     proc.kill()
+    if (proc.pid && proc.exitCode === null && proc.signalCode === null) {
+      // A stalled child may ignore SIGTERM. Bound its operation-owned lifetime.
+      shutdownTimer = setTimeout(() => proc.kill('SIGKILL'), 1000)
+    }
   }
 
   const write = (message: object): void => {
@@ -149,6 +166,13 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     proc.stdin.write(body)
   }
 
+  const abort = (): void => {
+    for (const id of pending.keys())
+      write({ jsonrpc: '2.0', method: '$/cancelRequest', params: { id } })
+    stop(new Error('TypeScript server operation cancelled', { cause: opts.signal?.reason }))
+  }
+  opts.signal?.addEventListener('abort', abort, { once: true })
+
   const stderrHint = (): string => stderrTail.length ? `: ${stderrTail.join(' ').trim()}` : ''
 
   const request = (method: string, params: unknown): Promise<any> => {
@@ -156,7 +180,19 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       return Promise.reject(terminalError)
     const id = ++seq
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
+      const timer = setTimeout(() => {
+        stop(new Error(`TypeScript request deadline exceeded: ${method} (${requestTimeoutMs}ms)`))
+      }, requestTimeoutMs)
+      pending.set(id, {
+        resolve(value) {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        reject(error) {
+          clearTimeout(timer)
+          reject(error)
+        },
+      })
       write({ jsonrpc: '2.0', id, method, params })
     })
   }
@@ -211,10 +247,11 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
       stderrTail.shift()
   })
   proc.on('exit', (code) => {
+    clearTimeout(shutdownTimer)
     stop(new Error(`ripide: TypeScript server exited with code ${code}${stderrHint()}`))
   })
   proc.on('error', (error) => {
-    stop(new Error(`ripide: could not start TypeScript server at ${binary}: ${error.message}`))
+    stop(new Error(`ripide: could not start TypeScript server at ${binary}: ${error.message}`, { cause: error }))
   })
   proc.stdin.on('error', (error) => {
     // A queued write can fail after disposal. Its requests already have the terminal error.

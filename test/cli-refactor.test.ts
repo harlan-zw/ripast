@@ -8,7 +8,7 @@ import { makeFixture } from './helpers.ts'
 const cli = resolve('packages/cli/src/cli.ts')
 
 function run(cwd: string, args: string[]) {
-  return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args, '--json'], {
+  return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args, '--profile', 'full', '--json'], {
     cwd,
     encoding: 'utf8',
   })
@@ -90,12 +90,12 @@ it('doctor accepts a bare changed flag before JSON output', () => {
 })
 
 it.each([
-  { args: ['rename', 'answer', 'value', '--no-vue'], message: 'verification: no new type diagnostics', status: 0 },
-  { args: ['rename', 'answer', 'taken', '--no-vue'], message: 'verification: type diagnostics increased', status: 1 },
-  { args: ['rename', 'answer', 'value', '--no-vue', '--verify-mode', 'none'], message: 'verification: not run', status: 0 },
-  { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue'], message: 'verification: no new type diagnostics', status: 0 },
-  { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue', '--verify-mode', 'none'], message: 'verification: not run', status: 0 },
-  { args: ['css-class-rename', 'font-semibold', 'font-medium'], message: 'verification: not run', status: 0 },
+  { args: ['rename', 'answer', 'value', '--no-vue'], message: 'typescript diagnostics: touched,', status: 0 },
+  { args: ['rename', 'answer', 'taken', '--no-vue'], message: 'new errors', status: 1 },
+  { args: ['rename', 'answer', 'value', '--no-vue', '--verify-mode', 'none'], message: 'verification: skipped (disabled)', status: 0 },
+  { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue'], message: 'typescript diagnostics: touched,', status: 0 },
+  { args: ['rename-file', 'source.ts', 'target.ts', '--no-vue', '--verify-mode', 'none'], message: 'verification: skipped (disabled)', status: 0 },
+  { args: ['css-class-rename', 'font-semibold', 'font-medium'], message: 'verification: skipped (not-applicable)', status: 0 },
 ])('agent output reports verification for $args', ({ args, message, status }) => {
   const fixture = makeFixture({
     'source.ts': 'export const answer = 42\nexport const taken = 7\n',

@@ -39,6 +39,8 @@ it.skipIf(process.platform === 'win32').each([false, true])('rename-file refuses
       'target.ts',
       '--no-vue',
       '--no-verify',
+      '--profile',
+      'full',
       '--json',
       ...(apply ? ['--apply'] : []),
     ], { cwd: fixture.dir, encoding: 'utf8' })
@@ -70,6 +72,8 @@ it('rename-file preserves consumers when the destination directory cannot be cre
       '--no-vue',
       '--no-verify',
       '--apply',
+      '--profile',
+      'full',
       '--json',
     ], { cwd: fixture.dir, encoding: 'utf8' })
     assert.notEqual(result.status, 0)
@@ -108,6 +112,8 @@ syncBuiltinESMExports()
       '--no-vue',
       '--no-verify',
       '--apply',
+      '--profile',
+      'full',
       '--json',
     ], { cwd: fixture.dir, encoding: 'utf8' })
     assert.notEqual(result.status, 0)
@@ -135,6 +141,8 @@ it('rename-file applies consumer and moved-file imports as one operation', () =>
       'moved/target.ts',
       '--no-vue',
       '--apply',
+      '--profile',
+      'full',
       '--json',
     ], { cwd: fixture.dir, encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)

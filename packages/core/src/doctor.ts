@@ -3,6 +3,7 @@ import type { DoctorIndex, DoctorIndexFile } from './doctor-index.ts'
 import type { EngineServices } from './engine.ts'
 import type { DeclarationTree, DeclarationTreeFile, ScanOptions } from './scan.ts'
 import type { FileChange } from './util.ts'
+import type { Verification } from './verification.ts'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
@@ -842,6 +843,7 @@ export type FixableCheck = 'inconsistent-import-path' | 'dangling-reexport' | 's
 const FIXABLE: ReadonlySet<string> = new Set<FixableCheck>(['inconsistent-import-path', 'dangling-reexport', 'stale-import'])
 
 export interface DoctorFixResult {
+  verification: Verification
   changes: FileChange[]
   fixed: DoctorFinding[]
   skipped: DoctorFinding[]
@@ -936,7 +938,7 @@ export function buildDoctorFixes(report: DoctorReport, cwd: string = process.cwd
     if (after !== source)
       changes.push({ path: slot.abs, rel: slot.rel, before: source, after })
   }
-  return { changes, fixed, skipped }
+  return { changes, fixed, skipped, verification: { _tag: 'Skipped', reason: changes.length ? 'not-applicable' : 'no-changes' } }
 }
 
 function removeStaleImportSpecifiers(

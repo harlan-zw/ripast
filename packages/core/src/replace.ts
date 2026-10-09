@@ -3,6 +3,7 @@ import type { ImportInfo } from './imports.ts'
 import type { VerifyMode } from './project.ts'
 import type { SourceSite, TsServer } from './ts-server.ts'
 import type { FileChange, TextEdit } from './util.ts'
+import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
@@ -13,6 +14,7 @@ import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNa
 import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, rgFilesMany } from './util.ts'
+import { createVerification } from './verification.ts'
 import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
@@ -29,6 +31,7 @@ export interface ReplaceResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
+  verification: Verification
 }
 
 interface ReplacementTarget {
@@ -64,12 +67,13 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
       if (after !== before)
         changes.push({ path, rel: relative(cwd, path), before, after })
     }
+    const verification = createVerification(verifyMode, !!changes.length)
     const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), engine))
+      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), engine), verification.typescript)
     if (verifyMode === 'project')
-      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine))
-    return { changes, scanned: candidatePaths.length, regressions }
+      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine, verification.extension))
+    return { changes, scanned: candidatePaths.length, regressions, verification: verification.result() }
   }
   finally {
     server.dispose()

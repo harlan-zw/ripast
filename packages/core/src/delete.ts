@@ -1,6 +1,7 @@
 import type { EngineServices } from './engine.ts'
 import type { VerifyMode } from './project.ts'
 import type { FileChange } from './util.ts'
+import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
@@ -12,6 +13,7 @@ import { listImports, pruneUnusedImports } from './imports.ts'
 import { assertSourceSupport, findTsconfig, isExtensionPath, isInsideAutoImportScope, projectScriptFiles, resolveVerifyMode } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { posToLineCol, rgFiles } from './util.ts'
+import { createVerification } from './verification.ts'
 import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface DeleteOptions {
@@ -30,6 +32,7 @@ export interface DeleteResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
+  verification: Verification
 }
 
 export async function runDelete(symbol: string, fromPath: string, opts: DeleteOptions = {}): Promise<DeleteResult> {
@@ -179,13 +182,14 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
       ? []
       : [{ path: fromAbs, rel: relative(cwd, fromAbs), before, after }]
 
-    const regressions = verifyMode === 'none'
+    const verification = createVerification(verifyMode, !!changes.length)
+    const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd, undefined, engine) : [fromAbs])
+      : await findRegressions(server, changes, verifyMode === 'project' ? projectScriptFiles(cwd, undefined, engine) : [fromAbs], verification.typescript)
     if (verifyMode === 'project')
-      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine))
+      regressions.push(...await findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine, verification.extension))
 
-    return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions }
+    return { changes, scanned: new Set([...candidatePaths, fromAbs]).size, regressions, verification: verification.result() }
   }
   finally {
     server.dispose()

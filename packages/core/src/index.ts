@@ -1,3 +1,5 @@
+export { buildChangeManifest } from './change-manifest.ts'
+export type { ChangeManifest, ChangeManifestEntry, FileMoveSnapshot } from './change-manifest.ts'
 export { buildComponentDetail, buildComponentInventory, formatAgentInventory, formatDetail, formatInventory } from './components.ts'
 export type { ComponentDetail, ComponentInventory, ComponentsListOptions, DuplicateGroup } from './components.ts'
 export { rewriteClassString, rewriteToken, runCssClassRename } from './css-class-rename.ts'
@@ -24,6 +26,7 @@ export {
   buildDeclarationTree,
   buildScanGraph,
   buildUnusedDeclarations,
+  createDeclarationCache,
   formatAgentDeclarationTree,
   formatAgentHits,
   formatDeclarationTree,
@@ -33,9 +36,13 @@ export {
   scan,
 } from './scan.ts'
 export type {
+  DeclarationCache,
+  DeclarationCacheOptions,
+  DeclarationCacheStats,
   DeclarationTree,
   DeclarationTreeFile,
   DeclarationTreeItem,
+  DeclarationTreeOptions,
   ExportFilter,
   ScanGraph,
   ScanGraphEdge,
@@ -49,5 +56,7 @@ export { applyLspEdits, offsetOfPosition, resolveNativeTsc, startTsServer } from
 export type { LspDiagnostic, LspLocation, LspTextEdit, SourceSite, TsServer, TsServerOptions } from './ts-server.ts'
 export { printDiffs, summarize, writeChanges } from './util.ts'
 export type { FileChange } from './util.ts'
+export { compactVerification, formatVerification } from './verification.ts'
+export type { CompactDiagnosticCheck, DiagnosticCheck, Verification } from './verification.ts'
 export { findRegressions, formatRegressions } from './verify.ts'
 export type { Regression } from './verify.ts'
