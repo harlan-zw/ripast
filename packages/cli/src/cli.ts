@@ -109,9 +109,9 @@ const outputArgs = {
   offset: { type: 'string' as const, description: 'Skip displayed results. Repeat with a later offset to retrieve omitted results.' },
   file: { type: 'string' as const, description: 'Display results for this project-relative file only.' },
   code: { type: 'string' as const, description: 'Display diagnostics with this numeric TypeScript code.' },
-  fields: { type: 'string' as const, description: 'Comma-separated result fields for JSON discovery output.' },
-  minify: { type: 'boolean' as const, default: false, description: 'Emit JSON without indentation.' },
-  artifact: { type: 'string' as const, description: 'Create a new JSON evidence file. Mutations save plans and verification receipts before apply. Stdout reports the apply outcome.' },
+  fields: { type: 'string' as const, description: 'Requires --json. Comma-separated result fields for JSON discovery output.' },
+  minify: { type: 'boolean' as const, default: false, description: 'Requires --json. Emit JSON without indentation.' },
+  artifact: { type: 'string' as const, description: 'Requires --json. Create a new JSON evidence file. Mutations save plans and verification receipts before apply. Stdout reports the apply outcome.' },
 }
 
 type OutputArgs = Record<string, unknown>
