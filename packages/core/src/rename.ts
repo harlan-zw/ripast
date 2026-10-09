@@ -12,6 +12,7 @@ import { listTopLevelDeclarations, NAMED_DECLARATION_TYPES, parseSource, unrelat
 import { isInsideAutoImportScope } from './nuxt.ts'
 import { timed, timedAsync } from './profile.ts'
 import { findTsconfig, isVuePath, resolveVerifyMode, verifyScope } from './project.ts'
+import { recoverPropertyReferences } from './rename-property-references.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
 import { applyTextEdits, parseSourceFile, rgFiles, rgFilesMany } from './util.ts'
 import { findRegressions } from './verify.ts'
@@ -110,6 +111,7 @@ export async function runRename(from: string, to: string, opts: RenameOptions = 
           editsByPath.set(path, unique)
         }
       }
+      await recoverPropertyReferences(server, scriptCandidates, declarations, from, to, editsByPath)
     })
 
     const changes: FileChange[] = timed(profile, 'collect changes', () => {
