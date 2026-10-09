@@ -6,14 +6,14 @@ import process from 'node:process'
 import { it } from 'vitest'
 import { makeFixture, prepareLauncher } from './helpers.ts'
 
-it('launcher installs missing adapters through pnpm without running npm', () => {
+it.each(['0.7.0', '0.8.0-beta.1'])('launcher installs its %s release through pnpm without running npm', (version) => {
   const fx = makeFixture({
     'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
     'npx': '#!/bin/sh\necho npx > manager\nexit 91\n',
     'pnpm': '#!/bin/sh\necho pnpm > manager\nprintf "%s\\n" "$@" > args\nexit 0\n',
   })
   try {
-    const launcher = prepareLauncher(fx)
+    const launcher = prepareLauncher(fx, version)
     for (const name of ['npx', 'pnpm']) chmodSync(resolve(fx.dir, name), 0o755)
     const child = spawnSync(process.execPath, [launcher, 'rename', 'old', 'next'], {
       cwd: fx.dir,
@@ -22,7 +22,7 @@ it('launcher installs missing adapters through pnpm without running npm', () => 
     })
     assert.equal(child.status, 0, child.stderr)
     assert.equal(fx.read('manager').trim(), 'pnpm')
-    assert.deepEqual(fx.read('args').trim().split('\n'), ['dlx', '--package=ripide', '--package=ripide-vue', 'ripide', 'rename', 'old', 'next'])
+    assert.deepEqual(fx.read('args').trim().split('\n'), ['dlx', `--package=ripide@${version}`, `--package=ripide-vue@${version}`, 'ripide', 'rename', 'old', 'next'])
   }
   finally { fx.cleanup() }
 })
@@ -55,9 +55,9 @@ it('installs an adapter when its import entry is missing', () => {
     'bin/.keep': '',
   }, false)
   try {
-    prepareLauncher(fx)
+    const launcher = prepareLauncher(fx)
     chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
-    const child = spawnSync(process.execPath, [resolve(fx.dir, 'bin/ripide.mjs'), '--help'], {
+    const child = spawnSync(process.execPath, [launcher, '--help'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
@@ -128,7 +128,7 @@ it('launcher falls back to npm with a separate prefix and preserves project cwd'
     const prefix = args[2].slice('--prefix='.length)
     assert.notEqual(prefix, fx.dir)
     assert.equal(existsSync(prefix), false, 'temporary npm prefix gets removed')
-    assert.deepEqual(args.slice(3), ['--package=ripide', '--package=ripide-vue', '--', 'ripide', 'rename', 'old name', 'next'])
+    assert.deepEqual(args.slice(3), ['--package=ripide@1.2.3', '--package=ripide-vue@1.2.3', '--', 'ripide', 'rename', 'old name', 'next'])
     assert.equal(fx.read('cwd').trim(), fx.dir)
     assert.equal(fx.read('reexec'), '1')
   }
