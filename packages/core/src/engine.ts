@@ -163,13 +163,17 @@ export function createEngine(options: EngineOptions = {}) {
     validateChanges(result.changes)
     await hooks.callHook('verify:before', context)
     validateChanges(result.changes)
-    const planChanged = JSON.stringify(result.changes) !== originalPlan || extensions.some(extension => extension.planRename)
+    const changedByHooks = JSON.stringify(result.changes) !== originalPlan
+    const planChanged = changedByHooks || extensions.some(extension => extension.planRename)
     const previousVerification = 'verification' in result ? result.verification as Verification : undefined
     const verification = createVerification(verifyMode, !!result.changes.length || isFileRenameResult(result))
     if (verifyMode !== 'none') {
+      // Diagnostics from a replaced plan do not describe the final authored changes.
+      if (changedByHooks)
+        result.regressions = []
       // Hook-added plans share the same verification boundary as native plans.
       const scripts = result.changes.filter(change => !services.owns(change.path))
-      if (scripts.length && planChanged) {
+      if (planChanged && (scripts.length || isFileRenameResult(result))) {
         const server = await startTsServer(cwd, { tsconfig: tsconfig ?? undefined })
         try {
           if (isFileRenameResult(result)) {
@@ -201,7 +205,7 @@ export function createEngine(options: EngineOptions = {}) {
       }
     }
     if ('verification' in result)
-      result.verification = combineVerification([result.verification as Verification, verification.result()])
+      result.verification = changedByHooks ? verification.result() : combineVerification([result.verification as Verification, verification.result()])
     result.regressions = [...new Map(result.regressions.map(regression => [JSON.stringify(regression), regression])).values()]
     plans.set(result, { fingerprint: JSON.stringify(result), movedSource: isFileRenameResult(result) ? readFileSync(result.fileMove.from, 'utf8') : null })
     return result
