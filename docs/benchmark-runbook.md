@@ -112,8 +112,8 @@ If a capability is unavailable, disclose it. Do not treat an unavailable gate as
 
 Separate mechanical, mixed, and architecture cohorts.
 Pilot direct edits, forced tool use, and hybrid choice separately.
-Use a separate pilot to fix repeat counts before held-out registration.
-Counterbalance method order and cache conditions.
+Fix repeat counts before held-out registration. Record the sample-size rationale and limits of inference.
+Counterbalance method order. Record whether cache conditions are controlled or observed.
 Run serially or on demonstrably isolated resources.
 Use installed projects for full-project claims.
 Keep first-use setup separate from prepared-use measurements.
