@@ -2,7 +2,8 @@
 
 The README uses **1I, Shared shoulder**, selected from the Brand Lab on 8 October 2026.
 The mark keeps the original ri ligature.
-The wordmark spells RipIDE with uppercase R and IDE, plus lowercase i and p.
+The wordmark reads ripIDE, with the original joined ri and p paths.
+IDE uses the same stroke weight and rounded curves. The written product name is RipIDE.
 All letters use SVG paths, with no font dependency.
 
 | File | Use |
