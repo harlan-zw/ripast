@@ -56,7 +56,8 @@ function ensureAdapters(needed) {
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   const packages = ['ripide', ...missing].map(name => `--package=${name}@${version}`)
   const args = ['dlx', ...packages, 'ripide', ...process.argv.slice(2)]
-  const options = { stdio: 'inherit', env: { ...process.env, RIPIDE_REEXEC: '1' } }
+  const json = process.argv.some(arg => arg === '--json' || arg === '--json=true')
+  const options = { stdio: json ? ['inherit', 'pipe', 'inherit'] : 'inherit', encoding: 'utf8', maxBuffer: 100 * 1024 * 1024, env: { ...process.env, RIPIDE_REEXEC: '1' } }
   let manager = 'pnpm'
   let res = spawn.sync(manager, args, options)
   if (res.error?.code === 'ENOENT') {
@@ -85,9 +86,18 @@ function ensureAdapters(needed) {
       process.stderr.write(`ripide: Could not start ${manager}: ${res.error.message}\n`)
     }
   }
-  process.exit(res.status ?? 1)
+  if (json) {
+    if (res.error)
+      throw new Error(`Could not start ${manager}. Install the required adapter, then retry.`, { cause: res.error })
+    if (!res.stdout?.trim())
+      throw new Error(`Adapter command returned no JSON (exit ${res.status ?? 'unknown'}). Install ${missing.join(', ')} manually.`)
+    // Parse the subprocess boundary before forwarding exactly one complete JSON value.
+    const result = JSON.parse(res.stdout)
+    process.stdout.write(`${JSON.stringify(result)}\n`)
+  }
+  process.exitCode = res.status ?? 1
+  return true
 }
 
-ensureAdapters(process.argv.includes('--no-vue') ? [] : detectFrameworks(process.cwd()))
-
-await import('../dist/cli.mjs')
+const { runCli } = await import('../dist/cli.mjs')
+await runCli(process.argv.slice(2), () => ensureAdapters(detectFrameworks(process.cwd())))

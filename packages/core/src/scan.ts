@@ -1,3 +1,4 @@
+import type { OutputSelection } from './output.ts'
 import type { ProfileSink } from './profile.ts'
 import type { ParsedFile } from './util.ts'
 import { existsSync, readFileSync } from 'node:fs'
@@ -7,6 +8,7 @@ import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifierRanges, parseSource } from './declarations.ts'
 import { listImports } from './imports.ts'
+import { formatOutputPage, selectOutput } from './output.ts'
 import { timed, timedAsync } from './profile.ts'
 import { startTsServer } from './ts-server.ts'
 import { parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
@@ -551,7 +553,9 @@ export function formatHits(hits: ScanHit[], json: boolean): string {
   return lines.join('\n')
 }
 
-export function formatAgentHits(hits: ScanHit[]): string {
+export function formatAgentHits(hits: ScanHit[], options: OutputSelection = { limit: 40 }): string {
+  const page = selectOutput(hits, options, hit => hit.file)
+  const visibleFiles = new Set(page.results.map(hit => hit.file))
   const files = new Set(hits.map(h => h.file))
   const byKind: Record<string, number> = {}
   const byFile = new Map<string, ScanHit[]>()
@@ -566,12 +570,15 @@ export function formatAgentHits(hits: ScanHit[]): string {
   if (hits.length) {
     lines.push(`kinds: ${Object.entries(byKind).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ')}`)
     lines.push('files:')
-    for (const [file, fileHits] of [...byFile.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))) {
+    for (const [file, fileHits] of [...byFile.entries()].filter(([file]) => visibleFiles.has(file)).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))) {
       const kinds = summarizeKinds(fileHits)
       const first = fileHits[0]
       lines.push(`  ${file}: ${fileHits.length} (${kinds}); first L${first.line}:${first.col}`)
     }
   }
+  lines.push(formatOutputPage(page))
+  if (page.omitted)
+    lines.push('Retrieve more with --offset, --limit, or --file.')
   return lines.join('\n')
 }
 
@@ -625,9 +632,10 @@ export function formatUnusedDeclarations(unused: UnusedDeclarations, json: boole
   return lines.join('\n')
 }
 
-export function formatAgentDeclarationTree(tree: DeclarationTree, exportFilter: ExportFilter = 'exported'): string {
-  const lines = ['architecture']
-  for (const file of tree.files) {
+export function formatAgentDeclarationTree(tree: DeclarationTree, exportFilter: ExportFilter = 'exported', options: OutputSelection = { limit: 40 }): string {
+  const page = selectOutput(tree.files, options, file => file.file)
+  const lines = ['architecture', formatOutputPage(page)]
+  for (const file of page.results) {
     const exported = file.declarations.filter(d => d.exported)
     const local = file.declarations.filter(d => !d.exported)
     const localImports = file.imports.filter(i => i.startsWith('.'))

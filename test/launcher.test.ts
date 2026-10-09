@@ -57,7 +57,7 @@ it('installs an adapter when its import entry is missing', () => {
   try {
     const launcher = prepareLauncher(fx)
     chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
-    const child = spawnSync(process.execPath, [launcher, '--help'], {
+    const child = spawnSync(process.execPath, [launcher, 'rename', 'old', 'next'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
@@ -93,7 +93,7 @@ it('launcher explains missing package managers when an adapter needs installatio
     'package.json': '{"type":"module","dependencies":{"vue":"*"}}',
   }, false)
   try {
-    const child = spawnSync(process.execPath, [prepareLauncher(fx), 'scan', 'target'], {
+    const child = spawnSync(process.execPath, [prepareLauncher(fx), 'rename', 'old', 'next'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
@@ -144,13 +144,55 @@ it('launcher does not fall back when pnpm runs and fails', () => {
   try {
     const launcher = prepareLauncher(fx)
     for (const name of ['pnpm', 'npm']) chmodSync(resolve(fx.dir, name), 0o755)
-    const child = spawnSync(process.execPath, [launcher, 'scan', 'target'], {
+    const child = spawnSync(process.execPath, [launcher, 'rename', 'old', 'next'], {
       cwd: fx.dir,
       env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 17)
     assert.equal(existsSync(resolve(fx.dir, 'npm-called')), false)
+  }
+  finally { fx.cleanup() }
+})
+
+it.each([['--help'], ['scan', 'target', '--help'], ['tree', '--json', '--profile', 'invalid']])('launcher skips adapter installation before help or rejected options: %s', (...args) => {
+  const fx = makeFixture({ 'package.json': '{"dependencies":{"vue":"*"}}' })
+  try {
+    const child = spawnSync(process.execPath, [prepareLauncher(fx), ...args], { cwd: fx.dir, env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' }, encoding: 'utf8', timeout: 10_000 })
+    assert.equal(child.status, args.includes('invalid') ? 1 : 0, child.stderr)
+    assert.doesNotMatch(child.stderr, /Missing adapters|package managers/)
+    if (args.includes('--json'))
+      assert.equal(JSON.parse(child.stdout).status, 'error')
+    else
+      assert.match(child.stdout, /USAGE/)
+  }
+  finally { fx.cleanup() }
+})
+
+it.each(['empty', 'invalid', 'refused'])('adapter subprocess %s keeps one actionable JSON outcome', (outcome) => {
+  const response = outcome === 'empty' ? '' : outcome === 'invalid' ? '{broken' : '{"status":"refused","verification":["ts","project",0,1]}'
+  const fx = makeFixture({
+    'package.json': '{"dependencies":{"vue":"*"}}',
+    'source.ts': 'export const old = 1',
+    'pnpm': `#!/bin/sh\nprintf '%s' '${response}'\nexit 1\n`,
+  })
+  try {
+    const launcher = prepareLauncher(fx)
+    chmodSync(resolve(fx.dir, 'pnpm'), 0o755)
+    const child = spawnSync(process.execPath, [launcher, 'rename', 'old', 'next', '--apply', '--json'], {
+      cwd: fx.dir,
+      env: { ...process.env, PATH: `${fx.dir}${delimiter}${process.env.PATH}`, RIPIDE_REEXEC: '' },
+      encoding: 'utf8',
+      timeout: 10_000,
+    })
+    assert.equal(child.status, 1)
+    const payload = JSON.parse(child.stdout)
+    assert.equal(payload.status, outcome === 'refused' ? 'refused' : 'error')
+    if (outcome !== 'refused') {
+      assert.ok(payload.error.message)
+      assert.ok(payload.error.next)
+    }
+    assert.equal(fx.read('source.ts'), 'export const old = 1')
   }
   finally { fx.cleanup() }
 })
