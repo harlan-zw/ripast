@@ -6,15 +6,19 @@ import process from 'node:process'
 import { createEngine } from 'ripide-api'
 import { rgFiles } from 'ripide-api/adapter'
 
-export async function createCliEngine(cwd = process.cwd(), enabled = true, imports?: { importModule: (specifier: string) => Promise<Pick<typeof VueOperations, 'createVueExtension'>> }) {
+export function discoverCliAdapters(cwd = process.cwd(), enabled = true): { authoredVue: boolean, adapters: readonly string[] } {
   const authored = rgFiles('', { cwd, glob: '*.vue', listAll: true }).length > 0
-  const needed = authored || (enabled && hasVueDependency(cwd))
+  return { authoredVue: authored, adapters: enabled && (authored || hasVueDependency(cwd)) ? ['vue'] : [] }
+}
+
+export async function createCliEngine(cwd = process.cwd(), enabled = true, imports?: { importModule: (specifier: string) => Promise<Pick<typeof VueOperations, 'createVueExtension'>> }) {
+  const { authoredVue, adapters } = discoverCliAdapters(cwd, enabled)
   const extensions: Extension[] = []
-  if (enabled && needed) {
+  if (adapters.includes('vue')) {
     const { createVueExtension } = await (imports?.importModule('ripide-vue') ?? import('ripide-vue'))
     extensions.push(createVueExtension())
   }
-  return createEngine({ extensions, requiredSuffixes: authored ? ['.vue'] : [] })
+  return createEngine({ extensions, requiredSuffixes: authoredVue ? ['.vue'] : [] })
 }
 function hasVueDependency(cwd: string): boolean {
   let path = cwd

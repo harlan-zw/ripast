@@ -27,7 +27,7 @@ import {
 } from 'ripide-api'
 import { agent, isAgent } from 'std-env'
 import { defineStrictCommand as defineCommand } from './command.ts'
-import { createCliEngine, loadVueOperations } from './engine.ts'
+import { createCliEngine, discoverCliAdapters, loadVueOperations } from './engine.ts'
 import { jsonResult, mutationTag } from './json.ts'
 import {
   compactVerification,
@@ -1131,7 +1131,7 @@ function jsonRequested(rawArgs: string[]): boolean {
 }
 
 /** Parse and validate before an optional launcher resolves operation adapters. */
-export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean | Promise<boolean>): Promise<void> {
+export async function runCli(rawArgs: string[], ensureAdapters?: (needed: readonly string[]) => boolean | void | Promise<boolean | void>): Promise<void> {
   const name = rawArgs[0]
   const commands = command.subCommands as Record<string, CommandDef>
   const selected = commands[name]
@@ -1162,7 +1162,7 @@ export async function runCli(rawArgs: string[], ensureAdapters?: () => boolean |
               : name === 'move' ? [context.args.to as string] : []
             rejectArtifactCollision(context.args, destinations)
             const needsAdapter = ['rename', 'move', 'rename-file', 'replace', 'delete', 'doctor', 'components', 'scan', 'tree', 'unused', 'css-class-scan', 'css-class-rename', 'vue-template-wrap', 'vue-template-unwrap'].includes(name)
-            if (needsAdapter && context.args.vue !== false && ensureAdapters && await ensureAdapters())
+            if (needsAdapter && context.args.vue !== false && ensureAdapters && await ensureAdapters(discoverCliAdapters().adapters))
               return
             return await selected.run?.(context)
           }
