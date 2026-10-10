@@ -11,6 +11,14 @@ function run(cwd: string, args: string[], input?: string) {
   return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args], { cwd, encoding: 'utf8', input })
 }
 
+it.each(['--no-json', '--json=false'])('page keeps JSON field selection with %s', (option) => {
+  const result = run(process.cwd(), ['page', '--input', '-', '--fields', 'id', option], '[{"id":1,"body":"large"}]')
+  assert.equal(result.status, 0, result.stderr)
+  const payload = JSON.parse(result.stdout)
+  assert.equal(payload._tag, 'Result')
+  assert.deepEqual(payload.data.view.results, [{ id: 1 }])
+})
+
 it('uses stdin JSON and emits bounded machine responses without requiring --json', () => {
   const result = run(process.cwd(), ['page', '--input', '-', '--fields', 'id'], JSON.stringify(Array.from({ length: 70 }, (_, id) => ({ id, body: 'x'.repeat(10000) }))))
   assert.equal(result.status, 0, result.stderr)

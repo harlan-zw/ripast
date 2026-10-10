@@ -153,7 +153,7 @@ function selectedFields(items: unknown[], args: OutputArgs) {
       throw new Error('Field selection requires object results.')
     const data = item as Record<string, unknown>
     for (const field of fields) {
-      if (!(field in data))
+      if (!Object.hasOwn(data, field))
         throw new Error(`Unknown result field: ${field}.`)
     }
     return Object.fromEntries(fields.map(field => [field, data[field]]))

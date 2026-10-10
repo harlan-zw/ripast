@@ -103,9 +103,11 @@ export async function runEvidencePager(options: EvidencePagerOptions, dependenci
       limit: options.limit,
       offset,
       pageBytes: options.pageBytes,
-      render: (page) => {
-        const selected = selectFields(page, options.fields)
-        return dependencies.render(selected._tag === 'Err' ? { source, message: selected.message } : { source, view: { _tag: 'Collection', path, ...selected.value } })
+      render: (view) => {
+        if (view._tag !== 'Collection')
+          return dependencies.render({ source, view })
+        const selected = selectFields(view, options.fields)
+        return dependencies.render(selected._tag === 'Err' ? { source, message: selected.message } : { source, view: { ...view, ...selected.value } })
       },
     })
     if (result._tag === 'Err') {

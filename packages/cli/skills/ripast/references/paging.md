@@ -22,6 +22,7 @@ Artifacts differ between commands. Select a path from the menu instead of assumi
 Paths use JSON Pointer syntax. The empty path selects the root.
 Escape `/` as `~1` and `~` as `~0` inside property names.
 Pages always return JSON. You do not need `--json`.
+The page command also returns JSON when shared command options include `--no-json`.
 Use `--input -` to read one JSON document from stdin:
 
 ```bash
@@ -44,6 +45,7 @@ Select the change path from your artifact's menu. Its shape can differ between o
 
 Defaults: `--limit 40`, `--offset 0`, `--page-bytes 4096`, and `--max-bytes 32768`.
 Follow `data.view.nextOffset`; page sizes vary with rendered bytes.
+The byte target includes the response envelope for object menus, arrays, and text pages.
 The page target retains one item even when it exceeds the target.
 If an item exceeds the response ceiling, select its nested paths or increase `--max-bytes`.
 Use `--fields` for object rows. Read required details only; keep the full receipt outside model context.

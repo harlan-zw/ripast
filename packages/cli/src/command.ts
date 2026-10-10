@@ -77,13 +77,14 @@ export function defineStrictCommand<const T extends ArgsDef>(definition: Command
         if (value !== undefined && (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value))))
           throw new Error(`Option --${name} requires a non-negative integer.`)
       }
-      if (context.args.graph && context.args.json)
+      const meta = typeof definition.meta === 'function' ? await definition.meta() : await definition.meta
+      const json = meta?.name === 'page' || context.args.json
+      if (context.args.graph && json)
         throw new Error('Options --graph and --json cannot be combined. Use scan --json for structured hits.')
-      if ((context.args.fields || context.args.minify || context.args.artifact) && !context.args.json)
+      if ((context.args.fields || context.args.minify || context.args.artifact) && !json)
         throw new Error('Options --fields, --minify, and --artifact require --json.')
       if (context.args.apply && context.args.fix === false)
         throw new Error('Option --apply requires --fix for doctor.')
-      const meta = typeof definition.meta === 'function' ? await definition.meta() : await definition.meta
       if (context.args.fields && (context.args.fix || !['scan', 'tree', 'unused', 'components', 'doctor', 'css-class-scan', 'page'].includes(meta?.name ?? '')))
         throw new Error('Option --fields is available for discovery and page commands only.')
       if (context.args.code && !['rename', 'replace', 'move', 'delete', 'rename-file'].includes(meta?.name ?? ''))

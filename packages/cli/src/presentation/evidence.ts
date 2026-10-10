@@ -12,6 +12,8 @@ export type EvidenceResult
   = | { _tag: 'Ok', value: EvidenceInspection }
     | { _tag: 'Err', message: string }
 
+export type EvidenceSelection = Omit<OutputSelection<unknown>, 'render'> & { render?: (view: EvidenceInspection) => string }
+
 type PointerResult = { _tag: 'Ok', tokens: string[] } | { _tag: 'Err', message: string }
 type EvidenceChild
   = | { _tag: 'Scalar', key: string, value: EvidenceScalar }
@@ -91,7 +93,7 @@ function sourceFragments(text: string): { line: number, part: number, text: stri
 }
 
 /** Inspect immediate children or page a collection without changing saved evidence. */
-export function inspectEvidence(input: unknown, path = '', options: OutputSelection<unknown> = {}): EvidenceResult {
+export function inspectEvidence(input: unknown, path = '', options: EvidenceSelection = {}): EvidenceResult {
   const pointer = parseEvidencePointer(path)
   if (pointer._tag === 'Err')
     return pointer
@@ -116,7 +118,7 @@ export function inspectEvidence(input: unknown, path = '', options: OutputSelect
     const page = selectOutput(value, {
       ...options,
       pageBytes: options.pageBytes ?? DEFAULT_PAGE_BYTES,
-      render: options.render ?? (page => JSON.stringify({ _tag: 'Collection', path, ...page })),
+      render: page => (options.render ?? JSON.stringify)({ _tag: 'Collection', path, ...page }),
     })
     return { _tag: 'Ok', value: { _tag: 'Collection', path, ...page } }
   }
@@ -124,7 +126,7 @@ export function inspectEvidence(input: unknown, path = '', options: OutputSelect
     const page = selectOutput(sourceFragments(value), {
       ...options,
       pageBytes: options.pageBytes ?? DEFAULT_PAGE_BYTES,
-      render: options.render ?? (page => JSON.stringify({ _tag: 'Collection', path, unit: 'text', ...page })),
+      render: page => (options.render ?? JSON.stringify)({ _tag: 'Collection', path, unit: 'text', ...page }),
     })
     return { _tag: 'Ok', value: { _tag: 'Collection', path, unit: 'text', ...page } }
   }
@@ -148,7 +150,7 @@ export function inspectEvidence(input: unknown, path = '', options: OutputSelect
       limit: options.limit,
       offset: options.offset,
       pageBytes: options.pageBytes ?? DEFAULT_PAGE_BYTES,
-      render: page => JSON.stringify(inspectObjectPage(path, page)),
+      render: page => (options.render ?? JSON.stringify)(inspectObjectPage(path, page)),
     })
     return { _tag: 'Ok', value: inspectObjectPage(path, page) }
   }

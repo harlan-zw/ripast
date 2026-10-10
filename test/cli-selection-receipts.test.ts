@@ -9,6 +9,18 @@ function run(cwd: string, args: string[]) {
   return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', resolve('packages/cli/src/cli.ts'), ...args, '--profile', 'full'], { cwd, encoding: 'utf8' })
 }
 
+it.each(['toString', 'constructor', '__proto__'])('discovery refuses inherited result field %s', (field) => {
+  const fixture = makeFixture({ 'source.ts': 'export const value = 1\n' })
+  try {
+    const result = run(fixture.dir, ['scan', 'value', '--json', '--fields', field])
+    assert.equal(result.status, 1)
+    const payload = JSON.parse(result.stdout)
+    assert.equal(payload._tag, 'Error')
+    assert.match(result.stdout, new RegExp(`Unknown result field: ${field}`))
+  }
+  finally { fixture.cleanup() }
+})
+
 it('full JSON filters diagnostics by relative file while keeping absolute diagnostic paths', () => {
   const source = 'export const value = 1\nexport const taken = 2\n'
   const fixture = makeFixture({ 'source.ts': source })

@@ -1,7 +1,28 @@
 import assert from 'node:assert/strict'
+import { Buffer } from 'node:buffer'
 import { Readable } from 'node:stream'
 import { it } from 'vitest'
 import { parsePageRequest, runEvidencePager } from '../packages/cli/src/evidence-pager.ts'
+
+it('fits object menus and text pages using the complete emitted envelope', async () => {
+  for (const input of [Object.fromEntries(Array.from({ length: 100 }, (_, index) => [`field${index}`, 'x'.repeat(70)])), 'x'.repeat(10000)]) {
+    const responses: any[] = []
+    const render = (value: any) => {
+      if (typeof input === 'string')
+        assert.equal(value.view.unit, 'text')
+      return JSON.stringify({ command: 'page', padding: 'x'.repeat(300), data: value })
+    }
+    await runEvidencePager({ input: 'evidence.json', path: '', offset: 0, limit: 100, pageBytes: 2048, session: false }, {
+      stdin: Readable.from([]),
+      read: () => JSON.stringify(input),
+      emit: value => responses.push(value),
+      render,
+    })
+    assert.ok(responses[0].view.shown > 0)
+    assert.ok(Buffer.byteLength(render(responses[0])) <= 2048)
+    assert.ok(responses[0].view.nextOffset > 0)
+  }
+})
 
 it('reads once and navigates immutable evidence without repeats or lost history', async () => {
   let text = JSON.stringify({ rows: [0, 1, 2, 3, 4] })
