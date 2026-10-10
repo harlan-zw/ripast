@@ -141,8 +141,22 @@ export async function recordCommand(options: {
   const terminate = (signal: NodeJS.Signals) => {
     if (!child.pid)
       return
-    if (traced && tracker.terminate(signal).length)
+    if (traced) {
+      tracker.terminate(signal)
+      // The tracer must outlive every tracee so it can record each terminal exit.
+      for (const member of groupMembers(child.pid)) {
+        if (member.pid === child.pid)
+          continue
+        try {
+          process.kill(member.pid, signal)
+        }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH')
+            throw error
+        }
+      }
       return
+    }
     if (process.platform === 'win32') {
       child.kill(signal)
     }
