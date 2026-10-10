@@ -44,7 +44,7 @@ else {
   for (const [name, path] of [['ripide', cli], ['vitest', vitest]]) {
     writeFileSync(join(bin, name), `#!/bin/sh\nexec ${shell(process.execPath)} ${shell(wrapper)} ${shell(name)} ${shell(path)} "$@"\n`, { mode: 0o755 })
   }
-  writeFileSync(join(bin, 'check-behavior'), `#!/bin/sh\nexec ${shell(process.execPath)} ${shell(fileURLToPath(new URL('./check-quality.ts', import.meta.url)))} ${shell(project)} ${shell(task)} ${shell(provenance)} ${shell(mode)}\n`, { mode: 0o755 })
+  writeFileSync(join(bin, 'check-behavior'), `#!/bin/sh\nexec ${shell(process.execPath)} ${shell(fileURLToPath(new URL('./check-quality.ts', import.meta.url)))} ${shell(project)} ${shell(task)} ${shell(provenance)} ${shell(mode)} "$@"\n`, { mode: 0o755 })
   const configPath = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'opencode/opencode.json')
   const provider: unknown = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')).provider : {}
   const authPath = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'opencode/auth.json')
