@@ -11,12 +11,13 @@ function load(directory: string) {
   const parsed = parseManifest(JSON.parse(manifestText))
   if (parsed._tag === 'Err')
     throw new Error(parsed.message)
-  const complete = existsSync(join(directory, 'report.json'))
-  const reportText = readFileSync(join(directory, complete ? 'report.json' : 'abort-checkpoint.json'), 'utf8')
+  if (!existsSync(join(directory, 'report.json')) || !existsSync(join(directory, 'report.sha256')))
+    throw new Error('Complete both registered studies before comparing. Preserve interrupted evidence separately.')
+  const reportText = readFileSync(join(directory, 'report.json'), 'utf8')
   const report = JSON.parse(reportText) as { attempts: AttemptMetric[], manifestHash: string }
   if (sha256(manifestText) !== report.manifestHash)
     throw new Error('The report does not match its frozen manifest.')
-  if (complete && sha256(reportText) !== readFileSync(join(directory, 'report.sha256'), 'utf8').trim())
+  if (sha256(reportText) !== readFileSync(join(directory, 'report.sha256'), 'utf8').trim())
     throw new Error('The recorded report hash does not match.')
   const attempts = report.attempts.map((attempt) => {
     const path = join(directory, `${attempt.task}-${attempt.repeat}-${attempt.mode}`, 'check-commands.jsonl')

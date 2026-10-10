@@ -24,6 +24,18 @@ function fixture() {
     tasks: [{ id: 'rename', cohort: 'mechanical', operation: 'rename', prompt: 'Rename old to next.', source: { files: { 'src.ts': 'export const old = 1\n' } }, expected: { 'src.ts': 'export const next = 1\n' }, generatedDirectories: [], setup: [], checks: [], symbols: [], qualityGates: [] }],
   }
 }
+function comparisonRows(repeats = 6) {
+  return Array.from({ length: repeats }, (_, repeat) => (['direct', 'forced', 'hybrid'] as const).map(mode => ({
+    task: 'rename',
+    mode,
+    cohort: 'mechanical' as const,
+    repeat,
+    attempt: 0,
+    quality: 'passed' as const,
+    seconds: 10,
+    usage: { _tag: 'Unavailable' as const, reason: 'No model usage.' },
+  }))).flat()
+}
 describe('registered experiments', () => {
   it('refuses optimization comparisons when model or deadline changes', () => {
     const parsed = parseManifest(fixture())
@@ -44,7 +56,7 @@ describe('registered experiments', () => {
       throw new Error(parsed.message)
     const candidate = structuredClone(parsed.value)
     candidate.tasks[0].setup[0].command[9] = 'guided'
-    expect(compareCheckStudies(parsed.value, candidate, [], [])._tag).toBe('Ok')
+    expect(compareCheckStudies(parsed.value, candidate, comparisonRows(), comparisonRows())._tag).toBe('Ok')
     candidate.tasks[0].setup[0].command[7] = 'different-model'
     expect(compareCheckStudies(parsed.value, candidate, [], [])._tag).toBe('Err')
   })
@@ -52,8 +64,8 @@ describe('registered experiments', () => {
     const parsed = parseManifest({ ...fixture(), repeats: 1 })
     if (parsed._tag === 'Err')
       throw new Error(parsed.message)
-    const before = { task: 'rename', mode: 'forced' as const, cohort: 'mechanical' as const, repeat: 0, attempt: 0, quality: 'passed' as const, seconds: 10, usage: { _tag: 'Unavailable' as const, reason: 'No model usage.' } }
-    const compared = compareCheckStudies(parsed.value, parsed.value, [before], [{ ...before, quality: 'failed', seconds: 1 }])
+    const before = comparisonRows(1)
+    const compared = compareCheckStudies(parsed.value, parsed.value, before, before.map(row => row.mode === 'forced' ? { ...row, quality: 'failed', seconds: 1 } : row))
     expect(compared).toMatchObject({ _tag: 'Ok', value: { decision: 'Reject' } })
     if (compared._tag === 'Ok')
       expect(compared.value.comparisons.find(row => row.mode === 'forced')).toMatchObject({ medianPreparedSecondsChange: -9, medianUncachedInputChange: null })
