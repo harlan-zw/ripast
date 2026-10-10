@@ -9,7 +9,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { parseCodexEvents, runCodex } from './codex-runner.ts'
+import { parseCodexConfig, parseCodexEvents, runCodex } from './codex-runner.ts'
 import { parseEvents, summarize } from './core.ts'
 import { projectCases, projectCasesBatchTwo, renameIdentifiers, renameStaticClasses } from './project-cases.ts'
 import { checkProject, diagnostics } from './project-check.ts'
@@ -109,7 +109,8 @@ function runAgent(project: string, prompt: string, env: NodeJS.ProcessEnv, timeo
 }
 
 async function main() {
-  const { values } = parseArgs({ options: { out: { type: 'string' }, preflight: { type: 'boolean', default: false }, case: { type: 'string' }, timeout: { type: 'string', default: '150' }, batch: { type: 'string', default: 'first' }, runner: { type: 'string', default: 'opencode' } } })
+  const { values } = parseArgs({ options: { 'out': { type: 'string' }, 'preflight': { type: 'boolean', default: false }, 'case': { type: 'string' }, 'timeout': { type: 'string', default: '150' }, 'batch': { type: 'string', default: 'first' }, 'runner': { type: 'string', default: 'opencode' }, 'codex-model': { type: 'string' }, 'codex-reasoning': { type: 'string' } } })
+  const codexConfig = parseCodexConfig({ model: values['codex-model'], reasoning: values['codex-reasoning'] })
   if (!['first', 'second'].includes(values.batch) || !['opencode', 'codex', 'split', 'both'].includes(values.runner))
     throw new Error('Use --batch first|second and --runner opencode|codex|split|both')
   const mode = values.runner as RunnerMode
@@ -136,7 +137,7 @@ async function main() {
   const shell = (text: string) => `'${text.replaceAll('\'', '\'\\\'\'')}'`
   const results: (Measurement & { caseName: string, runner: string, model: string, issues: string[], tools: number, steps: number })[] = []
   const harnessHashes = Object.fromEntries(['projects.ts', 'project-cases.ts', 'project-check.ts', 'project-plan.ts', 'core.ts', 'codex-runner.ts'].map(path => [path, createHash('sha256').update(readFileSync(join(root, 'evals', path))).digest('hex')]))
-  const metadata = { opencodeModel: model, codexModel: 'gpt-6-luna', codexReasoning: 'medium', runner: values.runner, batch: values.batch, revision: git(root, ['rev-parse', 'HEAD']).trim(), harnessHashes, started: new Date().toISOString(), skillHash: createHash('sha256').update(skill).digest('hex'), sourceMode: 'tracked HEAD source slices', concurrency: values.preflight ? 1 : 3 }
+  const metadata = { opencodeModel: model, ...codexConfig, runner: values.runner, batch: values.batch, revision: git(root, ['rev-parse', 'HEAD']).trim(), harnessHashes, started: new Date().toISOString(), skillHash: createHash('sha256').update(skill).digest('hex'), sourceMode: 'tracked HEAD source slices', concurrency: values.preflight ? 1 : 3 }
   console.log(`Results: ${out}`)
   writeFileSync(join(out, 'metadata.json'), JSON.stringify(metadata, null, 2))
   async function executeProject(c: ProjectCase, index: number) {
@@ -175,7 +176,7 @@ async function main() {
               const result = spawnSync(process.execPath, [cli, ...args], { cwd: project, encoding: 'utf8', timeout, maxBuffer: 10_000_000 })
               return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', code: result.status, timedOut: (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT', seconds: (performance.now() - started) / 1000 }
             })()
-          : runner === 'codex' ? await runCodex(project, prompt, env, timeout) : await runAgent(project, prompt, env, timeout)
+          : runner === 'codex' ? await runCodex(project, prompt, env, timeout, codexConfig) : await runAgent(project, prompt, env, timeout)
         writeFileSync(join(dir, 'events.jsonl'), execution.stdout)
         writeFileSync(join(dir, 'stderr.log'), execution.stderr)
         const transcript = values.preflight ? { usage: null, issues: [], tools: 0, steps: 0 } : runner === 'codex' ? parseCodexEvents(execution.stdout) : parseEvents(execution.stdout)
@@ -186,7 +187,7 @@ async function main() {
           issues.push('No successful snapshot check')
         if (!values.preflight && (arm === 'ripide') !== existsSync(called))
           issues.push('Workflow adherence failed')
-        const result = { caseName: c.name, runner: values.preflight ? 'cli' : runner, model: runner === 'codex' ? 'gpt-6-luna' : model, arm, passed: issues.length === 0, seconds: execution.seconds, tokens: transcript.usage?.total ?? null, issues, tools: transcript.tools, steps: transcript.steps }
+        const result = { caseName: c.name, runner: values.preflight ? 'cli' : runner, model: runner === 'codex' ? codexConfig.codexModel : model, ...(runner === 'codex' ? codexConfig : {}), arm, passed: issues.length === 0, seconds: execution.seconds, tokens: transcript.usage?.total ?? null, issues, tools: transcript.tools, steps: transcript.steps }
         results.push(result)
         writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...result, transcript }, null, 2))
         writeFileSync(join(out, 'summary.json'), JSON.stringify(results, null, 2))

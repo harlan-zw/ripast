@@ -1,5 +1,55 @@
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parseCodexEvents } from '../evals/codex-runner.ts'
+import { parseCodexConfig, parseCodexEvents, runCodex } from '../evals/codex-runner.ts'
+
+describe('codex eval configuration', () => {
+  it('preserves the historical defaults', () => {
+    expect(parseCodexConfig({})).toEqual({ codexModel: 'gpt-6-luna', codexReasoning: 'medium' })
+  })
+
+  it.each([
+    { model: '' },
+    { model: '   ' },
+    { model: 42 },
+    { model: null },
+    { reasoning: 'maximum' },
+    { reasoning: 'high"' },
+    { reasoning: null },
+  ])('rejects invalid configuration before execution: %j', (input) => {
+    expect(() => parseCodexConfig(input)).toThrow(/--codex-/)
+  })
+
+  it('rejects invalid CLI settings before source setup or model dispatch', () => {
+    const result = spawnSync(process.execPath, ['--experimental-strip-types', 'evals/projects.ts', '--runner', 'both', '--codex-reasoning', 'maximum'], { encoding: 'utf8' })
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('--codex-reasoning requires')
+    expect(result.stdout).not.toContain('Results:')
+  })
+
+  it('uses the recorded model and reasoning in the spawned command', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ripide-codex-config-'))
+    const bin = join(dir, 'bin')
+    mkdirSync(bin)
+    const fake = join(dir, 'fake-codex.ts')
+    writeFileSync(fake, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))\n')
+    writeFileSync(join(bin, 'codex'), `#!/bin/sh\nexec '${process.execPath}' --experimental-strip-types '${fake}' "$@"\n`, { mode: 0o755 })
+    try {
+      const config = parseCodexConfig({ model: 'gpt-6.1-sol', reasoning: 'high' })
+      const result = await runCodex(dir, 'No model call', { PATH: bin, CODEX_HOME: dir }, 5000, config)
+      const args = JSON.parse(result.stdout) as string[]
+      expect(result.code).toBe(0)
+      expect(args[args.indexOf('-m') + 1]).toBe(result.configuration.codexModel)
+      expect(args).toContain(`model_reasoning_effort="${result.configuration.codexReasoning}"`)
+      expect(result.configuration).toEqual({ codexModel: 'gpt-6.1-sol', codexReasoning: 'high' })
+    }
+    finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('codex eval events', () => {
   it('counts cached input and reasoning output once', () => {
