@@ -79,6 +79,35 @@ This fallback can be slower. It supports fixed-string searches, file listing, gl
 Programmatic regex searches use ripgrep syntax when available, or Git extended regular expressions with the Git fallback.
 Regex searches require ripgrep, or Git and a Git working tree.
 
+### Cursor and Claude Code
+
+Requires Node 22.13+, pnpm, and an agent with shell access.
+Run from your project root:
+
+```bash
+npm install -g ripide
+pnpm dlx skills add harlan-zw/ripide --skill ripast --agent cursor claude-code --yes
+```
+
+Then ask in Agent chat or Claude Code:
+
+```text
+/ripast Preview renaming useStore to useAppStore.
+```
+
+The CLI is named `ripide`. The Agent Skill is named `ripast`.
+The installer adds the Skill and its references for both clients.
+For manual installation, copy the whole [Skill directory](./packages/cli/skills/ripast), including `references/`:
+
+| Client | Project directory |
+| --- | --- |
+| [Cursor](https://cursor.com/docs/skills) | `.cursor/skills/ripast/` |
+| [Claude Code and its IDE extension](https://code.claude.com/docs/en/skills) | `.claude/skills/ripast/` |
+
+RipIDE runs through the agent's shell. It includes no MCP server or MCP configuration.
+Each CLI invocation uses its current working directory.
+If you switch projects or monorepo packages, run from the intended root.
+
 ## Usage
 
 Run commands from your project root. Commands preview changes by default; pass `--apply` to write.
@@ -351,6 +380,97 @@ CSS class renames do not run a typecheck.
 For text, `auto` uses `std-env`'s `isAgent` detection.
 Agents get compact summaries; terminals get full diffs and trees. JSON `auto` always uses compact output.
 
+### Output limits
+
+Agent pages target 4 KiB, with at most 40 displayed results.
+Some commands use smaller or larger result counts. Check their help for details.
+Use `--page-bytes 8192` for a larger page. Follow `nextOffset`, since page sizes vary.
+The target measures serialized page bytes. It does not estimate tokens.
+Each result collection has its own target. Response metadata can add bytes.
+A page retains at least one result, even when that result exceeds the target.
+Agent stdout has a separate 32 KiB ceiling for large individual results and combined collections.
+Full output has no default page target or byte ceiling. Both flags work with either profile.
+The minimum byte limit is 1024.
+Long project or artifact paths can require a larger limit to retain response metadata.
+An insufficient metadata budget refuses the operation before writes. Its error response can exceed the rejected limit.
+
+```bash
+ripide tree --profile agent --limit 10
+ripide tree --json --declarations --file src/store.ts --page-bytes 8192
+```
+
+Paging counts results. For `tree`, each result is a file unless `--declarations` is supplied.
+Use `tree --declarations` to page declarations within large files.
+The byte limit also protects against one oversized result.
+Limits change display only. Discovery, verification, and applied changes remain complete.
+
+If JSON exceeds the byte limit, `data.output._tag` is `Omitted`.
+The response preserves `_tag`, `command`, and `base` and provides recovery instructions.
+Text retains complete leading lines and reports omitted output.
+Oversized graphs return an empty graph with an omission comment.
+Stdout limits do not bound stderr logs.
+
+Use `--json --artifact <new-file.json>` to save complete evidence outside model context.
+The artifact path must be new. Artifacts have no display limit.
+If output is incomplete, inspect that artifact with `ripide page`. Keep the original command outcome and verification receipt.
+Paging saved evidence avoids another project scan. It never repeats a mutation.
+
+### Read saved evidence
+
+Run the operation once, then inspect its saved evidence:
+
+```bash
+ripide tree --json --artifact /tmp/ripide-tree.json
+ripide page --input /tmp/ripide-tree.json
+ripide page --input /tmp/ripide-tree.json --path /files/0/declarations
+ripide page --input - --path /files/0/declarations < /tmp/ripide-tree.json
+```
+
+Read the page at `data.view`. Its saved evidence identity appears at `data.source.sha256`.
+The root page lists scalar metadata and paths to nested collections and objects.
+Object menus also page their children. Large values expose paths and byte counts in `data.view.omittedValues`.
+If the selected value is an array, the command pages its items.
+Select paths from that menu. Artifact shapes differ between commands; the root is not always an array.
+Paths use JSON Pointer syntax. The empty path selects the root.
+Escape `/` as `~1` and `~` as `~0` inside property names.
+Each page is JSON; `--json` is unnecessary.
+Use `--input -` for a single JSON document on stdin.
+
+Pages default to 40 results, a 4 KiB page target, and a 32 KiB response ceiling.
+Use `--limit`, `--offset`, `--page-bytes`, or `--max-bytes` to adjust them.
+For arrays of objects, use `--fields name,line` to select row fields.
+Long strings page into UTF-8 text parts with source line numbers. Offsets count parts.
+For saved source, select a path such as `/changes/0/after` from the artifact menu.
+Follow `data.view.nextOffset` to continue. If one item is too large, select its nested fields or raise the ceiling.
+
+For several known requests, keep one evidence session:
+
+```bash
+ripide page --input /tmp/ripide-tree.json --session <<'NDJSON'
+{"_tag":"Select","path":"/files/0/declarations"}
+{"_tag":"Select","path":"/files/0/imports"}
+{"_tag":"Close"}
+NDJSON
+```
+
+The session loads the artifact once and keeps an immutable snapshot.
+It writes an initial page, then one JSON response per NDJSON request.
+Requests are `Next`, `Previous`, `Select`, and `Close`.
+`Select` accepts a JSON Pointer `path` and an optional `offset`.
+It resets page history and defaults to offset zero. `Previous` returns the prior visited page for that path.
+If a page includes `nextOffset`, send `Next` to continue.
+Failed navigation requests return `Error` without changing the current path or history. Correct the request, then continue.
+Session navigation uses stdin, so `--session` requires a file input.
+Use live navigation only when your shell tool keeps stdin open between requests.
+Otherwise, batch known requests or use separate `ripide page` calls. These calls reread evidence without scanning the project.
+The original mutation outcome remains authoritative. A page response only reports evidence inspection.
+If you omitted the artifact during a mutation, do not apply again just to create evidence.
+
+Reusable helpers are exported from `ripide/presentation`:
+`selectOutput` accepts `pageBytes` and an optional page renderer to fit arbitrary result collections.
+It returns `nextOffset` when another page exists.
+`renderBoundedOutput` bounds arbitrary rendered values, and `createTextOutput` bounds cumulative text writes.
+
 See [API contract migration](docs/api-contracts.md) for JSON consumers and SDK formatting imports.
 
 ## Commands
@@ -360,6 +480,7 @@ See [API contract migration](docs/api-contracts.md) for JSON consumers and SDK f
 | `ripide scan <pattern>` | Classify every occurrence (identifier vs string vs property vs JSX). Optional `--graph mermaid\|dot`. |
 | `ripide tree` | Print a project declaration tree, grouped by file. |
 | `ripide unused` | Find unreferenced top-level declarations. |
+| `ripide page --input <file.json>` | Page saved JSON evidence without repeating its operation. |
 | `ripide rename <from> <to>` | Scope-aware symbol rename via the native TypeScript server. |
 | `ripide replace <from> <to>` | Replace an imported symbol with another project export; rewrites imports and references. |
 | `ripide move <symbol> --from <a> --to <b>` | Move a top-level export and rewrite every import site. |
@@ -415,6 +536,10 @@ It also works with `buildUnusedDeclarations`; only declaration analysis is cache
 Instances belong to the caller. Independent CLI processes do not share this cache.
 
 ## Limitations
+
+**CSS custom properties.** CSS class migration handles class tokens and `@apply`.
+It does not rename custom properties such as `--foo-a` in CSS, JavaScript, or Vue styles.
+It does not report dynamic variable candidates such as `` `--foo-${bar}` ``.
 
 **Scoping with `--glob`.** Pass comma-separated patterns. Prefix a pattern with `!` to exclude matching files:
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { Buffer } from 'node:buffer'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, linkSync, readFileSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -10,6 +11,19 @@ const cli = resolve('packages/cli/src/cli.ts')
 function run(cwd: string, args: string[]) {
   return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args], { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 30_000 })
 }
+it('fits agent file lists using displayed paths instead of hidden source contents', () => {
+  const source = `export const classes = "${'old-token '.repeat(1000)}"\n`
+  const fixture = makeFixture(Object.fromEntries(Array.from({ length: 5 }, (_, index) => [`file${index}.ts`, source])))
+  try {
+    const result = run(fixture.dir, ['css-class-rename', 'old-token', 'new-token', '--profile', 'agent'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /shown: 5, omitted: 0/)
+    for (let index = 0; index < 5; index++)
+      assert.match(result.stdout, new RegExp(`file${index}\\.ts`))
+    assert.ok(Buffer.byteLength(result.stdout) < 4096)
+  }
+  finally { fixture.cleanup() }
+})
 it('blocked file move flushes large full JSON and leaves all files unchanged', () => {
   const source = 'import { value } from \'local-dependency\'\nexport { value }\n'
   const consumer = `import { value } from './packages/source/index'\nconst text: string = value\n${'// bulk context\n'.repeat(1400)}`
@@ -280,6 +294,169 @@ it.each(['other', 'taken'])('new artifact stores one complete plan before %s app
     assert.equal(JSON.parse(repeated.stdout)._tag, 'Error')
     assert.equal(fixture.read('plan.json'), saved)
     assert.equal(fixture.read('source.ts'), before)
+  }
+  finally { fixture.cleanup() }
+})
+
+it.each(['agent', 'full'])('bounds a large single-file tree and preserves its artifact with the %s profile', (profile) => {
+  const source = Array.from({ length: 1000 }, (_, index) => `export const value${index} = ${index}\n`).join('')
+  const fixture = makeFixture({ 'large.ts': source })
+  try {
+    const result = run(fixture.dir, ['tree', '--json', '--profile', profile, '--max-bytes', '1024', '--artifact', 'tree.json'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(Buffer.byteLength(result.stdout) <= 1024)
+    const payload = JSON.parse(result.stdout)
+    assert.equal(payload._tag, 'Result')
+    assert.equal(payload.data.output._tag, 'Omitted')
+    assert.ok(payload.data.output.bytes > 1024)
+    assert.equal(JSON.parse(fixture.read('tree.json')).files[0].declarations.length, 1000)
+    assert.equal(fixture.read('large.ts'), source)
+    const focused = run(fixture.dir, ['tree', '--json', '--max-bytes', '1024', '--fields', 'file'])
+    assert.equal(focused.status, 0, focused.stderr)
+    assert.deepEqual(JSON.parse(focused.stdout).data.results, [{ file: 'large.ts' }])
+  }
+  finally { fixture.cleanup() }
+})
+
+it('agent defaults bound oversized results without a requested limit', () => {
+  const fixture = makeFixture({ 'large.ts': Array.from({ length: 1000 }, (_, index) => `export const value${index} = ${index}\n`).join('') })
+  try {
+    const result = run(fixture.dir, ['tree', '--json'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(Buffer.byteLength(result.stdout) <= 32768)
+    assert.equal(JSON.parse(result.stdout).data.output.maxBytes, 32768)
+    const text = run(fixture.dir, ['tree', '--profile', 'full', '--max-bytes', '1024'])
+    assert.equal(text.status, 0, text.stderr)
+    assert.ok(Buffer.byteLength(text.stdout) <= 1024)
+    assert.match(text.stdout, /Output omitted/)
+  }
+  finally { fixture.cleanup() }
+})
+
+it.each(['--max-bytes', '--page-bytes'])('invalid %s refuses mutations before writing source or artifacts', (option) => {
+  const source = 'export const classes = "old-token"\n'
+  const fixture = makeFixture({ 'source.ts': source })
+  try {
+    const result = run(fixture.dir, ['css-class-rename', 'old-token', 'new-token', '--apply', '--json', option, '512', '--artifact', 'evidence.json'])
+    assert.equal(result.status, 1)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Error')
+    assert.match(JSON.parse(result.stdout).data.message, /1024/)
+    assert.equal(fixture.read('source.ts'), source)
+    assert.equal(existsSync(resolve(fixture.dir, 'evidence.json')), false)
+  }
+  finally { fixture.cleanup() }
+})
+
+it('bounded mutation output preserves Applied and the complete change evidence', () => {
+  const source = `export const classes = "${'old-token '.repeat(1000)}"\n`
+  const fixture = makeFixture({ 'source.ts': source })
+  try {
+    const result = run(fixture.dir, ['css-class-rename', 'old-token', 'new-token', '--apply', '--json', '--profile', 'full', '--max-bytes', '1024', '--artifact', 'evidence.json'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(Buffer.byteLength(result.stdout) <= 1024)
+    const payload = JSON.parse(result.stdout)
+    assert.equal(payload._tag, 'Applied')
+    assert.equal(payload.data.output._tag, 'Omitted')
+    assert.match(fixture.read('source.ts'), /new-token/)
+    assert.doesNotMatch(fixture.read('source.ts'), /old-token/)
+    const evidence = JSON.parse(fixture.read('evidence.json'))
+    assert.equal(evidence.changes[0].before, source)
+    assert.equal(evidence.changes[0].after, fixture.read('source.ts'))
+  }
+  finally { fixture.cleanup() }
+})
+
+it('bounded refusal output retains Refused and leaves source unchanged', () => {
+  const source = `export const value = 1\nexport const taken = 2\n${'// context\n'.repeat(1000)}`
+  const fixture = makeFixture({ 'source.ts': source })
+  try {
+    const result = run(fixture.dir, ['rename', 'value', 'taken', '--no-vue', '--apply', '--json', '--profile', 'full', '--max-bytes', '1024'])
+    assert.equal(result.status, 1, result.stderr)
+    assert.ok(Buffer.byteLength(result.stdout) <= 1024)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Refused')
+    assert.equal(JSON.parse(result.stdout).data.output._tag, 'Omitted')
+    assert.equal(fixture.read('source.ts'), source)
+  }
+  finally { fixture.cleanup() }
+})
+
+it('oversized graphs preserve complete graph syntax with an omission comment', () => {
+  const fixture = makeFixture(Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`file-${index}.ts`, 'export const value = 1\n'])))
+  try {
+    const result = run(fixture.dir, ['scan', 'value', '--graph', 'dot', '--profile', 'agent', '--max-bytes', '1024'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(Buffer.byteLength(result.stdout) <= 1024)
+    assert.match(result.stdout, /^\/\/ Graph omitted:/)
+    assert.match(result.stdout, /digraph ripide_scan \{\n {2}rankdir=LR;\n\}\n$/)
+  }
+  finally { fixture.cleanup() }
+})
+
+it('bounded check output preserves failed execution and saves every test result', () => {
+  const fixture = makeFixture({ 'source.ts': 'export function value() { return 1 }\n' })
+  const source = Array.from({ length: 20 }, (_, index) => `test('failure ${index}', () => expect(value()).toBe(2))`).join('\n')
+  try {
+    const result = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, 'check', 'value', '--json', '--max-bytes', '1024', '--artifact', 'check.json'], { cwd: fixture.dir, encoding: 'utf8', input: source, timeout: 30_000 })
+    assert.equal(result.status, 1, result.stderr)
+    assert.ok(Buffer.byteLength(result.stdout) <= 1024)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Result')
+    assert.equal(JSON.parse(result.stdout).data.output._tag, 'Omitted')
+    const evidence = JSON.parse(fixture.read('check.json'))
+    assert.equal(evidence.result._tag, 'Failed')
+    assert.equal(evidence.result.counts.failed, 20)
+  }
+  finally { fixture.cleanup() }
+})
+
+it('long response paths refuse an insufficient budget before applying changes', () => {
+  const source = `export const classes = "${'old-token '.repeat(1000)}"\n`
+  const file = `${Array.from({ length: 5 }, () => 'a'.repeat(150)).join('/')}/source.ts`
+  const fixture = makeFixture({ [file]: source })
+  const cwd = resolve(fixture.dir, file, '..')
+  try {
+    const result = run(cwd, ['css-class-rename', 'old-token', 'new-token', '--apply', '--json', '--profile', 'full', '--max-bytes', '1024'])
+    assert.equal(result.status, 1)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Error')
+    assert.match(JSON.parse(result.stdout).data.message, /metadata requires/)
+    assert.equal(fixture.read(file), source)
+  }
+  finally { fixture.cleanup() }
+})
+
+it('an oversized artifact path refuses before writing the project', () => {
+  const source = 'export const classes = "old-token"\n'
+  const fixture = makeFixture({ 'source.ts': source })
+  try {
+    const artifact = `${Array.from({ length: 8 }, () => 'a'.repeat(150)).join('/')}/evidence.json`
+    const result = run(fixture.dir, ['css-class-rename', 'old-token', 'new-token', '--apply', '--json', '--max-bytes', '1024', '--artifact', artifact])
+    assert.equal(result.status, 1)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Error')
+    assert.match(JSON.parse(result.stdout).data.message, /metadata requires/)
+    assert.equal(fixture.read('source.ts'), source)
+    assert.equal(existsSync(resolve(fixture.dir, artifact)), false)
+  }
+  finally { fixture.cleanup() }
+})
+
+it('help respects an explicit stdout budget', () => {
+  const fixture = makeFixture()
+  try {
+    const result = run(fixture.dir, ['tree', '--help', '--max-bytes', '1024'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(Buffer.byteLength(result.stdout) <= 1024)
+    assert.match(result.stdout, /Output omitted/)
+  }
+  finally { fixture.cleanup() }
+})
+
+it('oversized validation errors respect a valid byte budget', () => {
+  const fixture = makeFixture({ 'source.ts': 'export const value = 1\n' })
+  try {
+    const result = run(fixture.dir, ['scan', 'value', '--kind', 'x'.repeat(2000), '--json', '--max-bytes', '1024'])
+    assert.equal(result.status, 1)
+    assert.ok(Buffer.byteLength(result.stdout) <= 1024)
+    assert.equal(JSON.parse(result.stdout)._tag, 'Error')
+    assert.equal(JSON.parse(result.stdout).data.output._tag, 'Omitted')
   }
   finally { fixture.cleanup() }
 })

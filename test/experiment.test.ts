@@ -1,10 +1,13 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 import { compareCheckStudies, summarizeCheckCommands } from '../evals/experiment/check-analysis.ts'
 import { aggregateAttempts, buildSchedule, checkChangedVerifiedPlan, combineUsage, executeExperiment, freezeManifest, gradeProject, pairAttempts, parseManifest, parseUsage, recordCommand, verifyFrozenManifest } from '../evals/experiment/index.ts'
+
+const compiler = ['cc', 'gcc', 'clang'].find(candidate => spawnSync(candidate, ['--version']).status === 0)
 
 function fixture() {
   return {
@@ -104,6 +107,33 @@ describe('registered experiments', () => {
     const report = await executeExperiment(parsed.value, join(dir, 'results'))
     expect(report.attempts.map(row => row.quality)).toEqual(['failed', 'failed', 'failed'])
     expect(report.attempts.every(row => row.preparedSeconds! >= 0.3)).toBe(true)
+  })
+  it.skipIf(process.platform !== 'linux' || !compiler)('proves traced child exits when the deadline fires before the tracer attaches', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'experiment-early-deadline-'))
+    const source = join(dir, 'gate.c')
+    const library = join(dir, 'gate.so')
+    const gate = join(dir, 'tracer.gate')
+    writeFileSync(source, '#define _GNU_SOURCE\n#include <fcntl.h>\n#include <stdlib.h>\n#include <string.h>\n#include <unistd.h>\n__attribute__((constructor)) static void gate_tracer_startup(void) {\n  const char* path = getenv("RIPIDE_TRACER_GATE");\n  if (!path || !*path)\n    return;\n  char comm[16];\n  int self = open("/proc/self/comm", O_RDONLY);\n  if (self < 0)\n    return;\n  ssize_t size = read(self, comm, sizeof(comm) - 1);\n  close(self);\n  if (size <= 0)\n    return;\n  comm[size] = 0;\n  if (strncmp(comm, "strace", 6) != 0)\n    return;\n  int fifo = open(path, O_RDONLY);\n  if (fifo >= 0)\n    close(fifo);\n}\n')
+    const built = spawnSync(compiler!, ['-shared', '-fPIC', '-o', library, source])
+    if (built.error || built.status)
+      throw new Error('The startup gate fixture could not be compiled.')
+    if (spawnSync('mkfifo', [gate]).status)
+      throw new Error('The startup gate fixture requires mkfifo.')
+    let release: number | undefined
+    const resume = setTimeout(() => {
+      try {
+        release = openSync(gate, 'w')
+      }
+      catch { /* The tracer already exited, so no gate remains. */ }
+    }, 1600)
+    const runner = join(dir, 'slow.ts')
+    writeFileSync(runner, 'setTimeout(() => process.exit(0), 500)\n')
+    const recorded = await recordCommand({ command: [process.execPath, runner], cwd: dir, directory: join(dir, 'record'), phase: 'mechanical', role: 'arm', timeoutMs: 300, tracing: 'strace', env: { ...process.env, LD_PRELOAD: library, RIPIDE_TRACER_GATE: gate } })
+    clearTimeout(resume)
+    if (release !== undefined)
+      closeSync(release)
+    expect(recorded.exit._tag).toBe('TimedOut')
+    expect(recorded.childLifecycle).toEqual({ _tag: 'ProvenComplete' })
   })
   it('accepts an equivalent implementation only in registered behavioral files', () => {
     const dir = mkdtempSync(join(tmpdir(), 'experiment-behavior-'))

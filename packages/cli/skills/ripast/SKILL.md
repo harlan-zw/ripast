@@ -39,10 +39,26 @@ ripide rename-file src/store.ts src/app-store.ts --apply --profile agent
 ripide css-class-rename font-semibold font-medium --apply --profile agent
 ```
 
-`--artifact`, `--fields`, and `--minify` require `--json`. `--fields` is for discovery commands only.
-For a complete plan, add `--json --artifact <new-file.json>`.
+Operation flags `--artifact`, `--fields`, and `--minify` require `--json`.
+`--fields` supports discovery and saved-evidence paging. The `page` command always emits JSON.
+For a complete plan and verification receipt, add `--json --artifact <new-file.json>` to the operation once.
+If discovery size is unknown, save a new artifact with the first command.
+For mutations, save an artifact when diagnostic or change details may need inspection.
 For JSON, read `_tag` for the outcome and `data` for command fields.
-Keep complete artifacts outside model context. Read selected fields only when the compact result leaves uncertainty.
+Keep the original outcome, verification scope, stderr, and process exit. A page response cannot replace them.
+Keep complete artifacts outside model context. Inspect saved evidence only when the compact result leaves uncertainty.
+Agent pages target 4 KiB; stdout defaults to 32 KiB. Set `--page-bytes` and `--max-bytes` for your budget.
+Follow `nextOffset`; page sizes vary. Never advance by an assumed 40 results.
+For saved-evidence pages, read the view and continuation at `data.view` and `data.view.nextOffset`.
+Use `ripide page --input <artifact.json>` to inspect its root menu, then select the relevant JSON Pointer path.
+Do not assume the artifact root is an array. Command artifacts have different shapes.
+Use `--fields` for object rows. Select nested paths when one item exceeds the response ceiling.
+Long source strings page into text parts. Read their source line numbers; offsets count parts.
+For known requests, batch NDJSON through `page --session`. Use live navigation only if your shell preserves stdin.
+Separate `page` calls are a cheap fallback. They reread evidence without scanning the project.
+Never repeat a mutation or project scan just to retrieve omitted evidence.
+If an applied mutation had no artifact, inspect current source and existing receipts. Do not reapply to create evidence.
+Read [saved evidence](references/paging.md) for path selection and session requests.
 
 Batch known commands. An exact CSS mapping needs no `css-class-scan`.
 CSS and template transforms have no type verification; run their project checks.

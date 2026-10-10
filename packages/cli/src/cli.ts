@@ -1,14 +1,14 @@
 import type { CommandDef } from 'citty'
 import type { ExportFilter, ProfileSink, Verification, VerifyMode } from 'ripide-api'
-import type { JsonTag } from './json.ts'
-import type { OutputPage } from './presentation/index.ts'
+import type { JsonResult, JsonTag } from './json.ts'
+import type { OutputPage, TextOutput } from './presentation/index.ts'
 import type { InlineTestError } from './test-result.ts'
 import { Buffer } from 'node:buffer'
 import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { renderUsage, runCommand, showUsage } from 'citty'
+import { parseArgs, renderUsage, runCommand } from 'citty'
 import {
   buildChangeManifest,
   buildComponentDetail,
@@ -31,9 +31,11 @@ import { agent, isAgent } from 'std-env'
 import { runCheck } from './check.ts'
 import { defineStrictCommand as defineCommand } from './command.ts'
 import { createCliEngine, discoverCliAdapters, loadVueOperations } from './engine.ts'
+import { runEvidencePager } from './evidence-pager.ts'
 import { jsonResult, mutationTag } from './json.ts'
 import {
   compactVerification,
+  createTextOutput,
   formatAgentDeclarationTree,
   formatAgentDoctorReport,
   formatAgentFileScanHits,
@@ -52,7 +54,10 @@ import {
   formatUnusedDeclarations,
   formatVerification,
   outputPath,
+  parseOutputBytes,
+  parsePageBytes,
   printDiffs,
+  renderBoundedOutput,
   selectDoctorFindings,
   selectOutput,
   summarize,
@@ -108,22 +113,36 @@ const jsonArg = { type: 'boolean' as const, default: false, description: 'Emit m
 const profileArg = { type: 'string' as const, description: 'Output profile: auto, agent, or full. Auto detects agents for text. JSON auto uses the compact agent profile.' }
 
 const outputArgs = {
-  timings: { type: 'boolean' as const, default: false, description: 'Emit phase durations as stderr JSON lines.' },
-  limit: { type: 'string' as const, description: 'Maximum displayed results. Agent default: 40. Does not restrict discovery or verification.' },
-  offset: { type: 'string' as const, description: 'Skip displayed results. Repeat with a later offset to retrieve omitted results.' },
-  file: { type: 'string' as const, description: 'Display results for this project-relative file only.' },
-  code: { type: 'string' as const, description: 'Display diagnostics with this numeric TypeScript code.' },
-  fields: { type: 'string' as const, description: 'Requires --json. Comma-separated result fields for JSON discovery output.' },
-  minify: { type: 'boolean' as const, default: false, description: 'Requires --json. Emit JSON without indentation.' },
-  artifact: { type: 'string' as const, description: 'Requires --json. Create a new JSON evidence file. Mutations save plans and verification receipts before apply. Stdout reports the apply outcome.' },
+  'timings': { type: 'boolean' as const, default: false, description: 'Emit phase durations as stderr JSON lines.' },
+  'limit': { type: 'string' as const, description: 'Maximum displayed results. Agent default: 40. Does not restrict discovery or verification.' },
+  'max-bytes': { type: 'string' as const, description: 'Maximum stdout bytes. Agent default: 32768. Minimum: 1024. Does not restrict operations or artifacts.' },
+  'page-bytes': { type: 'string' as const, description: 'Target bytes per result page. Agent default: 4096. Minimum: 1024. Keeps at least one result.' },
+  'offset': { type: 'string' as const, description: 'Skip displayed results. Repeat with a later offset to retrieve omitted results.' },
+  'file': { type: 'string' as const, description: 'Display results for this project-relative file only.' },
+  'code': { type: 'string' as const, description: 'Display diagnostics with this numeric TypeScript code.' },
+  'fields': { type: 'string' as const, description: 'Requires --json. Comma-separated result fields for JSON discovery output.' },
+  'minify': { type: 'boolean' as const, default: false, description: 'Requires --json. Emit JSON without indentation.' },
+  'artifact': { type: 'string' as const, description: 'Requires --json. Create a new JSON evidence file. Mutations save plans and verification receipts before apply. Stdout reports the apply outcome.' },
 }
 
-type OutputArgs = Record<string, unknown>
+type OutputArgs = Record<string, unknown> & { textOutput?: TextOutput }
+function textSink(args: OutputArgs): { write: (text: string) => unknown } {
+  return args.textOutput ?? process.stdout
+}
+function writeText(args: OutputArgs, text: string): void {
+  textSink(args).write(text)
+}
 function phaseSink(args: OutputArgs): ProfileSink | undefined {
   return args.timings ? event => process.stderr.write(`${JSON.stringify(event)}\n`) : undefined
 }
 function selection(args: OutputArgs, agentProfile: boolean, defaultLimit = 40) {
-  return { limit: args.limit == null ? agentProfile ? defaultLimit : undefined : Number(args.limit), offset: args.offset == null ? 0 : Number(args.offset), file: args.file as string | undefined }
+  return { limit: args.limit == null ? agentProfile ? defaultLimit : undefined : Number(args.limit), offset: args.offset == null ? 0 : Number(args.offset), file: args.file as string | undefined, pageBytes: parsePageBytes(args['page-bytes'], agentProfile) }
+}
+function agentFilePage<T extends { rel: string }>(changes: readonly T[], args: OutputArgs): OutputPage<T> {
+  return selectOutput(changes, {
+    ...selection(args, true),
+    render: page => `${formatOutputPage(page)}\n${page.results.map(change => `  ${change.rel}`).join('\n')}`,
+  }, change => change.rel)
 }
 function selectedFields(items: unknown[], args: OutputArgs) {
   if (!args.fields)
@@ -134,7 +153,7 @@ function selectedFields(items: unknown[], args: OutputArgs) {
       throw new Error('Field selection requires object results.')
     const data = item as Record<string, unknown>
     for (const field of fields) {
-      if (!(field in data))
+      if (!Object.hasOwn(data, field))
         throw new Error(`Unknown result field: ${field}.`)
     }
     return Object.fromEntries(fields.map(field => [field, data[field]]))
@@ -169,19 +188,46 @@ function saveArtifact(args: OutputArgs, full: unknown, protectedPaths: string[] 
     writeFileSync(resolve(String(args.artifact)), `${JSON.stringify(full, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
   }
 }
+function serializeJson(value: unknown, args: OutputArgs): string {
+  const compact = resolveProfile(args.profile, !!args.json).agentProfile
+  return `${JSON.stringify(value, null, args.minify || compact ? undefined : 2)}\n`
+}
+function omittedJson(tag: JsonTag, command: string, base: string, args: OutputArgs, bytes: number, maxBytes: number | undefined): JsonResult {
+  return jsonResult(tag, command, base, {
+    output: { _tag: 'Omitted', bytes, maxBytes, ...(args.artifact ? { artifact: resolve(String(args.artifact)) } : {}) },
+    next: command === 'page'
+      ? 'Use --fields, select a deeper --path, or increase --max-bytes. Read saved evidence without repeating its operation.'
+      : 'Use --limit, --offset, --file, --fields, or increase --max-bytes. Save complete evidence with --json --artifact <new-file.json>.',
+  })
+}
+function preflightJsonOutput(args: OutputArgs, maxBytes: number | undefined): void {
+  if (!args.json || maxBytes === undefined)
+    return
+  // Reserve the longest outcome tag and byte count before an operation can apply.
+  const fallback = omittedJson('Refused', String(args.command), process.cwd(), args, Number.MAX_SAFE_INTEGER, maxBytes)
+  const required = Buffer.byteLength(serializeJson(fallback, args))
+  if (required > maxBytes)
+    throw new Error(`Output metadata requires at least ${required} bytes. Increase --max-bytes.`)
+}
 function emitJson(payload: unknown, args: OutputArgs, full = payload, artifact: 'save' | 'saved' = 'save', tag: JsonTag = 'Result'): void {
   if (artifact === 'save')
     saveArtifact(args, full)
   const result = jsonResult(tag, String(args.command ?? 'ripide'), process.cwd(), payload)
-  process.stdout.write(`${JSON.stringify(result, null, args.minify || resolveProfile(args.profile, !!args.json).agentProfile ? undefined : 2)}\n`)
+  const compact = resolveProfile(args.profile, !!args.json).agentProfile
+  const maxBytes = parseOutputBytes(args['max-bytes'], compact)
+  process.stdout.write(renderBoundedOutput(result, {
+    maxBytes,
+    render: value => serializeJson(value, args),
+    omitted: bytes => serializeJson(omittedJson(tag, result.command, result.base, args, bytes, maxBytes), args),
+  }))
 }
 function discoveryJson<T>(results: T[], args: OutputArgs, file?: (item: T) => string, full: unknown = results) {
   const agentProfile = resolveProfile(args.profile, !!args.json).agentProfile
-  if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null) {
+  if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null && args['page-bytes'] == null) {
     emitJson(full, args, full)
     return
   }
-  const page = selectOutput(results, selection(args, agentProfile), file)
+  const page = selectOutput(results, { ...selection(args, agentProfile), render: page => serializeJson(jsonResult('Result', String(args.command), process.cwd(), { ...page, results: selectedFields(page.results, args) }), args) }, file)
   emitJson({ ...page, results: selectedFields(page.results, args) }, args, full)
 }
 function diagnostics(r: MutatingResult, args: OutputArgs, agentProfile: boolean) {
@@ -190,7 +236,7 @@ function diagnostics(r: MutatingResult, args: OutputArgs, agentProfile: boolean)
   return { ...selectOutput(filtered, selection(args, agentProfile, 20), d => agentProfile ? d.file : outputPath(d.file, process.cwd())), total: all.length }
 }
 function fullPageText(rendered: string, page: OutputPage<unknown>, unit: 'hits' | 'files' | 'findings', args: OutputArgs): string {
-  if (args.limit == null && args.offset == null && args.file == null)
+  if (args.limit == null && args.offset == null && args.file == null && args['page-bytes'] == null)
     return rendered
   const displayed = page.shown ? rendered.trimEnd() : `No ${unit} on this page.`
   return [`project total: ${page.total} ${unit}`, `displayed ${unit}:`, displayed, formatOutputPage(page)].join('\n')
@@ -297,8 +343,12 @@ const scanCmd = defineCommand({
       const selected = new Set(page.results.map(node => node.file))
       const edges = graph.edges.filter(edge => selected.has(edge.from) && selected.has(edge.to))
       const prefix = graphFormat === 'dot' ? '// ' : '%% '
-      process.stdout.write(`${prefix}nodes: ${formatOutputPage(page)}, omitted edges: ${graph.edges.length - edges.length}\n`)
-      process.stdout.write(`${formatScanGraph({ ...graph, nodes: page.results, edges }, graphFormat)}\n`)
+      const displayed = { ...graph, nodes: page.results, edges }
+      writeText(args, renderBoundedOutput(displayed, {
+        maxBytes: parseOutputBytes(args['max-bytes'], agentProfile),
+        render: value => `${prefix}nodes: ${formatOutputPage(page)}, omitted edges: ${graph.edges.length - edges.length}\n${formatScanGraph(value, graphFormat)}\n`,
+        omitted: bytes => `${prefix}Graph omitted: ${bytes} bytes exceed the output budget.\n${prefix}Use --limit, --file, or increase --max-bytes.\n${formatScanGraph({ ...graph, nodes: [], edges: [] }, graphFormat)}\n`,
+      }))
       return
     }
     const hits = scan(args.pattern as string, opts).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.col - b.col || a.kind.localeCompare(b.kind))
@@ -308,10 +358,10 @@ const scanCmd = defineCommand({
     }
     const page = selectOutput(hits, selection(args, agentProfile), hit => hit.file)
     if (agentProfile) {
-      process.stdout.write(`${profileHeader()}\n${formatAgentHits(hits, selection(args, true))}\n`)
+      writeText(args, `${profileHeader()}\n${formatAgentHits(hits, selection(args, true))}\n`)
       return
     }
-    process.stdout.write(`${fullPageText(formatHits(page.results, false), page, 'hits', args)}\n`)
+    writeText(args, `${fullPageText(formatHits(page.results, false), page, 'hits', args)}\n`)
   },
 })
 
@@ -380,6 +430,7 @@ const treeCmd = defineCommand({
   meta: { name: 'tree', description: 'Print a project declaration tree from top-level AST declarations, grouped by file.' },
   args: {
     glob: globArg,
+    declarations: { type: 'boolean', default: false, description: 'Page individual declarations. Limit and offset count declarations instead of files.' },
     exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to exported for detected agents, all otherwise.' },
     profile: profileArg,
     ...outputArgs,
@@ -394,18 +445,31 @@ const treeCmd = defineCommand({
       : resolveExportFilter(args.exports)
     const tree = buildDeclarationTree({ engine, profile: phaseSink(args), glob: args.glob ? splitGlobs(args.glob as string) : undefined, exports: agentProfile ? 'all' : exportFilter })
     tree.files.sort((a, b) => a.file.localeCompare(b.file))
+    const filtered = { files: tree.files.map(file => ({ ...file, declarations: file.declarations.filter(declaration => exportFilter === 'all' || (exportFilter === 'exported') === declaration.exported) })) }
+    if (args.declarations) {
+      const declarations = filtered.files.flatMap(file => [...file.declarations]
+        .sort((a, b) => a.line - b.line || a.col - b.col || a.name.localeCompare(b.name))
+        .map(declaration => ({ file: file.file, ...declaration })))
+      if (args.json) {
+        discoveryJson(declarations, { ...args, limit: args.limit ?? (agentProfile ? 40 : declarations.length) }, declaration => declaration.file, filtered)
+        return
+      }
+      const page = selectOutput(declarations, selection(args, agentProfile), declaration => declaration.file)
+      const lines = page.results.map(declaration => `${declaration.file}:${declaration.line}:${declaration.col} ${declaration.exported ? 'export' : 'local'} ${declaration.kind} ${declaration.signature ?? declaration.name}`)
+      writeText(args, `${lines.join('\n')}\n${formatOutputPage(page)}\n`)
+      return
+    }
     if (args.json) {
-      const filtered = { files: tree.files.map(file => ({ ...file, declarations: file.declarations.filter(declaration => exportFilter === 'all' || (exportFilter === 'exported') === declaration.exported) })) }
       discoveryJson(filtered.files, args, file => file.file, filtered)
       return
     }
     const page = selectOutput(tree.files, selection(args, agentProfile), file => file.file)
     if (agentProfile) {
-      process.stdout.write(`${profileHeader()}\n`)
-      process.stdout.write(`${formatAgentDeclarationTree({ files: page.results }, exportFilter)}\n${formatOutputPage(page)}\n`)
+      writeText(args, `${profileHeader()}\n`)
+      writeText(args, `${formatAgentDeclarationTree({ files: page.results }, exportFilter)}\n${formatOutputPage(page)}\n`)
       return
     }
-    process.stdout.write(`${fullPageText(formatDeclarationTree({ files: page.results }, false), page, 'files', args)}\n`)
+    writeText(args, `${fullPageText(formatDeclarationTree({ files: page.results }, false), page, 'files', args)}\n`)
   },
 })
 
@@ -431,7 +495,7 @@ const unusedCmd = defineCommand({
     }
     const page = selectOutput(declarations, selection(args, agentProfile), declaration => declaration.file)
     const files = [...new Set(page.results.map(d => d.file))].map(file => ({ file, declarations: page.results.filter(d => d.file === file) }))
-    process.stdout.write(`${formatUnusedDeclarations({ ...unused, files }, false)}\n${formatOutputPage(page)}\n`)
+    writeText(args, `${formatUnusedDeclarations({ ...unused, files }, false)}\n${formatOutputPage(page)}\n`)
   },
 })
 
@@ -537,16 +601,17 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
     process.stderr.write(`warning: ${w}\n`)
   if (agentProfile) {
     const blockedByRegression = apply && r.regressions.length > 0
-    process.stdout.write(`${profileHeader()}\n`)
-    process.stdout.write(`changes: ${r.changes.length}/${r.scanned} files, +${s.linesAdded} -${s.linesRemoved} lines\n`)
-    process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
-    process.stdout.write(`${formatVerification(r.verification)}\n`)
+    writeText(args, `${profileHeader()}\n`)
+    writeText(args, `changes: ${r.changes.length}/${r.scanned} files, +${s.linesAdded} -${s.linesRemoved} lines\n`)
+    writeText(args, `mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
+    writeText(args, `${formatVerification(r.verification)}\n`)
     if (r.regressions.length)
-      process.stdout.write(`${diagnosticText(r, args, true)}\n`)
+      writeText(args, `${diagnosticText(r, args, true)}\n`)
     if (r.changes.length) {
-      process.stdout.write(`files: ${formatOutputPage(selectOutput(r.changes, selection(args, true), c => c.rel))}\n`)
-      for (const c of selectOutput(r.changes, selection(args, true), c => c.rel).results)
-        process.stdout.write(`  ${c.rel}\n`)
+      const page = agentFilePage(r.changes, args)
+      writeText(args, `files: ${formatOutputPage(page)}\n`)
+      for (const c of page.results)
+        writeText(args, `  ${c.rel}\n`)
     }
     if (r.regressions.length) {
       if (apply) {
@@ -557,31 +622,31 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
     }
     if (apply) {
       writeChanges(r.changes)
-      process.stdout.write(`applied: true\n`)
+      writeText(args, `applied: true\n`)
     }
     else {
-      process.stdout.write(`apply: pass --apply to write, or --profile full to see diff\n`)
+      writeText(args, `apply: pass --apply to write, or --profile full to see diff\n`)
     }
     return
   }
-  process.stdout.write(`${formatVerification(r.verification)}\n`)
+  writeText(args, `${formatVerification(r.verification)}\n`)
   if (r.regressions.length) {
-    process.stdout.write(`${diagnosticText(r, args, false)}\n`)
+    writeText(args, `${diagnosticText(r, args, false)}\n`)
     if (apply) {
       process.exitCode = 1
       return
     }
   }
   if (!apply) {
-    process.stdout.write(`${s.files} file${s.files === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
-    printDiffs(selectOutput(r.changes, selection(args, false), c => c.rel).results)
+    writeText(args, `${s.files} file${s.files === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
+    printDiffs(selectOutput(r.changes, selection(args, false), c => c.rel).results, textSink(args))
   }
   if (apply) {
     writeChanges(r.changes)
-    for (const c of r.changes) process.stdout.write(`wrote ${c.rel}\n`)
+    for (const c of r.changes) writeText(args, `wrote ${c.rel}\n`)
   }
   const suffix = apply ? '' : ' (dry run, pass --apply to write)'
-  process.stdout.write(`\n${r.changes.length}/${r.scanned} files changed${suffix}\n`)
+  writeText(args, `\n${r.changes.length}/${r.scanned} files changed${suffix}\n`)
 }
 
 const renameFileCmd = defineCommand({
@@ -658,19 +723,20 @@ const renameFileCmd = defineCommand({
     for (const w of r.warnings)
       process.stderr.write(`warning: ${w}\n`)
     if (agentProfile) {
-      process.stdout.write(`${profileHeader()}\n`)
-      process.stdout.write(`rename-file: ${recovered.old} -> ${recovered.new}\n`)
-      process.stdout.write(`consumers: ${r.changes.length}/${r.scanned}, +${s.linesAdded} -${s.linesRemoved} lines\n`)
+      writeText(args, `${profileHeader()}\n`)
+      writeText(args, `rename-file: ${recovered.old} -> ${recovered.new}\n`)
+      writeText(args, `consumers: ${r.changes.length}/${r.scanned}, +${s.linesAdded} -${s.linesRemoved} lines\n`)
       if (selfChangeDisplay)
-        process.stdout.write(`self: rewrote moved file's own relative imports\n`)
-      process.stdout.write(`mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
-      process.stdout.write(`${formatVerification(r.verification)}\n`)
+        writeText(args, `self: rewrote moved file's own relative imports\n`)
+      writeText(args, `mode: ${apply ? (blockedByRegression ? 'blocked' : 'applied') : 'dry-run'}\n`)
+      writeText(args, `${formatVerification(r.verification)}\n`)
       if (r.regressions.length)
-        process.stdout.write(`${diagnosticText(r, args, true)}\n`)
+        writeText(args, `${diagnosticText(r, args, true)}\n`)
       if (displayChanges.length) {
-        process.stdout.write(`files: ${formatOutputPage(selectOutput(displayChanges, selection(args, true), c => c.rel))}\n`)
-        for (const c of selectOutput(displayChanges, selection(args, true), c => c.rel).results)
-          process.stdout.write(`  ${c.rel}${selfChangeDisplay && c === selfChangeDisplay ? ' (moved file, intra-file imports)' : ''}\n`)
+        const page = agentFilePage(displayChanges, args)
+        writeText(args, `files: ${formatOutputPage(page)}\n`)
+        for (const c of page.results)
+          writeText(args, `  ${c.rel}${selfChangeDisplay && c === selfChangeDisplay ? ' (moved file, intra-file imports)' : ''}\n`)
       }
       if (r.regressions.length) {
         if (apply) {
@@ -680,29 +746,29 @@ const renameFileCmd = defineCommand({
         }
       }
       if (!apply)
-        process.stdout.write(`apply: pass --apply to write, or --profile full to see diff\n`)
+        writeText(args, `apply: pass --apply to write, or --profile full to see diff\n`)
       return
     }
-    process.stdout.write(`${formatVerification(r.verification)}\n`)
+    writeText(args, `${formatVerification(r.verification)}\n`)
     if (r.regressions.length) {
-      process.stdout.write(`${diagnosticText(r, args, false)}\n`)
+      writeText(args, `${diagnosticText(r, args, false)}\n`)
       if (apply) {
         process.exitCode = 1
         return
       }
     }
     if (!apply) {
-      process.stdout.write(`rename ${args.old} -> ${args.new}\n`)
-      printDiffs(selectOutput(displayChanges, selection(args, false), c => c.rel).results)
+      writeText(args, `rename ${args.old} -> ${args.new}\n`)
+      printDiffs(selectOutput(displayChanges, selection(args, false), c => c.rel).results, textSink(args))
     }
     if (wrote) {
-      for (const c of r.changes) process.stdout.write(`wrote ${c.rel}\n`)
+      for (const c of r.changes) writeText(args, `wrote ${c.rel}\n`)
       if (selfChangeDisplay)
-        process.stdout.write(`wrote ${selfChangeDisplay.rel} (moved file, intra-file imports)\n`)
-      process.stdout.write(`renamed ${args.old} -> ${args.new}\n`)
+        writeText(args, `wrote ${selfChangeDisplay.rel} (moved file, intra-file imports)\n`)
+      writeText(args, `renamed ${args.old} -> ${args.new}\n`)
     }
     const suffix = apply ? '' : ' (dry run, pass --apply to write)'
-    process.stdout.write(`\n${r.changes.length} consumer file(s) updated${suffix}\n`)
+    writeText(args, `\n${r.changes.length} consumer file(s) updated${suffix}\n`)
   },
 })
 
@@ -796,16 +862,16 @@ const cssClassScanCmd = defineCommand({
         return
       }
       if (agentProfile) {
-        process.stdout.write(`${profileHeader()}\n${formatAgentFileScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined)}\n`)
+        writeText(args, `${profileHeader()}\n${formatAgentFileScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined, parsePageBytes(args['page-bytes'], true))}\n`)
         return
       }
       const page = selectOutput(hits, selection(args, false), hit => hit.file)
-      process.stdout.write(`${formatFileScanHits(page.results, false)}\n${formatOutputPage(page)}\n`)
+      writeText(args, `${formatFileScanHits(page.results, false)}\n${formatOutputPage(page)}\n`)
       return
     }
     const hits = runCssClassScan({ engine, ...base, sort: resolveCssClassScanSort(args.sort) })
     if (args.json) {
-      if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null) {
+      if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null && args['page-bytes'] == null) {
         emitJson(hits, args, hits)
         return
       }
@@ -815,11 +881,11 @@ const cssClassScanCmd = defineCommand({
       return
     }
     if (agentProfile) {
-      process.stdout.write(`${profileHeader()}\n${formatAgentScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined)}\n`)
+      writeText(args, `${profileHeader()}\n${formatAgentScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined, parsePageBytes(args['page-bytes'], true))}\n`)
       return
     }
     const page = selectOutput(hits, selection(args, false), hit => args.file && hit.files.includes(String(args.file)) ? String(args.file) : '')
-    process.stdout.write(`${formatScanHits(page.results, false)}\n${formatOutputPage(page)}\n`)
+    writeText(args, `${formatScanHits(page.results, false)}\n${formatOutputPage(page)}\n`)
   },
 })
 
@@ -933,7 +999,7 @@ const componentsCmd = defineCommand({
         emitJson({ ...normalized, candidates: candidates.results, candidatePage: { ...candidates, results: undefined }, usages: selectedFields(page.results, args), usagePage: { ...page, results: undefined } }, args, detail)
         return
       }
-      process.stdout.write(`${formatDetail(detail, selection(args, agentProfile, 50))}\n`)
+      writeText(args, `${formatDetail(detail, selection(args, agentProfile, 50))}\n`)
       return
     }
     const inv = await buildComponentInventory(opts)
@@ -952,7 +1018,7 @@ const componentsCmd = defineCommand({
     }
     if (args.dups) {
       if (!inv.duplicates.length) {
-        process.stdout.write('no duplicate-name groups\n')
+        writeText(args, 'no duplicate-name groups\n')
         return
       }
       const page = selectOutput(inv.duplicates, selection(args, agentProfile))
@@ -964,14 +1030,14 @@ const componentsCmd = defineCommand({
           lines.push(`  ${e.rel}${e.shadowed ? ' (shadowed)' : ''}`)
         lines.push(`  entries: ${formatOutputPage(entries)}`)
       }
-      process.stdout.write(`${lines.join('\n')}\n`)
+      writeText(args, `${lines.join('\n')}\n`)
       return
     }
     if (agentProfile) {
-      process.stdout.write(`${profileHeader()}\n${formatAgentInventory(inv, selection(args, true))}\n`)
+      writeText(args, `${profileHeader()}\n${formatAgentInventory(inv, selection(args, true))}\n`)
       return
     }
-    process.stdout.write(`${formatInventory(inv)}\n`)
+    writeText(args, `${formatInventory(inv)}\n`)
   },
 })
 
@@ -1018,7 +1084,7 @@ const doctorCmd = defineCommand({
         if (args.json)
           discoveryJson([], args, undefined, { findings: [], filesScanned: 0 })
         else
-          process.stdout.write('doctor: no changed files matched.\n')
+          writeText(args, 'doctor: no changed files matched.\n')
         return
       }
     }
@@ -1053,7 +1119,7 @@ const doctorCmd = defineCommand({
         return
       }
       if (agentProfile) {
-        process.stdout.write(`${formatAgentDoctorReport({ ...report, findings: fix.skipped }, selection(args, true, 50))}\n`)
+        writeText(args, `${formatAgentDoctorReport({ ...report, findings: fix.skipped }, selection(args, true, 50))}\n`)
         emitResult({ ...fix, scanned: report.filesScanned, regressions: [] }, !!args.apply, false, true, args)
         if (fix.skipped.length)
           process.exitCode = 1
@@ -1061,29 +1127,29 @@ const doctorCmd = defineCommand({
       }
       if (fix.skipped.length) {
         const page = selectOutput(fix.skipped, selection(args, false), finding => finding.file)
-        process.stdout.write(`${fullPageText(formatDoctorReport({ ...report, findings: page.results }, false), page, 'findings', args)}\n`)
+        writeText(args, `${fullPageText(formatDoctorReport({ ...report, findings: page.results }, false), page, 'findings', args)}\n`)
       }
       const page = selectOutput(fix.changes, selection(args, false), change => change.rel)
       const s = summarize(fix.changes)
-      process.stdout.write(`${formatVerification(fix.verification)}\n`)
-      process.stdout.write(`doctor --fix: ${fix.fixed.length} fixable / ${fix.skipped.length} non-fixable findings\n`)
-      process.stdout.write(`${fix.changes.length} file${fix.changes.length === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
+      writeText(args, `${formatVerification(fix.verification)}\n`)
+      writeText(args, `doctor --fix: ${fix.fixed.length} fixable / ${fix.skipped.length} non-fixable findings\n`)
+      writeText(args, `${fix.changes.length} file${fix.changes.length === 1 ? '' : 's'}, +${s.linesAdded} -${s.linesRemoved} lines\n\n`)
       if (!args.apply) {
-        printDiffs(page.results)
-        process.stdout.write(`\n(dry run, pass --apply to write)\n`)
+        printDiffs(page.results, textSink(args))
+        writeText(args, `\n(dry run, pass --apply to write)\n`)
       }
       else {
         writeChanges(fix.changes)
-        for (const c of page.results) process.stdout.write(`wrote ${c.rel}\n`)
+        for (const c of page.results) writeText(args, `wrote ${c.rel}\n`)
       }
-      if (args.limit != null || args.offset != null || args.file != null)
-        process.stdout.write(`files: ${formatOutputPage(page)}\n`)
+      if (args.limit != null || args.offset != null || args.file != null || args['page-bytes'] != null)
+        writeText(args, `files: ${formatOutputPage(page)}\n`)
       if (fix.skipped.length)
         process.exitCode = 1
       return
     }
     if (agentProfile && !args.json) {
-      process.stdout.write(`${profileHeader()}\n${formatAgentDoctorReport(report, selection(args, true, 50))}\n`)
+      writeText(args, `${profileHeader()}\n${formatAgentDoctorReport(report, selection(args, true, 50))}\n`)
     }
     else if (args.json) {
       if (agentProfile) {
@@ -1096,7 +1162,7 @@ const doctorCmd = defineCommand({
     }
     else {
       const page = selectOutput(report.findings, selection(args, false), finding => finding.file)
-      process.stdout.write(`${fullPageText(formatDoctorReport({ ...report, findings: page.results }, false), page, 'findings', args)}\n`)
+      writeText(args, `${fullPageText(formatDoctorReport({ ...report, findings: page.results }, false), page, 'findings', args)}\n`)
     }
     if (report.findings.length)
       process.exitCode = 1
@@ -1111,16 +1177,17 @@ function compactCheckError({ stack: _stack, ...error }: InlineTestError): Inline
 const checkCmd = defineCommand({
   meta: { name: 'check', description: 'Experimental. Run transient Vitest checks from stdin or list changes that need checks.' },
   args: {
-    symbol: { type: 'positional', required: false, description: 'Exported function to import automatically.' },
-    from: { type: 'string', description: 'Source file. Imports and mocks resolve beside this file. Required for ambiguous function names.' },
-    base: { type: 'string', description: 'Git baseline. Enables the change checklist and execution evidence.' },
-    config: { type: 'string', description: 'Vitest configuration file.' },
-    project: { type: 'string', description: 'Vitest project name.' },
-    timeout: { type: 'string', description: 'Execution deadline in milliseconds.', default: '30000' },
-    profile: profileArg,
-    json: { type: 'boolean', default: false },
-    minify: outputArgs.minify,
-    artifact: outputArgs.artifact,
+    'symbol': { type: 'positional', required: false, description: 'Exported function to import automatically.' },
+    'from': { type: 'string', description: 'Source file. Imports and mocks resolve beside this file. Required for ambiguous function names.' },
+    'base': { type: 'string', description: 'Git baseline. Enables the change checklist and execution evidence.' },
+    'config': { type: 'string', description: 'Vitest configuration file.' },
+    'project': { type: 'string', description: 'Vitest project name.' },
+    'timeout': { type: 'string', description: 'Execution deadline in milliseconds.', default: '30000' },
+    'profile': profileArg,
+    'max-bytes': outputArgs['max-bytes'],
+    'json': { type: 'boolean', default: false },
+    'minify': outputArgs.minify,
+    'artifact': outputArgs.artifact,
   },
   async run({ args }) {
     const { agentProfile } = resolveProfile(args.profile, !!args.json)
@@ -1178,14 +1245,14 @@ const checkCmd = defineCommand({
     }
     if (report._tag === 'Run') {
       const result = report.result
-      process.stdout.write(`${result._tag}: ${result.counts.passed} passed, ${result.counts.failed} failed, ${result.counts.skipped} skipped\n`)
+      writeText(args, `${result._tag}: ${result.counts.passed} passed, ${result.counts.failed} failed, ${result.counts.skipped} skipped\n`)
       if (result._tag === 'Error')
-        process.stdout.write(`${result.message}\n`)
+        writeText(args, `${result.message}\n`)
       if (result._tag === 'TimedOut')
-        process.stdout.write(`Execution exceeded ${result.timeoutMs} ms.\n`)
+        writeText(args, `Execution exceeded ${result.timeoutMs} ms.\n`)
       for (const test of result.tests.filter(test => !agentProfile || test.state !== 'passed')) {
-        process.stdout.write(`${test.state}: ${test.name}\n`)
-        for (const error of test.errors) process.stdout.write(`${error.line ? `<stdin>:${error.line}: ` : ''}${error.message}\n`)
+        writeText(args, `${test.state}: ${test.name}\n`)
+        for (const error of test.errors) writeText(args, `${error.line ? `<stdin>:${error.line}: ` : ''}${error.message}\n`)
       }
       if (result.logs.stdout)
         process.stderr.write(result.logs.stdout)
@@ -1194,18 +1261,56 @@ const checkCmd = defineCommand({
     }
     const checklist = report.checklist
     if (checklist) {
-      process.stdout.write(`Checks: ${checklist.counts.pending} pending, ${checklist.counts.executed} executed, ${checklist.counts.stale} stale\n`)
+      writeText(args, `Checks: ${checklist.counts.pending} pending, ${checklist.counts.executed} executed, ${checklist.counts.stale} stale\n`)
       for (const item of checklist.items.filter(item => !agentProfile || item.status !== 'executed' || item.uncoveredBranches)) {
-        process.stdout.write(`${item.status} ${item.kind} ${item.file}:${item.line} ${item.symbol}${item.target ? ` -> ${item.target.file}:${item.target.symbol}` : ''}${item.uncoveredBranches ? ` (${item.uncoveredBranches} uncovered branches)` : ''}\n`)
+        writeText(args, `${item.status} ${item.kind} ${item.file}:${item.line} ${item.symbol}${item.target ? ` -> ${item.target.file}:${item.target.symbol}` : ''}${item.uncoveredBranches ? ` (${item.uncoveredBranches} uncovered branches)` : ''}\n`)
       }
-      process.stdout.write('Execution evidence requires assertion review. Integration and API contracts remain pending.\n')
+      writeText(args, 'Execution evidence requires assertion review. Integration and API contracts remain pending.\n')
     }
   },
 })
 
+const pageCmd = defineCommand({
+  meta: { name: 'page', description: 'Inspect saved JSON evidence without repeating its operation. Session mode accepts NDJSON navigation requests.' },
+  args: {
+    'input': { type: 'string', required: true, description: 'Saved JSON evidence file. Use - to read one JSON document from stdin.' },
+    'path': { type: 'string', default: '', description: 'JSON Pointer to inspect. Empty selects the root. Escape ~ as ~0 and / as ~1.' },
+    'session': { type: 'boolean', default: false, description: 'Read Next, Previous, Select, and Close JSON requests from stdin. Requires an input file.' },
+    'json': { type: 'boolean', default: true, description: 'Page responses always use JSON.' },
+    'limit': outputArgs.limit,
+    'offset': outputArgs.offset,
+    'page-bytes': outputArgs['page-bytes'],
+    'max-bytes': outputArgs['max-bytes'],
+    'fields': outputArgs.fields,
+    'minify': outputArgs.minify,
+  },
+  async run({ args }) {
+    const input = args.input === '-' ? '-' : resolve(args.input)
+    const outcome = await runEvidencePager({
+      input,
+      path: args.path,
+      session: args.session,
+      limit: args.limit == null ? 40 : Number(args.limit),
+      offset: args.offset == null ? 0 : Number(args.offset),
+      pageBytes: parsePageBytes(args['page-bytes'], true)!,
+      ...(args.fields ? { fields: String(args.fields).split(',') } : {}),
+    }, {
+      stdin: process.stdin,
+      read: path => readFileSync(path, 'utf8'),
+      emit: (value, error) => {
+        emitJson(value, args, value, 'saved', error ? 'Error' : 'Result')
+      },
+      render: value => serializeJson(jsonResult('Result', 'page', process.cwd(), value), args),
+    })
+    if (outcome._tag === 'Refused')
+      process.exitCode = 1
+  },
+}, ['path'])
+
 const command = defineCommand({
   meta: { name: 'ripide', description: 'AST-aware refactor primitives. Ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
+    'page': pageCmd,
     'scan': scanCmd,
     'check': checkCmd,
     'tree': treeCmd,
@@ -1225,6 +1330,8 @@ const command = defineCommand({
 })
 
 function jsonRequested(rawArgs: string[]): boolean {
+  if (rawArgs[0] === 'page')
+    return true
   let requested = false
   for (const arg of rawArgs) {
     if (arg === '--')
@@ -1243,10 +1350,15 @@ export async function runCli(rawArgs: string[], ensureAdapters?: (needed: readon
   const commands = command.subCommands as Record<string, CommandDef>
   const selected = commands[name]
   if (rawArgs.includes('--help') || rawArgs.includes('-h') || rawArgs.length === 0 || rawArgs.every(arg => arg === '--json')) {
-    if (jsonRequested(rawArgs))
-      emitJson({ usage: await renderUsage(selected ?? command) }, { command: selected ? name : 'ripide', json: true })
-    else
-      await showUsage(selected ?? command)
+    const args: OutputArgs = { ...parseArgs(rawArgs, { 'profile': profileArg, 'max-bytes': outputArgs['max-bytes'], 'json': jsonArg }), command: selected ? name : 'ripide' }
+    if (jsonRequested(rawArgs)) {
+      emitJson({ usage: await renderUsage(selected ?? command) }, { ...args, json: true })
+    }
+    else {
+      const output = createTextOutput({ maxBytes: parseOutputBytes(args['max-bytes'], resolveProfile(args.profile).agentProfile), write: text => process.stdout.write(text) })
+      output.write(await renderUsage(selected ?? command))
+      output.end()
+    }
     return
   }
   if ((name === '--version' || name === '-v') && rawArgs.every(arg => ['--version', '-v', '--json'].includes(arg))) {
@@ -1261,7 +1373,15 @@ export async function runCli(rawArgs: string[], ensureAdapters?: (needed: readon
     ? {
         ...selected,
         async run(context: Parameters<NonNullable<typeof selected.run>>[0]) {
-          ;(context.args as OutputArgs).command = name
+          const commandArgs = context.args as OutputArgs
+          commandArgs.command = name
+          if (name === 'page')
+            commandArgs.json = true
+          const maxBytes = parseOutputBytes(context.args['max-bytes'], resolveProfile(context.args.profile, !!context.args.json).agentProfile)
+          parsePageBytes(context.args['page-bytes'], resolveProfile(context.args.profile, !!context.args.json).agentProfile)
+          preflightJsonOutput(context.args, maxBytes)
+          const textOutput = createTextOutput({ maxBytes, write: text => process.stdout.write(text) })
+          ;(context.args as OutputArgs).textOutput = textOutput
           const start = performance.now()
           try {
             const destinations = name === 'rename-file'
@@ -1274,6 +1394,7 @@ export async function runCli(rawArgs: string[], ensureAdapters?: (needed: readon
             return await selected.run?.(context)
           }
           finally {
+            textOutput.end()
             if (context.args.timings)
               process.stderr.write(`${JSON.stringify({ phase: `command ${name}`, ms: performance.now() - start })}\n`)
           }
@@ -1284,8 +1405,23 @@ export async function runCli(rawArgs: string[], ensureAdapters?: (needed: readon
     const message = error instanceof Error ? error.message : String(error)
     const next = 'Run the command with --help. Fix the reported cause, then retry.'
     const cause = error instanceof Error && error.cause ? String(error.cause) : undefined
-    if (jsonRequested(rawArgs))
-      emitJson({ message, next, ...(cause ? { cause } : {}) }, { command: name ?? 'ripide', json: true }, undefined, 'saved', 'Error')
+    if (jsonRequested(rawArgs)) {
+      const parsed = parseArgs(rawArgs, { 'profile': profileArg, 'max-bytes': outputArgs['max-bytes'], 'minify': outputArgs.minify })
+      const budget = Number(parsed['max-bytes'])
+      const args: OutputArgs = {
+        command: name ?? 'ripide',
+        json: true,
+        ...(Number.isSafeInteger(budget) && budget >= 1024 ? { 'max-bytes': String(budget) } : {}),
+        ...(['auto', 'agent', 'full'].includes(String(parsed.profile)) ? { profile: parsed.profile } : {}),
+        minify: parsed.minify,
+      }
+      const maxBytes = parseOutputBytes(args['max-bytes'], resolveProfile(args.profile, true).agentProfile)
+      const required = Buffer.byteLength(serializeJson(omittedJson('Error', String(args.command), process.cwd(), args, Number.MAX_SAFE_INTEGER, maxBytes), args))
+      // An invalid metadata budget cannot also bound a response that retains its base.
+      if (maxBytes !== undefined && required > maxBytes)
+        delete args['max-bytes']
+      emitJson({ message, next, ...(cause ? { cause } : {}) }, args, undefined, 'saved', 'Error')
+    }
     if (jsonRequested(rawArgs))
       process.stderr.write(`ripide: ${message}\n`)
     else
