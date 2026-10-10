@@ -108,6 +108,10 @@ If runner isolation changes, freeze a new registration. Preserve the previous re
 Keep heavy builds, tests, and package installs outside scored attempts.
 Worktree setup hooks can install packages automatically. Finish those hooks before scoring.
 Record overlapping host operations and timestamps. Mark missing timing detail as unavailable.
+During scored work, limit observer audits to saved receipts, streams, and lightweight filesystem checks.
+Run optional compiler replays after the last arm exits.
+Record observer command starts, completions, and resources separately from arm and controller measurements.
+Report overlap without estimating a timing correction.
 
 ## Before scoring
 
@@ -151,6 +155,10 @@ Do not revise tasks, acceptance gates, or endpoints after inspecting relative ar
 
 The [engine fingerprint gate change](https://github.com/harlan-zw/ripide/pull/96) checks unchanged commits and changed-plan refusal.
 Use the gate matching the frozen SDK. Require actual refusal and unchanged source bytes.
+Before model dispatch, resolve each product gate's actual SDK entry point.
+Compare its path and SHA-256 with the selected product metadata.
+If they differ, stop preparation before any model call.
+Save the resolved entry point and hash with the gate proof.
 That proof does not establish freshness of appended consumers, configuration, or dependencies.
 Register separate independent gates before making those stronger claims.
 
