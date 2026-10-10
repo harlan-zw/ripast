@@ -28,8 +28,8 @@ import { renameSync, writeFileSync } from 'node:fs'
 registerHooks({ resolve(id, context, next) {
   return next(id === 'typescript' ? ${JSON.stringify(require.resolve('@typescript/native'))} : id, context)
 } })
-const { default: adapter } = await import(${JSON.stringify(pathToFileURL(resolve('packages/vue/dist/index.mjs')).href)})
-const changes = await adapter.applyFileRenameEdits(${JSON.stringify(join(fx.dir, 'tsconfig.json'))}, ${JSON.stringify(fx.dir)}, ${JSON.stringify(join(fx.dir, 'source.ts'))}, ${JSON.stringify(join(fx.dir, 'renamed.ts'))})
+const { createVueExtension } = await import(${JSON.stringify(pathToFileURL(resolve('packages/vue/dist/index.mjs')).href)})
+const changes = await createVueExtension().semantic!.applyFileRenameEdits(${JSON.stringify(join(fx.dir, 'tsconfig.json'))}, ${JSON.stringify(fx.dir)}, ${JSON.stringify(join(fx.dir, 'source.ts'))}, ${JSON.stringify(join(fx.dir, 'renamed.ts'))})
 for (const change of changes) writeFileSync(change.path, change.after)
 renameSync(${JSON.stringify(join(fx.dir, 'source.ts'))}, ${JSON.stringify(join(fx.dir, 'renamed.ts'))})
 `)

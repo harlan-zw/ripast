@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-09",
+  "kind": "single-architecture-pair",
+  "model": "gpt-6.1-sol",
+  "reasoning": "medium",
+  "repeats": 1,
+  "method": "Last native token_usage_record per response_id through matching frozen git-commit tool output completion. Use numeric UTC timestamps. Original frozen-summary remains immutable.",
+  "boundary": "Includes the model response which requests the commit; excludes subsequent publication and integration.",
+  "original": {
+    "direct": {
+      "cutoff": "2026-10-09T03:12:12Z",
+      "usage": {
+        "input_tokens": 9574970,
+        "cached_input_tokens": 9375872,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 54992,
+        "reasoning_output_tokens": 14727,
+        "total_tokens": 9629962
+      },
+      "uncachedInput": 199098,
+      "elapsedMinutes": 31.834183333333332
+    },
+    "assisted": {
+      "cutoff": "2026-10-09T03:14:29Z",
+      "usage": {
+        "input_tokens": 10046836,
+        "cached_input_tokens": 9770240,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 66695,
+        "reasoning_output_tokens": 15267,
+        "total_tokens": 10113531
+      },
+      "uncachedInput": 276596,
+      "elapsedMinutes": 34.84768333333333
+    }
+  },
+  "complete": {
+    "direct": {
+      "cutoff": "2026-10-09T03:12:12.941Z",
+      "usage": {
+        "input_tokens": 9793819,
+        "cached_input_tokens": 9591296,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 55598,
+        "reasoning_output_tokens": 15060,
+        "total_tokens": 9849417
+      },
+      "uncachedInput": 202523,
+      "elapsedMinutes": 31.849866666666667
+    },
+    "assisted": {
+      "cutoff": "2026-10-09T03:14:29.994Z",
+      "usage": {
+        "input_tokens": 10112645,
+        "cached_input_tokens": 9833088,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 67258,
+        "reasoning_output_tokens": 15402,
+        "total_tokens": 10179903
+      },
+      "uncachedInput": 279557,
+      "elapsedMinutes": 34.86425
+    }
+  },
+  "quality": {
+    "direct": {
+      "changedVerifiedPlan": "Accepted an invalid changed verified plan."
+    },
+    "assisted": {
+      "changedVerifiedPlan": "Refused the invalid changed verified plan. Source bytes stayed unchanged."
+    }
+  },
+  "limits": [
+    "One pair cannot establish variance or agent productivity gains.",
+    "The frozen SDKs differ in protected-plan behavior. Cost is not an equal-quality comparison.",
+    "Controller model resources and provider charges are unavailable.",
+    "Private native transcript payloads are excluded."
+  ],
+  "sourceArtifactSha256": "c552c7eb4ff19ce7bd7a0478d191a4decfbd37c9374dc4385e2706987e33d6b7"
+}

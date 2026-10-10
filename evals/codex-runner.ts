@@ -9,7 +9,7 @@ export const codexReasoning = 'medium'
 
 /** Keep user Skills and configuration out of both arms. Copy authentication into the isolated home. */
 export async function runCodex(project: string, prompt: string, env: NodeJS.ProcessEnv, timeout: number): Promise<{ stdout: string, stderr: string, code: number | null, seconds: number, timedOut: boolean }> {
-  const isolated = mkdtempSync(join(tmpdir(), 'ripast-codex-'))
+  const isolated = mkdtempSync(join(tmpdir(), 'ripide-codex-'))
   const codexHome = join(isolated, '.codex')
   mkdirSync(codexHome)
   const auth = join(env.CODEX_HOME ?? join(homedir(), '.codex'), 'auth.json')

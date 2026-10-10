@@ -15,18 +15,18 @@ it.each(['pnpm', 'npm'] as const)('launcher runs %s shims with literal arguments
       ? fx.write(`${manager}.cmd`, `@echo off\r\n"${process.execPath}" --experimental-strip-types "${script}" %*\r\n`)
       : fx.write(manager, `#!/bin/sh\nexec "${process.execPath}" --experimental-strip-types "${script}" "$@"\n`)
     chmodSync(command, 0o755)
-    const args = ['scan', 'space & (literal)', '--glob', 'src/{a,b}.ts']
+    const args = ['rename', 'space & (literal)', 'next', '--glob', 'src/{a,b}.ts']
     const child = spawnSync(process.execPath, [prepareLauncher(fx), ...args], {
       cwd: fx.dir,
-      env: { ...process.env, PATH: fx.dir, RIPAST_REEXEC: '' },
+      env: { ...process.env, PATH: fx.dir, RIPIDE_REEXEC: '' },
       encoding: 'utf8',
     })
     assert.equal(child.status, 0, child.stderr)
     const result = JSON.parse(fx.read('record.json'))
     assert.equal(realpathSync(result.cwd), realpathSync(fx.dir))
     const expected = manager === 'pnpm'
-      ? ['dlx', '--package=@ripast/cli', '--package=@ripast/vue', 'ripast', ...args]
-      : ['exec', '--yes', result.args[2], '--package=@ripast/cli', '--package=@ripast/vue', '--', 'ripast', ...args]
+      ? ['dlx', '--package=ripide@1.2.3', '--package=ripide-vue@1.2.3', 'ripide', ...args]
+      : ['exec', '--yes', result.args[2], '--package=ripide@1.2.3', '--package=ripide-vue@1.2.3', '--', 'ripide', ...args]
     assert.deepEqual(result.args, expected)
   }
   finally { fx.cleanup() }

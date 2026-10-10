@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import process from 'node:process'
-import { findFilesMany, hyphenateVueName, parseSourceFile, parseVueTemplateAst, posToLineCol } from '@ripast/core/adapter'
+import { findFilesMany, parseSourceFile, posToLineCol } from 'ripide-api/adapter'
+import { hyphenateVueName, parseVueTemplateAst } from './vue-template.ts'
 
 export type UsageForm
   = | 'tag-pascal'

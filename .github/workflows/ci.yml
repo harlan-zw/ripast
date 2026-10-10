@@ -30,9 +30,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm exec vitest run test/ts-server.test.ts test/launcher-platform.test.ts test/platform-paths.test.ts
-      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
-      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
+      - run: pnpm exec vitest run test/ts-server.test.ts test/launcher-platform.test.ts test/platform-paths.test.ts test/tsrx.test.ts
+      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripide-pack"
+      - run: npm run smoke:package -- "${{ runner.temp }}/ripide-pack"
 
   test:
     runs-on: ubuntu-24.04
@@ -56,5 +56,5 @@ jobs:
       - run: pnpm test
       - run: pnpm eval --preflight
       - run: pnpm -r --filter './packages/*' exec publint
-      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripast-pack"
-      - run: npm run smoke:package -- "${{ runner.temp }}/ripast-pack"
+      - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripide-pack"
+      - run: npm run smoke:package -- "${{ runner.temp }}/ripide-pack"

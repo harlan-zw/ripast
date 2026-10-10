@@ -6,9 +6,15 @@ import process from 'node:process'
 import { setTimeout } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 
-const folders = ['core', 'vue', 'cli'] as const
+const folders = ['core', 'vue', 'tsrx', 'cli'] as const
+const packageNames = { core: 'ripide-api', vue: 'ripide-vue', tsrx: 'ripide-tsrx', cli: 'ripide' } as const
 interface ReleasePackage { name: string, version: string }
 interface RegistryResponse { status: number | null, stdout: string }
+
+export function assertReplacementPublished(response: RegistryResponse, version: string) {
+  if (response.status !== 0 || !response.stdout.trim() || JSON.parse(response.stdout) !== version)
+    throw new Error('Publish the replacement release before deprecating legacy packages.')
+}
 
 export async function downloadPublishedPackages(pack: () => RegistryResponse, pause: () => Promise<void>, attempts = 30) {
   for (let attempt = 0; attempt < attempts; attempt++) {
@@ -35,8 +41,8 @@ export function planRelease(tag: string, packages: ReleasePackage[]) {
     throw new Error('Pass a version tag, such as v0.5.0 or v0.6.0-beta.1.')
   const version = match[1]
   const names = new Set(packages.map(pkg => pkg.name))
-  if (packages.length !== 3 || names.size !== 3 || folders.some(folder => !names.has(`@ripast/${folder}`)))
-    throw new Error('Release the core, Vue, and CLI packages together.')
+  if (packages.length !== folders.length || names.size !== folders.length || folders.some(folder => !names.has(packageNames[folder])))
+    throw new Error('Release the core, Vue, TSRX, and CLI packages together.')
   if (packages.some(pkg => pkg.version !== version))
     throw new Error('Every package version must match the release tag.')
   const channel = match[2]?.split('.')[0].toLowerCase()
@@ -79,13 +85,32 @@ async function run() {
     process.stdout.write(`version=${plan.version}\nnpmTag=${plan.npmTag}\n`)
     return
   }
+  if (command === 'deprecate' && process.env.npm_execpath?.endsWith('npm-cli.js')) {
+    const npm = process.env.npm_execpath
+    for (const folder of ['core', 'vue', 'cli'] as const) {
+      const response = spawnSync(process.execPath, [npm, 'view', `${packageNames[folder]}@${plan.version}`, 'version', '--json'], { encoding: 'utf8' })
+      if (response.error)
+        throw response.error
+      assertReplacementPublished(response, plan.version)
+    }
+    for (const folder of ['core', 'vue', 'cli'] as const) {
+      const legacy = `@ripast/${folder}`
+      const replacement = packageNames[folder]
+      const response = spawnSync(process.execPath, [npm, 'deprecate', legacy, `Renamed to ${replacement}. Install ${replacement} instead.`], { stdio: 'inherit' })
+      if (response.error)
+        throw response.error
+      if (response.status !== 0)
+        throw new Error(`Deprecation failed for ${legacy}. Check npm authentication before retrying.`)
+    }
+    return
+  }
   if (!['publish', 'download'].includes(command) || !directory || !process.env.npm_execpath?.endsWith('npm-cli.js'))
     throw new Error('Run npm run release:publish or release:download with a version tag and tarball directory.')
   const npm = process.env.npm_execpath
   if (command === 'download') {
     mkdirSync(directory, { recursive: true })
     await downloadPublishedPackages(() => {
-      const response = spawnSync(process.execPath, [npm, 'pack', ...folders.map(folder => `@ripast/${folder}@${plan.version}`), '--json', '--pack-destination', directory, '--registry=https://registry.npmjs.org'], { encoding: 'utf8' })
+      const response = spawnSync(process.execPath, [npm, 'pack', ...folders.map(folder => `${packageNames[folder]}@${plan.version}`), '--json', '--pack-destination', directory, '--registry=https://registry.npmjs.org'], { encoding: 'utf8' })
       if (response.error)
         throw response.error
       if (response.stderr)
@@ -98,8 +123,8 @@ async function run() {
     return
   }
   const artifacts = folders.map((folder) => {
-    const name = `@ripast/${folder}`
-    const tarball = join(directory, `ripast-${folder}-${plan.version}.tgz`)
+    const name = packageNames[folder]
+    const tarball = join(directory, `${name.replace(/^@/, '').replace('/', '-')}-${plan.version}.tgz`)
     const integrity = `sha512-${createHash('sha512').update(readFileSync(tarball)).digest('base64')}`
     const response = spawnSync(process.execPath, [npm, 'view', `${name}@${plan.version}`, 'dist.integrity', '--json', '--registry=https://registry.npmjs.org'], { encoding: 'utf8' })
     if (response.error)

@@ -4,12 +4,13 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
-import { runRename, writeChanges } from '@ripast/core'
+import { runRename, writeChanges } from 'ripide-api'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 function fixture(directory: string) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-nuxt-metadata-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-nuxt-metadata-'))
   cpSync(new URL('./fixtures/nuxt/', import.meta.url), dir, { recursive: true })
   rmSync(join(dir, '.nuxt/imports.d.ts'))
   rmSync(join(dir, '.nuxt/types/imports.d.ts'), { force: true })
@@ -36,7 +37,7 @@ it.each([
 ] as const)('refuses a Nuxt %s provider rename without metadata with verify %s', async (directory, verify) => {
   const fx = fixture(directory)
   try {
-    await assert.rejects(runRename('format', 'pretty', { cwd: fx.dir, scope: fx.provider, verify }), /cannot resolve auto-import metadata/)
+    await assert.rejects(runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: fx.provider, verifyMode: typeof verify === 'boolean' ? verify ? 'touched' : 'none' : verify }, engine: vueServices() }), /cannot resolve auto-import metadata/)
     assert.equal(readFileSync(join(fx.dir, fx.provider), 'utf8'), fx.before)
     assert.equal(readFileSync(join(fx.dir, 'app/pages/index.vue'), 'utf8'), fx.page)
     assert.equal(existsSync(join(fx.dir, '.nuxt/imports.d.ts')), false)
@@ -64,7 +65,7 @@ it.each([
       fx.provider,
       '--json',
       '--apply',
-      ...(noVerify ? ['--no-verify'] : []),
+      ...(noVerify ? ['--verify-mode', 'none'] : []),
     ], { cwd: fx.dir, encoding: 'utf8' })
     assert.notEqual(result.status, 0, result.stdout)
     assert.match(result.stderr, /cannot resolve auto-import metadata/)
@@ -86,7 +87,7 @@ it.each([false, true])('permits explicit imports without Nuxt metadata when Nuxt
     ...(nuxt ? { 'nuxt.config.ts': 'export default {}' } : {}),
   })
   try {
-    const result = await runRename('format', 'pretty', { cwd: fx.dir, scope: path, verify: false })
+    const result = await runRename('format', 'pretty', { ...{ cwd: fx.dir, scope: path, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(result.changes)
     const execution = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'consumer.ts'], { cwd: fx.dir, encoding: 'utf8' })
     assert.equal(execution.status, 0, execution.stderr)

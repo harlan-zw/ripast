@@ -1,9 +1,9 @@
-import type { ComponentInfo, ComponentUsageInfo } from './adapter.ts'
-import { isAbsolute, relative, sep } from 'node:path'
+import type { ComponentInfo, ComponentUsageInfo, FrameworkAdapter } from './adapter.ts'
+import type { EngineServices } from './engine.ts'
 import process from 'node:process'
-import { detectFrameworks, loadAdapter } from './adapter.ts'
 
 export interface ComponentsListOptions {
+  engine?: EngineServices
   cwd?: string
   glob?: string[]
   source?: 'auto' | 'manifest' | 'filesystem'
@@ -27,23 +27,13 @@ export interface ComponentDetail {
   usages: ComponentUsageInfo[]
 }
 
-export async function loadVueComponentsAdapter(cwd?: string): Promise<{
-  listComponents: NonNullable<Awaited<ReturnType<typeof loadAdapter>>>['listComponents']
-  findComponentUsages: NonNullable<Awaited<ReturnType<typeof loadAdapter>>>['findComponentUsages']
-} | null> {
-  const frameworks = detectFrameworks(cwd ?? process.cwd())
-  const name = frameworks.includes('nuxt') ? 'nuxt' : frameworks.includes('vue') ? 'vue' : null
-  if (!name)
-    return null
-  const adapter = await loadAdapter(name)
-  if (!adapter?.listComponents || !adapter?.findComponentUsages)
-    return null
-  return { listComponents: adapter.listComponents, findComponentUsages: adapter.findComponentUsages }
+export async function loadComponentsAdapter(engine?: EngineServices): Promise<FrameworkAdapter | null> {
+  return engine?.adapter ?? null
 }
 
 export async function buildComponentInventory(opts: ComponentsListOptions = {}): Promise<ComponentInventory> {
   const cwd = opts.cwd ?? process.cwd()
-  const adapter = await loadVueComponentsAdapter(cwd)
+  const adapter = await loadComponentsAdapter(opts.engine)
   if (!adapter)
     return { components: [], duplicates: [], shadowed: [] }
   const components = adapter.listComponents!(cwd, { glob: opts.glob, source: opts.source, warn: opts.warn })
@@ -54,7 +44,7 @@ export async function buildComponentInventory(opts: ComponentsListOptions = {}):
 
 export async function buildComponentDetail(name: string, opts: ComponentsListOptions = {}): Promise<ComponentDetail | null> {
   const cwd = opts.cwd ?? process.cwd()
-  const adapter = await loadVueComponentsAdapter(cwd)
+  const adapter = await loadComponentsAdapter(opts.engine)
   if (!adapter)
     return null
   const components = adapter.listComponents!(cwd, { glob: opts.glob, source: opts.source, warn: opts.warn })
@@ -92,86 +82,4 @@ function groupDuplicates(components: ComponentInfo[]): DuplicateGroup[] {
 
 function unique<T>(arr: T[]): T[] {
   return [...new Set(arr)]
-}
-
-export function formatInventory(inv: ComponentInventory): string {
-  const lines: string[] = []
-  lines.push(`${inv.components.length} component${inv.components.length === 1 ? '' : 's'}`)
-  if (inv.duplicates.length)
-    lines.push(`${inv.duplicates.length} duplicate-name group${inv.duplicates.length === 1 ? '' : 's'}`)
-  if (inv.shadowed.length)
-    lines.push(`${inv.shadowed.length} shadowed`)
-  lines.push('')
-  for (const c of inv.components) {
-    const marker = c.shadowed ? ' (shadowed)' : ''
-    const src = c.source === 'manifest' ? 'm' : 'f'
-    const reg = c.registeredName && c.registeredName !== c.name ? ` registered: ${c.registeredName}` : ''
-    lines.push(`  [${src}] ${c.name.padEnd(28)} ${c.rel}${marker}${reg}`)
-  }
-  if (inv.duplicates.length) {
-    lines.push('')
-    lines.push('duplicates:')
-    for (const dup of inv.duplicates) {
-      lines.push(`  ${dup.name}`)
-      for (const entry of dup.entries) {
-        const marker = entry.shadowed ? ' (shadowed)' : ''
-        lines.push(`    ${entry.rel}${marker}`)
-      }
-    }
-  }
-  return lines.join('\n')
-}
-
-export function formatAgentInventory(inv: ComponentInventory): string {
-  const lines = ['components']
-  lines.push(`total: ${inv.components.length}, duplicates: ${inv.duplicates.length}, shadowed: ${inv.shadowed.length}`)
-  if (inv.duplicates.length) {
-    lines.push('duplicates:')
-    for (const dup of inv.duplicates)
-      lines.push(`  ${dup.name}: ${dup.entries.map(e => `${e.rel}${e.shadowed ? '*' : ''}`).join(', ')}`)
-  }
-  if (inv.shadowed.length) {
-    lines.push('shadowed:')
-    for (const s of inv.shadowed)
-      lines.push(`  ${s.rel} -> ${s.shadowedBy ? relativeToCwd(s.shadowedBy) : '?'}`)
-  }
-  return lines.join('\n')
-}
-
-function relativeToCwd(abs: string): string {
-  const cwd = process.cwd()
-  const rel = relative(cwd, abs)
-  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel) ? rel : abs
-}
-
-export function formatDetail(detail: ComponentDetail): string {
-  const lines: string[] = []
-  const c = detail.component
-  lines.push(`${c.name}${c.shadowed ? ' (shadowed)' : ''}`)
-  lines.push(`  file: ${c.rel}`)
-  if (c.aliases.length)
-    lines.push(`  aliases: ${c.aliases.join(', ')}`)
-  lines.push(`  source: ${c.source}, scope: ${c.scope}`)
-  if (detail.candidates.length > 1) {
-    lines.push(`  other candidates with same name:`)
-    for (const cand of detail.candidates) {
-      if (cand.id === c.id)
-        continue
-      lines.push(`    ${cand.rel}${cand.shadowed ? ' (shadowed)' : ''}`)
-    }
-  }
-  lines.push('')
-  const byForm = new Map<string, number>()
-  for (const u of detail.usages) byForm.set(u.form, (byForm.get(u.form) ?? 0) + 1)
-  lines.push(`usages: ${detail.usages.length}`)
-  for (const [form, n] of [...byForm.entries()].sort((a, b) => b[1] - a[1]))
-    lines.push(`  ${form.padEnd(20)} ${n}`)
-  if (detail.usages.length) {
-    lines.push('')
-    for (const u of detail.usages.slice(0, 50))
-      lines.push(`  ${u.rel}:${u.line}:${u.col}  ${u.form}${u.binding ? `  ${u.binding}` : ''}`)
-    if (detail.usages.length > 50)
-      lines.push(`  ... ${detail.usages.length - 50} more`)
-  }
-  return lines.join('\n')
 }

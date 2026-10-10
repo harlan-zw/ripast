@@ -57,27 +57,27 @@ Ripgrep remains optional for CLI commands. Programmatic regex searches still req
 
 ## 👉 Changelog
 
-[Compare v0.4.0 and v0.5.0](https://github.com/harlan-zw/ripast/compare/v0.4.0...v0.5.0)
+[Compare v0.4.0 and v0.5.0](https://github.com/harlan-zw/ripide/compare/v0.4.0...v0.5.0)
 
 ### 🚀 Enhancements
 
-- Use the native TypeScript server for refactors ([#4](https://github.com/harlan-zw/ripast/pull/4)).
-- Include the Ripast Agent Skill in the CLI package ([#10](https://github.com/harlan-zw/ripast/pull/10)).
-- Select named barrels and explicit replacement import aliases ([#15](https://github.com/harlan-zw/ripast/pull/15)).
+- Use the native TypeScript server for refactors ([#4](https://github.com/harlan-zw/ripide/pull/4)).
+- Include the Ripast Agent Skill in the CLI package ([#10](https://github.com/harlan-zw/ripide/pull/10)).
+- Select named barrels and explicit replacement import aliases ([#15](https://github.com/harlan-zw/ripide/pull/15)).
 
 ### 🩹 Fixes
 
-- Load selected configurations before native refactors ([#6](https://github.com/harlan-zw/ripast/pull/6)).
-- Preserve replacement wrappers and Vue compiler APIs ([#8](https://github.com/harlan-zw/ripast/pull/8)).
-- Preserve replacement import extensions ([#9](https://github.com/harlan-zw/ripast/pull/9)).
-- Repair adapter startup and local declaration renames ([#12](https://github.com/harlan-zw/ripast/pull/12)).
-- Add ripgrep and pnpm fallbacks ([#13](https://github.com/harlan-zw/ripast/pull/13)).
-- Preserve commas inside glob patterns ([#14](https://github.com/harlan-zw/ripast/pull/14)).
+- Load selected configurations before native refactors ([#6](https://github.com/harlan-zw/ripide/pull/6)).
+- Preserve replacement wrappers and Vue compiler APIs ([#8](https://github.com/harlan-zw/ripide/pull/8)).
+- Preserve replacement import extensions ([#9](https://github.com/harlan-zw/ripide/pull/9)).
+- Repair adapter startup and local declaration renames ([#12](https://github.com/harlan-zw/ripide/pull/12)).
+- Add ripgrep and pnpm fallbacks ([#13](https://github.com/harlan-zw/ripide/pull/13)).
+- Preserve commas inside glob patterns ([#14](https://github.com/harlan-zw/ripide/pull/14)).
 - Resolve Windows package-manager shims and correct package declaration paths.
 
 ### 🏡 Chore
 
-- Update dependencies and retain the provenance-backed Pug dependency pin ([#5](https://github.com/harlan-zw/ripast/pull/5), [#11](https://github.com/harlan-zw/ripast/pull/11)).
+- Update dependencies and retain the provenance-backed Pug dependency pin ([#5](https://github.com/harlan-zw/ripide/pull/5), [#11](https://github.com/harlan-zw/ripide/pull/11)).
 - Validate installed CLI and SDK packages on Linux and Windows.
 
 > 🤖 Harlan Agent Kit wrote these release notes.

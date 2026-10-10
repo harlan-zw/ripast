@@ -1,15 +1,52 @@
 import type { PathAlias } from './nuxt-paths.ts'
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 import ts from '@typescript/typescript6'
+import picomatch from 'picomatch'
+import { configProperty, literalNuxtConfig, literalString } from './nuxt-config.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases } from './nuxt-paths.ts'
 
 type NuxtBindingNames = { _tag: 'Resolved', names: string[] } | { _tag: 'Unknown' }
 
+/** Select the generated declarations used by the consumer's Nuxt runtime. */
+export function nuxtImportMetadataPaths(cwd: string, consumerPath?: string): string[] {
+  const app = [join(cwd, '.nuxt/imports.d.ts'), join(cwd, '.nuxt/types/imports.d.ts')]
+  const server = join(cwd, '.nuxt/types/nitro-imports.d.ts')
+  const shared = join(cwd, '.nuxt/types/shared-imports.d.ts')
+  if (!consumerPath)
+    return [...app, server, shared].filter(path => existsSync(path))
+  const inDirectory = (directory: string): boolean => {
+    const rel = relative(directory, consumerPath).replace(/\\/g, '/')
+    return rel === '' || (rel !== '..' && !rel.startsWith('../') && !rel.startsWith('/'))
+  }
+  const inProject = (name: string, fallback: string): boolean => {
+    const configPath = join(cwd, '.nuxt', name)
+    if (!existsSync(configPath))
+      return inDirectory(join(cwd, fallback))
+    const parsed = ts.parseConfigFileTextToJson(configPath, readFileSync(configPath, 'utf8'))
+    if (parsed.error)
+      throw new Error(`ripide: cannot read Nuxt runtime configuration in ${configPath}. Run Nuxt prepare first.`)
+    const matches = (patterns: unknown): boolean => Array.isArray(patterns) && patterns.some((pattern: unknown) => {
+      if (typeof pattern !== 'string')
+        return false
+      const path = resolve(dirname(configPath), pattern.replace(/\\/g, '/')).replace(/\\/g, '/')
+      // TypeScript treats a plain directory as including its descendants.
+      const directory = !/[?*]/.test(path) && (existsSync(path) ? statSync(path).isDirectory() : !extname(path))
+      return picomatch(directory ? `${path}/**/*` : path, { dot: true })(consumerPath.replace(/\\/g, '/'))
+    })
+    return matches(parsed.config.include) && !matches(parsed.config.exclude)
+  }
+  if (existsSync(shared) && inProject('tsconfig.shared.json', 'shared'))
+    return [shared]
+  if (inProject('tsconfig.server.json', 'server'))
+    return [server].filter(path => existsSync(path))
+  return app.filter(path => existsSync(path))
+}
+
 export function nuxtConsumerContext(path: string, cwd: string): string {
   let current = dirname(path)
   while (current !== cwd) {
-    if (existsSync(join(current, '.nuxt')) || ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mts', 'nuxt.config.mjs'].some(name => existsSync(join(current, name))))
+    if ((existsSync(join(current, '.nuxt')) || nuxtConfigPath(current)) && !isRegisteredLayer(cwd, current))
       return current
     const parent = dirname(current)
     if (parent === current)
@@ -19,11 +56,43 @@ export function nuxtConsumerContext(path: string, cwd: string): string {
   return cwd
 }
 
+function nuxtConfigPath(cwd: string): string | undefined {
+  return ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mts', 'nuxt.config.mjs']
+    .map(name => join(cwd, name))
+    .find(existsSync)
+}
+
+function isRegisteredLayer(cwd: string, target: string): boolean {
+  const seen = new Set<string>()
+  const visit = (context: string): boolean => {
+    if (seen.has(context))
+      return false
+    seen.add(context)
+    const automatic = relative(join(context, 'layers'), target).replace(/\\/g, '/')
+    if (automatic && !automatic.includes('/') && automatic !== '..')
+      return true
+    const configPath = nuxtConfigPath(context)
+    const config = configPath ? literalNuxtConfig(readFileSync(configPath, 'utf8')) : undefined
+    const extended = configProperty(config, 'extends')
+    const layers = extended && ts.isArrayLiteralExpression(extended) ? extended.elements : extended ? [extended] : []
+    for (const layer of layers) {
+      const path = literalString(layer)
+      if (!path?.startsWith('.'))
+        continue
+      const root = resolve(context, path)
+      if (root === target || visit(root))
+        return true
+    }
+    return false
+  }
+  return visit(cwd)
+}
+
 /** Exact local providers extend scope without treating every app directory as a Nuxt source directory. */
 export function loadNuxtProviderPaths(cwd: string): Set<string> {
   const out = new Set<string>()
   let aliases: PathAlias[] | undefined
-  for (const path of [join(cwd, '.nuxt/imports.d.ts'), join(cwd, '.nuxt/types/imports.d.ts')]) {
+  for (const path of nuxtImportMetadataPaths(cwd)) {
     if (!existsSync(path))
       continue
     const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true)
@@ -44,8 +113,8 @@ export function loadNuxtProviderPaths(cwd: string): Set<string> {
 }
 
 /** Match generated global names to the exact source export, including aliased globals. */
-export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: string): NuxtBindingNames {
-  const paths = [join(cwd, '.nuxt/imports.d.ts'), join(cwd, '.nuxt/types/imports.d.ts')].filter(path => existsSync(path))
+export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: string, consumerPath = fromAbs): NuxtBindingNames {
+  const paths = nuxtImportMetadataPaths(cwd, consumerPath)
   if (!paths.length)
     return { _tag: 'Unknown' }
   const names = new Set<string>()
@@ -109,6 +178,11 @@ export function loadNuxtBindingNames(cwd: string, symbol: string, fromAbs: strin
         }
       }
     }
+  }
+  if (!mapped && paths.join('|') !== nuxtImportMetadataPaths(cwd, fromAbs).join('|')) {
+    const provider = loadNuxtBindingNames(cwd, symbol, fromAbs)
+    if (provider._tag === 'Resolved')
+      return { _tag: 'Resolved', names: [] }
   }
   return mapped && !unresolved ? { _tag: 'Resolved', names: [...names] } : { _tag: 'Unknown' }
 }

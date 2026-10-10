@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { describe, it, vi } from 'vitest'
 import { makeFixture } from './helpers.ts'
 
-// Simulate `npx @ripast/cli` with no @ripast/vue installed: no framework
+// Simulate `npx ripide` with no ripide-vue installed: no framework
 // adapter resolves. A pure-TS rename-file must still work.
 vi.mock('../packages/core/src/adapter.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../packages/core/src/adapter.ts')>()
@@ -13,7 +13,7 @@ vi.mock('../packages/core/src/adapter.ts', async (importOriginal) => {
 })
 
 const { runMove, runRename, runRenameFile } = await import('../packages/core/src/index.ts')
-const { parseSourceFile } = await import('@ripast/core/adapter')
+const { parseSourceFile } = await import('ripide-api/adapter')
 const { writeChanges } = await import('../packages/core/src/util.ts')
 
 const TSCONFIG = JSON.stringify({
@@ -22,7 +22,7 @@ const TSCONFIG = JSON.stringify({
 }, null, 2)
 
 function makeFx(files: Record<string, string>) {
-  const dir = mkdtempSync(join(tmpdir(), 'ripast-rf-noadapter-'))
+  const dir = mkdtempSync(join(tmpdir(), 'ripide-rf-noadapter-'))
   const write = (rel: string, content: string) => {
     const abs = join(dir, rel)
     mkdirSync(dirname(abs), { recursive: true })
@@ -38,8 +38,8 @@ function makeFx(files: Record<string, string>) {
 }
 
 describe('rename-file without a framework adapter', () => {
-  it.each(['deck/tsconfig.json', 'deck/.nuxt/tsconfig.app.json'])('rewrites consumers from the selected %s', async (tsconfig) => {
-    const prefix = tsconfig.includes('.nuxt') ? '../' : ''
+  it.each(['deck/tsconfig.json', 'deck/config/tsconfig.app.json'])('rewrites consumers from the selected %s', async (tsconfig) => {
+    const prefix = tsconfig.includes('/config/') ? '../' : ''
     const fx = makeFixture({
       [tsconfig]: JSON.stringify({
         compilerOptions: { allowJs: true, noEmit: true, module: 'ESNext', moduleResolution: 'bundler' },
@@ -56,7 +56,6 @@ describe('rename-file without a framework adapter', () => {
       const imported = program.body.find((statement: any) => statement.type === 'ImportDeclaration')
       assert.equal(imported?.source.value, '../legacy/data/aggregate.mjs')
       assert.deepEqual(result.regressions, [])
-      assert.ok(!result.changes.some(change => change.rel.includes('.nuxt/')), 'generated configs must stay unchanged')
     }
     finally { fx.cleanup() }
   })
@@ -72,7 +71,7 @@ describe('rename-file without a framework adapter', () => {
       'deck/consumer.ts': 'import { amount } from \'../data/aggregate.mjs\'\nexport const total = amount + 1\n',
     }, false)
     try {
-      const options = { cwd: fx.dir, tsconfig, vue: false }
+      const options = { cwd: fx.dir, tsconfig }
       const result = operation === 'rename'
         ? await runRename('amount', 'totalAmount', options)
         : await runMove('amount', 'data/aggregate.mjs', 'data/target.mjs', options)
@@ -95,7 +94,7 @@ describe('rename-file without a framework adapter', () => {
       'src/b.ts': `import { foo } from './a.ts'\nexport const bar = foo + 1\n`,
     })
     try {
-      const r = await runRenameFile('src/a.ts', 'src/aa.ts', { cwd: fx.dir, verify: 'none' })
+      const r = await runRenameFile('src/a.ts', 'src/aa.ts', { cwd: fx.dir, verifyMode: 'none' })
       writeChanges(r.changes)
       renameSync(r.fileMove.from, r.fileMove.to)
       assert.match(fx.read('src/b.ts'), /from '\.\/aa(?:\.ts)?'/, 'consumer import rewritten')
@@ -107,10 +106,22 @@ describe('rename-file without a framework adapter', () => {
     const fx = makeFx({ 'src/A.vue': `<template><div /></template>\n` })
     try {
       await assert.rejects(
-        runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verify: 'none' }),
-        /requires the Vue adapter/,
+        runRenameFile('src/A.vue', 'src/B.vue', { cwd: fx.dir, verifyMode: 'none' }),
+        /Required extension missing/,
       )
     }
     finally { fx.cleanup() }
   })
+})
+
+it('refuses unchecked Vue directory-index consumers without an extension', async () => {
+  const fx = makeFixture({
+    'utils/index.ts': 'export const amount = 1',
+    'Consumer.vue': '<script setup lang="ts">import { amount } from "./utils"</script><template>{{ amount }}</template>',
+  })
+  try {
+    await assert.rejects(runRenameFile('utils/index.ts', 'utils/value.ts', { cwd: fx.dir, verifyMode: 'none' as const }), /Required extension missing/)
+    assert.equal(fx.read('utils/index.ts'), 'export const amount = 1')
+  }
+  finally { fx.cleanup() }
 })

@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { it } from 'vitest'
-import { isInsideAutoImportScope } from '../packages/core/src/nuxt.ts'
 import { applyTextEdits, mergeFileChanges, parseSourceFile, writeChanges } from '../packages/core/src/util.ts'
+import { isInsideAutoImportScope } from '../packages/vue/src/nuxt.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it('writeChanges creates missing parent dirs for new target files', () => {
@@ -17,7 +18,7 @@ it('writeChanges creates missing parent dirs for new target files', () => {
     ])
     assert.equal(readFileSync(join(fx.dir, 'a.ts'), 'utf8'), 'new-a\n')
     assert.equal(readFileSync(join(fx.dir, 'missing-dir/b.ts'), 'utf8'), 'new-b\n')
-    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripast-tmp'))
+    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripide-tmp'))
     assert.equal(leftover.length, 0, `no tmp files leaked: ${leftover.join(', ')}`)
   }
   finally { fx.cleanup() }
@@ -35,7 +36,7 @@ it('writeChanges applies all changes successfully when every target is writable'
     ])
     assert.equal(fx.read('a.ts'), 'new-a\n')
     assert.equal(fx.read('b.ts'), 'new-b\n')
-    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripast-tmp'))
+    const leftover = readdirSync(fx.dir).filter((f: string) => f.includes('ripide-tmp'))
     assert.equal(leftover.length, 0, 'no tmp files left after success')
   }
   finally { fx.cleanup() }
@@ -63,7 +64,7 @@ it('parseSourceFile parses in-memory Vue script blocks with source positions', (
     '</script>',
     '',
   ].join('\n')
-  const file = parseSourceFile('/tmp/Comp.vue', source, '/tmp')
+  const file = parseSourceFile('/tmp/Comp.vue', source, '/tmp', vueServices())
   assert.equal(file.rel, 'Comp.vue')
   assert.equal(file.scriptSource, '\nconst msg = "hello"\n')
   assert.equal(source.slice(file.scriptStart, file.scriptEnd), file.scriptSource)

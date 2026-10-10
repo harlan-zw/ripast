@@ -3,6 +3,7 @@ import { it } from 'vitest'
 import { runMove } from '../packages/core/src/move.ts'
 import { runRename } from '../packages/core/src/rename.ts'
 import { writeChanges } from '../packages/core/src/util.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it('rename reports zero regressions on clean transforms', async () => {
@@ -11,7 +12,7 @@ it('rename reports zero regressions on clean transforms', async () => {
     'b.ts': 'import { oldFn } from \'./a.ts\'\nexport const r: number = oldFn(2)\n',
   })
   try {
-    const result = await runRename('oldFn', 'newFn', { cwd: fx.dir })
+    const result = await runRename('oldFn', 'newFn', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.equal(result.regressions.length, 0, `expected no regressions, got: ${JSON.stringify(result.regressions)}`)
     assert.equal(result.changes.length, 2)
   }
@@ -25,7 +26,7 @@ it('move reports zero regressions on clean transforms', async () => {
     'c.ts': '',
   })
   try {
-    const result = await runMove('helper', 'a.ts', 'c.ts', { cwd: fx.dir })
+    const result = await runMove('helper', 'a.ts', 'c.ts', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.equal(result.regressions.length, 0, `expected no regressions, got: ${JSON.stringify(result.regressions)}`)
   }
   finally { fx.cleanup() }
@@ -37,19 +38,19 @@ it('pre-existing type errors are not flagged as regressions', async () => {
     'b.ts': 'import { oldFn } from \'./a.ts\'\nexport const r: string = oldFn(2)\n',
   })
   try {
-    const result = await runRename('oldFn', 'newFn', { cwd: fx.dir })
+    const result = await runRename('oldFn', 'newFn', { ...{ cwd: fx.dir }, engine: vueServices() })
     assert.equal(result.regressions.length, 0, 'pre-existing errors should survive rename, not count as new')
   }
   finally { fx.cleanup() }
 })
 
-it('verify: false skips regression detection (faster)', async () => {
+it('verifyMode none skips regression detection', async () => {
   const fx = makeFixture({
     'a.ts': 'export function x() {}\n',
     'b.ts': 'import { x } from \'./a.ts\'\nx()\n',
   })
   try {
-    const result = await runRename('x', 'y', { cwd: fx.dir, verify: false })
+    const result = await runRename('x', 'y', { ...{ cwd: fx.dir, verifyMode: 'none' as const }, engine: vueServices() })
     assert.equal(result.regressions.length, 0, 'verify=false produces empty regressions regardless')
     writeChanges(result.changes)
     assert.match(fx.read('b.ts'), /import \{ y \}/)

@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { downloadPublishedPackages, planRelease, publicationDecision } from '../scripts/release.ts'
+import { assertReplacementPublished, downloadPublishedPackages, planRelease, publicationDecision } from '../scripts/release.ts'
 
-const packages = ['@ripast/core', '@ripast/vue', '@ripast/cli'].map(name => ({ name, version: '0.5.0' }))
+const packages = ['ripide-api', 'ripide-vue', 'ripide-tsrx', 'ripide'].map(name => ({ name, version: '0.5.0' }))
+
+describe('legacy package deprecation', () => {
+  it('requires the replacement release before deprecating legacy packages', () => {
+    expect(() => assertReplacementPublished({ status: 0, stdout: '"0.0.0"' }, '0.6.1')).toThrow('replacement release')
+    expect(() => assertReplacementPublished({ status: 1, stdout: '{"error":{"code":"E404"}}' }, '0.6.1')).toThrow('replacement release')
+    expect(() => assertReplacementPublished({ status: 0, stdout: '"0.6.1"' }, '0.6.1')).not.toThrow()
+  })
+})
 
 describe('registry download', () => {
   it('waits for processed packages before completing the download', async () => {
@@ -57,8 +65,8 @@ describe('release plan', () => {
   })
 
   it('rejects missing or duplicate packages', () => {
-    expect(() => planRelease('v0.5.0', packages.slice(1))).toThrow('core, Vue, and CLI')
-    expect(() => planRelease('v0.5.0', [packages[0], packages[0], packages[2]])).toThrow('core, Vue, and CLI')
+    expect(() => planRelease('v0.5.0', packages.slice(1))).toThrow('core, Vue, TSRX, and CLI')
+    expect(() => planRelease('v0.5.0', [packages[0], packages[0], ...packages.slice(2)])).toThrow('core, Vue, TSRX, and CLI')
   })
 })
 

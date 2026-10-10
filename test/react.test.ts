@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { runCssClassRename, runCssClassScan, runMove, runRename, runReplace, scan, writeChanges } from '../packages/core/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeReactFixture, reactDiagnostics, renderReactFixture } from './react-helpers.ts'
 
 const fixtures: ReturnType<typeof makeReactFixture>[] = []
@@ -28,12 +29,12 @@ export function View() { return <><Action /><Direct /><Shadow /></> }`,
     expect(reactDiagnostics(fx)).toEqual([])
     const before = renderReactFixture(fx, `src/View.${extension}`)
     expect(before).toBe('<button>primary</button><button>primary</button><span>local</span>')
-    const result = await runRename('Button', 'PrimaryButton', { cwd: fx.dir, scope: `src/Button.${extension}`, verify: 'project' })
+    const result = await runRename('Button', 'PrimaryButton', { ...{ cwd: fx.dir, scope: `src/Button.${extension}`, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
     expect(renderReactFixture(fx, `src/View.${extension}`)).toBe(before)
-    expect(scan('PrimaryButton', { cwd: fx.dir }).map(hit => hit.file).sort()).toEqual([
+    expect(scan('PrimaryButton', { ...{ cwd: fx.dir }, engine: vueServices() }).map(hit => hit.file).sort()).toEqual([
       `src/Button.${extension}`,
       `src/Direct.${extension}`,
       `src/Direct.${extension}`,
@@ -57,7 +58,7 @@ export function View() { return <><Action label="main" /><Footer /></> }`,
       'src/components/Button.tsx': '',
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { cwd: fx.dir, verify: 'project' })
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -73,7 +74,7 @@ export function PrimaryButton() { return <section><Button /></section> }`,
 export function View() { return <><Button /><Button /></> }`,
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runReplace('Button', 'PrimaryButton', { cwd: fx.dir, targetScope: 'src/PrimaryButton.tsx', verify: 'project' })
+    const result = await runReplace('Button', 'PrimaryButton', { ...{ cwd: fx.dir, targetScope: 'src/PrimaryButton.tsx', verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -90,7 +91,7 @@ export function View() { return <Button /> }`,
       'src/components/Button.tsx': '',
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { cwd: fx.dir, verify: 'project' })
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -107,7 +108,7 @@ export function View() { return <Button /> }`,
       'src/components/Button.tsx': '',
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { cwd: fx.dir, verify: 'project' })
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -123,7 +124,7 @@ export function View() { return <Action /> }`,
       'src/components/Button.tsx': '',
     })
     expect(reactDiagnostics(fx)).toEqual([])
-    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { cwd: fx.dir, verify: 'project' })
+    const result = await runMove('Button', 'src/Button.tsx', 'src/components/Button.tsx', { ...{ cwd: fx.dir, verifyMode: 'project' }, engine: vueServices() })
     expect(result.regressions).toEqual([])
     writeChanges(result.changes)
     expect(reactDiagnostics(fx)).toEqual([])
@@ -137,12 +138,12 @@ export function View() {
   return <><div className="bg-red-500 hover:bg-red-500">bg-red-500</div><span className={active ? 'bg-red-500' : 'bg-blue-500'} /></>
 }`,
     })
-    expect(runCssClassScan({ cwd: fx.dir, pattern: ['bg-red-500'] })).toEqual([
+    expect(runCssClassScan({ ...{ cwd: fx.dir, pattern: ['bg-red-500'] }, engine: vueServices() })).toEqual([
       { token: 'bg-red-500', count: 3, files: [`src/View.${extension}`] },
     ])
-    writeChanges((await runCssClassRename(new Map([['bg-red-500', 'bg-green-500']]), { cwd: fx.dir })).changes)
+    writeChanges((await runCssClassRename(new Map([['bg-red-500', 'bg-green-500']]), { ...{ cwd: fx.dir }, engine: vueServices() })).changes)
     expect(reactDiagnostics(fx)).toEqual([])
     expect(renderReactFixture(fx, `src/View.${extension}`)).toBe('<div class="bg-green-500 hover:bg-green-500">bg-red-500</div><span class="bg-green-500"></span>')
-    expect(runCssClassScan({ cwd: fx.dir, pattern: ['bg-red-500'] })).toEqual([])
+    expect(runCssClassScan({ ...{ cwd: fx.dir, pattern: ['bg-red-500'] }, engine: vueServices() })).toEqual([])
   })
 })

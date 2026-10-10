@@ -22,8 +22,8 @@ it.each(['agent', 'full'])('tree JSON respects export filters with the %s profil
         filter,
         '--json',
       ], { cwd: fixture.dir, encoding: 'utf8' })
-      const tree = JSON.parse(output)
-      assert.deepEqual(tree.files.flatMap((file: { declarations: { name: string }[] }) => file.declarations.map(declaration => declaration.name)), names)
+      const tree = JSON.parse(output).data
+      assert.deepEqual((profile === 'agent' ? tree.results : tree.files).flatMap((file: { declarations: { name: string }[] }) => file.declarations.map(declaration => declaration.name)), names)
     }
   }
   finally { fixture.cleanup() }
