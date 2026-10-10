@@ -23,7 +23,7 @@ it.each([
     assert.deepEqual(response.data.fix.fixed.map((finding: { file: string }) => finding.file), [path])
     assert.equal(response.data.fix.files, 5)
     for (const page of [response.data.changePage, response.data.findingPage, response.data.fixedPage])
-      assert.deepEqual(page, { total: 5, matched, shown: 1, omitted, offset })
+      assert.deepEqual(page, { total: 5, matched, shown: 1, omitted, offset, ...(offset + 1 < matched ? { nextOffset: offset + 1 } : {}) })
     const artifact = JSON.parse(fixture.read('plan.json'))
     assert.equal(artifact.fix.changes.length, 5)
     assert.equal(artifact.fix.fixed.length, 5)

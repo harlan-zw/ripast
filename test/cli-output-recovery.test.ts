@@ -320,11 +320,11 @@ it('agent defaults bound oversized results without a requested limit', () => {
   finally { fixture.cleanup() }
 })
 
-it('invalid output budgets refuse mutations before writing source or artifacts', () => {
+it.each(['--max-bytes', '--page-bytes'])('invalid %s refuses mutations before writing source or artifacts', (option) => {
   const source = 'export const classes = "old-token"\n'
   const fixture = makeFixture({ 'source.ts': source })
   try {
-    const result = run(fixture.dir, ['css-class-rename', 'old-token', 'new-token', '--apply', '--json', '--max-bytes', '512', '--artifact', 'evidence.json'])
+    const result = run(fixture.dir, ['css-class-rename', 'old-token', 'new-token', '--apply', '--json', option, '512', '--artifact', 'evidence.json'])
     assert.equal(result.status, 1)
     assert.equal(JSON.parse(result.stdout)._tag, 'Error')
     assert.match(JSON.parse(result.stdout).data.message, /1024/)

@@ -1,7 +1,33 @@
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 import { it } from 'vitest'
-import { createTextOutput, renderBoundedOutput } from '../packages/cli/src/presentation/index.ts'
+import { createTextOutput, renderBoundedOutput, selectOutput } from '../packages/cli/src/presentation/index.ts'
+
+it('adapts pages to rendered bytes and traverses every result exactly once', () => {
+  const items = Array.from({ length: 19 }, (_, index) => ({ index, text: '🦎'.repeat(200) }))
+  const received: unknown[] = []
+  let offset = 0
+  while (offset < items.length) {
+    const page = selectOutput(items, { limit: 40, offset, pageBytes: 4096 })
+    assert.ok(Buffer.byteLength(JSON.stringify(page)) <= 4096)
+    assert.ok(page.shown > 0 && page.shown < 19)
+    received.push(...page.results)
+    offset = page.nextOffset ?? items.length
+  }
+  assert.deepEqual(received, items)
+})
+
+it('keeps one oversized item for progress and measures the selected representation', () => {
+  const items = [{ name: 'first', text: 'x'.repeat(10000) }, { name: 'second', text: 'x'.repeat(10000) }]
+  const page = selectOutput(items, { pageBytes: 1024 })
+  assert.equal(page.shown, 1)
+  assert.equal(page.nextOffset, 1)
+  const narrow = selectOutput(items, { pageBytes: 1024, render: page => JSON.stringify({ ...page, results: page.results.map(item => ({ name: item.name })) }) })
+  assert.equal(narrow.shown, 2)
+  assert.equal(narrow.nextOffset, undefined)
+  assert.equal(selectOutput(items, { limit: 0, pageBytes: 1024 }).shown, 0)
+  assert.throws(() => selectOutput(items, { pageBytes: 0 }), /page/i)
+})
 
 it('bounds arbitrary JSON without cutting JSON or changing the outcome', () => {
   const input = { _tag: 'Refused', data: { results: ['x'.repeat(4000)] } }

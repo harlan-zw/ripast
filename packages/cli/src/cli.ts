@@ -54,6 +54,7 @@ import {
   formatVerification,
   outputPath,
   parseOutputBytes,
+  parsePageBytes,
   printDiffs,
   renderBoundedOutput,
   selectDoctorFindings,
@@ -114,6 +115,7 @@ const outputArgs = {
   'timings': { type: 'boolean' as const, default: false, description: 'Emit phase durations as stderr JSON lines.' },
   'limit': { type: 'string' as const, description: 'Maximum displayed results. Agent default: 40. Does not restrict discovery or verification.' },
   'max-bytes': { type: 'string' as const, description: 'Maximum stdout bytes. Agent default: 32768. Minimum: 1024. Does not restrict operations or artifacts.' },
+  'page-bytes': { type: 'string' as const, description: 'Target bytes per result page. Agent default: 4096. Minimum: 1024. Keeps at least one result.' },
   'offset': { type: 'string' as const, description: 'Skip displayed results. Repeat with a later offset to retrieve omitted results.' },
   'file': { type: 'string' as const, description: 'Display results for this project-relative file only.' },
   'code': { type: 'string' as const, description: 'Display diagnostics with this numeric TypeScript code.' },
@@ -133,7 +135,7 @@ function phaseSink(args: OutputArgs): ProfileSink | undefined {
   return args.timings ? event => process.stderr.write(`${JSON.stringify(event)}\n`) : undefined
 }
 function selection(args: OutputArgs, agentProfile: boolean, defaultLimit = 40) {
-  return { limit: args.limit == null ? agentProfile ? defaultLimit : undefined : Number(args.limit), offset: args.offset == null ? 0 : Number(args.offset), file: args.file as string | undefined }
+  return { limit: args.limit == null ? agentProfile ? defaultLimit : undefined : Number(args.limit), offset: args.offset == null ? 0 : Number(args.offset), file: args.file as string | undefined, pageBytes: parsePageBytes(args['page-bytes'], agentProfile) }
 }
 function selectedFields(items: unknown[], args: OutputArgs) {
   if (!args.fields)
@@ -212,11 +214,11 @@ function emitJson(payload: unknown, args: OutputArgs, full = payload, artifact: 
 }
 function discoveryJson<T>(results: T[], args: OutputArgs, file?: (item: T) => string, full: unknown = results) {
   const agentProfile = resolveProfile(args.profile, !!args.json).agentProfile
-  if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null) {
+  if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null && args['page-bytes'] == null) {
     emitJson(full, args, full)
     return
   }
-  const page = selectOutput(results, selection(args, agentProfile), file)
+  const page = selectOutput(results, { ...selection(args, agentProfile), render: page => serializeJson(jsonResult('Result', String(args.command), process.cwd(), { ...page, results: selectedFields(page.results, args) }), args) }, file)
   emitJson({ ...page, results: selectedFields(page.results, args) }, args, full)
 }
 function diagnostics(r: MutatingResult, args: OutputArgs, agentProfile: boolean) {
@@ -225,7 +227,7 @@ function diagnostics(r: MutatingResult, args: OutputArgs, agentProfile: boolean)
   return { ...selectOutput(filtered, selection(args, agentProfile, 20), d => agentProfile ? d.file : outputPath(d.file, process.cwd())), total: all.length }
 }
 function fullPageText(rendered: string, page: OutputPage<unknown>, unit: 'hits' | 'files' | 'findings', args: OutputArgs): string {
-  if (args.limit == null && args.offset == null && args.file == null)
+  if (args.limit == null && args.offset == null && args.file == null && args['page-bytes'] == null)
     return rendered
   const displayed = page.shown ? rendered.trimEnd() : `No ${unit} on this page.`
   return [`project total: ${page.total} ${unit}`, `displayed ${unit}:`, displayed, formatOutputPage(page)].join('\n')
@@ -417,6 +419,7 @@ const treeCmd = defineCommand({
   meta: { name: 'tree', description: 'Print a project declaration tree from top-level AST declarations, grouped by file.' },
   args: {
     glob: globArg,
+    declarations: { type: 'boolean', default: false, description: 'Page individual declarations. Limit and offset count declarations instead of files.' },
     exports: { type: 'string', description: 'Declaration filter: all, exported, or local. Defaults to exported for detected agents, all otherwise.' },
     profile: profileArg,
     ...outputArgs,
@@ -431,8 +434,21 @@ const treeCmd = defineCommand({
       : resolveExportFilter(args.exports)
     const tree = buildDeclarationTree({ engine, profile: phaseSink(args), glob: args.glob ? splitGlobs(args.glob as string) : undefined, exports: agentProfile ? 'all' : exportFilter })
     tree.files.sort((a, b) => a.file.localeCompare(b.file))
+    const filtered = { files: tree.files.map(file => ({ ...file, declarations: file.declarations.filter(declaration => exportFilter === 'all' || (exportFilter === 'exported') === declaration.exported) })) }
+    if (args.declarations) {
+      const declarations = filtered.files.flatMap(file => [...file.declarations]
+        .sort((a, b) => a.line - b.line || a.col - b.col || a.name.localeCompare(b.name))
+        .map(declaration => ({ file: file.file, ...declaration })))
+      if (args.json) {
+        discoveryJson(declarations, { ...args, limit: args.limit ?? (agentProfile ? 40 : declarations.length) }, declaration => declaration.file, filtered)
+        return
+      }
+      const page = selectOutput(declarations, selection(args, agentProfile), declaration => declaration.file)
+      const lines = page.results.map(declaration => `${declaration.file}:${declaration.line}:${declaration.col} ${declaration.exported ? 'export' : 'local'} ${declaration.kind} ${declaration.signature ?? declaration.name}`)
+      writeText(args, `${lines.join('\n')}\n${formatOutputPage(page)}\n`)
+      return
+    }
     if (args.json) {
-      const filtered = { files: tree.files.map(file => ({ ...file, declarations: file.declarations.filter(declaration => exportFilter === 'all' || (exportFilter === 'exported') === declaration.exported) })) }
       discoveryJson(filtered.files, args, file => file.file, filtered)
       return
     }
@@ -833,7 +849,7 @@ const cssClassScanCmd = defineCommand({
         return
       }
       if (agentProfile) {
-        writeText(args, `${profileHeader()}\n${formatAgentFileScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined)}\n`)
+        writeText(args, `${profileHeader()}\n${formatAgentFileScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined, parsePageBytes(args['page-bytes'], true))}\n`)
         return
       }
       const page = selectOutput(hits, selection(args, false), hit => hit.file)
@@ -842,7 +858,7 @@ const cssClassScanCmd = defineCommand({
     }
     const hits = runCssClassScan({ engine, ...base, sort: resolveCssClassScanSort(args.sort) })
     if (args.json) {
-      if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null) {
+      if (!agentProfile && args.limit == null && args.offset == null && args.file == null && args.fields == null && args['page-bytes'] == null) {
         emitJson(hits, args, hits)
         return
       }
@@ -852,7 +868,7 @@ const cssClassScanCmd = defineCommand({
       return
     }
     if (agentProfile) {
-      writeText(args, `${profileHeader()}\n${formatAgentScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined)}\n`)
+      writeText(args, `${profileHeader()}\n${formatAgentScanHits(hits, args.limit == null ? 40 : Number(args.limit), Number(args.offset ?? 0), args.file as string | undefined, parsePageBytes(args['page-bytes'], true))}\n`)
       return
     }
     const page = selectOutput(hits, selection(args, false), hit => args.file && hit.files.includes(String(args.file)) ? String(args.file) : '')
@@ -1113,7 +1129,7 @@ const doctorCmd = defineCommand({
         writeChanges(fix.changes)
         for (const c of page.results) writeText(args, `wrote ${c.rel}\n`)
       }
-      if (args.limit != null || args.offset != null || args.file != null)
+      if (args.limit != null || args.offset != null || args.file != null || args['page-bytes'] != null)
         writeText(args, `files: ${formatOutputPage(page)}\n`)
       if (fix.skipped.length)
         process.exitCode = 1
@@ -1306,6 +1322,7 @@ export async function runCli(rawArgs: string[], ensureAdapters?: (needed: readon
         async run(context: Parameters<NonNullable<typeof selected.run>>[0]) {
           ;(context.args as OutputArgs).command = name
           const maxBytes = parseOutputBytes(context.args['max-bytes'], resolveProfile(context.args.profile, !!context.args.json).agentProfile)
+          parsePageBytes(context.args['page-bytes'], resolveProfile(context.args.profile, !!context.args.json).agentProfile)
           preflightJsonOutput(context.args, maxBytes)
           const textOutput = createTextOutput({ maxBytes, write: text => process.stdout.write(text) })
           ;(context.args as OutputArgs).textOutput = textOutput

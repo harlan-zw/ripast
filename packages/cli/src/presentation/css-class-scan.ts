@@ -1,4 +1,5 @@
 import type { CssClassFileScanHit, CssClassScanHit } from 'ripide-api'
+import { selectOutput } from './output.ts'
 
 export function formatScanHits(hits: CssClassScanHit[], json: boolean): string {
   if (json)
@@ -14,18 +15,21 @@ export function formatScanHits(hits: CssClassScanHit[], json: boolean): string {
   return lines.join('\n')
 }
 
-export function formatAgentScanHits(hits: CssClassScanHit[], limit: number = 40, offset = 0, file?: string): string {
+export function formatAgentScanHits(hits: CssClassScanHit[], limit: number = 40, offset = 0, file?: string, pageBytes?: number): string {
   const total = hits.length
   hits = file ? hits.filter(hit => hit.files.includes(file)) : hits
   if (!hits.length)
     return 'class-scan tokens=0 files=0'
-  const shown = hits.slice(offset, offset + limit)
+  const page = selectOutput(hits, { limit, offset, pageBytes, render: page => JSON.stringify(page.results.map(h => ({ token: h.token, count: h.count, files: h.files.length }))) })
+  const shown = page.results
   const lines = [`class-scan tokens=${hits.length} files=${new Set(hits.flatMap(h => h.files)).size} top=${shown.length} format=token=count/files total=${total} omitted=${hits.length - shown.length} offset=${offset}`]
   const chunkSize = 8
   for (let i = 0; i < shown.length; i += chunkSize)
     lines.push(shown.slice(i, i + chunkSize).map(h => `${h.token}=${h.count}/${h.files.length}`).join(' '))
   if (hits.length > shown.length)
     lines.push(`+${hits.length - shown.length} more`)
+  if (page.nextOffset !== undefined)
+    lines.push(`nextOffset: ${page.nextOffset}`)
   return lines.join('\n')
 }
 
@@ -43,16 +47,19 @@ export function formatFileScanHits(hits: CssClassFileScanHit[], json: boolean): 
   return lines.join('\n')
 }
 
-export function formatAgentFileScanHits(hits: CssClassFileScanHit[], limit: number = 40, offset = 0, file?: string): string {
+export function formatAgentFileScanHits(hits: CssClassFileScanHit[], limit: number = 40, offset = 0, file?: string, pageBytes?: number): string {
   const total = hits.length
   hits = file ? hits.filter(hit => hit.file === file) : hits
   if (!hits.length)
     return 'class-files files=0'
-  const shown = hits.slice(offset, offset + limit)
+  const page = selectOutput(hits, { limit, offset, pageBytes })
+  const shown = page.results
   const lines = [`class-files files=${hits.length} top=${shown.length} total=${total} omitted=${hits.length - shown.length} offset=${offset} format=file=unique/total`]
   for (const h of shown)
     lines.push(`${h.file}=${h.unique}/${h.count}`)
   if (hits.length > shown.length)
     lines.push(`+${hits.length - shown.length} more`)
+  if (page.nextOffset !== undefined)
+    lines.push(`nextOffset: ${page.nextOffset}`)
   return lines.join('\n')
 }

@@ -1,10 +1,12 @@
 import { Buffer } from 'node:buffer'
 import { isAbsolute, relative, sep } from 'node:path'
 
-export interface OutputSelection {
+export interface OutputSelection<T = unknown> {
   limit?: number
   offset?: number
   file?: string
+  pageBytes?: number
+  render?: (page: OutputPage<T>) => string
 }
 
 export interface OutputPage<T> {
@@ -13,18 +15,32 @@ export interface OutputPage<T> {
   shown: number
   omitted: number
   offset: number
+  nextOffset?: number
   results: T[]
 }
 
 /** Selection changes display only. Discovery and verification retain complete inputs. */
-export function selectOutput<T>(items: readonly T[], options: OutputSelection = {}, file?: (item: T) => string): OutputPage<T> {
+export function selectOutput<T>(items: readonly T[], options: OutputSelection<T> = {}, file?: (item: T) => string): OutputPage<T> {
   const offset = options.offset ?? 0
   const limit = options.limit ?? items.length
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 0)
     throw new Error('Output limit and offset must be non-negative integers.')
+  if (options.pageBytes !== undefined && (!Number.isSafeInteger(options.pageBytes) || options.pageBytes < 1024))
+    throw new Error('Output page budget must be an integer of at least 1024 bytes.')
   const matched = options.file && file ? items.filter(item => file(item) === options.file) : [...items]
   const results = matched.slice(offset, offset + limit)
-  return { total: items.length, matched: matched.length, shown: results.length, omitted: matched.length - results.length, offset, results }
+  const page = (results: T[]): OutputPage<T> => ({ total: items.length, matched: matched.length, shown: results.length, omitted: matched.length - results.length, offset, ...(results.length && offset + results.length < matched.length ? { nextOffset: offset + results.length } : {}), results })
+  if (options.pageBytes === undefined)
+    return page(results)
+  const render = options.render ?? JSON.stringify
+  // Keep one atomic result even if it exceeds the target. The hard guard handles it.
+  let shown = Math.min(1, results.length)
+  for (let count = 2; count <= results.length; count++) {
+    if (Buffer.byteLength(render(page(results.slice(0, count)))) > options.pageBytes)
+      break
+    shown = count
+  }
+  return page(results.slice(0, shown))
 }
 
 export function outputPath(path: string, cwd: string): string {
@@ -33,10 +49,18 @@ export function outputPath(path: string, cwd: string): string {
 }
 
 export function formatOutputPage(page: Omit<OutputPage<unknown>, 'results'>): string {
-  return `total: ${page.total}, matched: ${page.matched}, shown: ${page.shown}, omitted: ${page.omitted}, offset: ${page.offset}`
+  return `total: ${page.total}, matched: ${page.matched}, shown: ${page.shown}, omitted: ${page.omitted}, offset: ${page.offset}${page.nextOffset === undefined ? '' : `, nextOffset: ${page.nextOffset}`}`
 }
 
 export const DEFAULT_OUTPUT_BYTES = 32 * 1024
+export const DEFAULT_PAGE_BYTES = 4 * 1024
+
+export function parsePageBytes(value: unknown, compact: boolean): number | undefined {
+  const pageBytes = value == null ? compact ? DEFAULT_PAGE_BYTES : undefined : Number(value)
+  if (pageBytes !== undefined && (!Number.isSafeInteger(pageBytes) || pageBytes < 1024))
+    throw new Error('Option --page-bytes requires an integer of at least 1024 bytes.')
+  return pageBytes
+}
 
 /** Parse the display budget before operations that can write project files. */
 export function parseOutputBytes(value: unknown, compact: boolean): number | undefined {

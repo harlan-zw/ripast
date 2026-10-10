@@ -363,21 +363,27 @@ Agents get compact summaries; terminals get full diffs and trees. JSON `auto` al
 
 ### Output limits
 
-Agent output defaults to 40 displayed results and 32 KiB of stdout.
+Agent pages target 4 KiB, with at most 40 displayed results.
 Some commands use smaller or larger result counts. Check their help for details.
-Full output has no default byte limit. Add `--max-bytes` to bound either profile.
+Use `--page-bytes 8192` for a larger page. Follow `nextOffset`, since page sizes vary.
+The target measures serialized page bytes. It does not estimate tokens.
+Each result collection has its own target. Response metadata can add bytes.
+A page retains at least one result, even when that result exceeds the target.
+Agent stdout has a separate 32 KiB ceiling for large individual results and combined collections.
+Full output has no default page target or byte ceiling. Both flags work with either profile.
 The minimum byte limit is 1024.
 Long project or artifact paths can require a larger limit to retain response metadata.
 An insufficient metadata budget refuses the operation before writes. Its error response can exceed the rejected limit.
 
 ```bash
 ripide tree --profile agent --limit 10
-ripide tree --profile agent --limit 10 --offset 10
-ripide tree --json --file src/store.ts --fields file,declarations --max-bytes 8192
+ripide tree --profile agent --offset <nextOffset>
+ripide tree --json --declarations --file src/store.ts --page-bytes 8192
 ripide tree --json --artifact /tmp/ripide-tree.json
 ```
 
-Paging counts results. For `tree`, each result is a file.
+Paging counts results. For `tree`, each result is a file unless `--declarations` is supplied.
+Use `tree --declarations` to page declarations within large files.
 The byte limit also protects against one oversized result.
 Limits change display only. Discovery, verification, and applied changes remain complete.
 
@@ -392,7 +398,9 @@ Use `--json --artifact <new-file.json>` to save complete evidence outside model 
 The artifact path must be new. Artifacts have no display limit.
 
 Reusable helpers are exported from `ripide/presentation`:
-`selectOutput` pages results, `renderBoundedOutput` bounds arbitrary rendered values, and `createTextOutput` bounds cumulative text writes.
+`selectOutput` accepts `pageBytes` and an optional page renderer to fit arbitrary result collections.
+It returns `nextOffset` when another page exists.
+`renderBoundedOutput` bounds arbitrary rendered values, and `createTextOutput` bounds cumulative text writes.
 
 See [API contract migration](docs/api-contracts.md) for JSON consumers and SDK formatting imports.
 
