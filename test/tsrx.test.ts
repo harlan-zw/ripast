@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { symlinkSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { it } from 'vitest'
+import { afterEach, beforeEach, it, vi } from 'vitest'
 import { scan } from '../packages/core/src/scan.ts'
 import { makeFixture } from './helpers.ts'
 
@@ -67,7 +67,10 @@ function command(cwd: string, args: string[], externalCode = true) {
   })
 }
 
-it('tsrx scan includes scripts, template expressions, control flow, aliases and original locations by default', () => {
+beforeEach(() => vi.stubEnv('RIPIDE_RUN_EXTERNAL_CODE', '1'))
+afterEach(() => vi.unstubAllEnvs())
+
+it('tsrx scan includes scripts, template expressions, control flow, aliases and original locations after opt-in', () => {
   const fx = fixture()
   try {
     const hits = scan('oldFn', { cwd: fx.dir })

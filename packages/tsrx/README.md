@@ -23,10 +23,10 @@ Add the mapper to the consumer's tsconfig, retaining its other compiler options:
 }
 ```
 
-Scanning requires the adapter and the project-local Octane compiler. Semantic operations additionally require explicit external-code opt-in. The CLI refuses a missing or broken mapper before writing:
+Scanning requires the adapter and the project-local Octane compiler. Scans and semantic operations require explicit external-code opt-in. The CLI refuses a missing or broken mapper before writing:
 
 ```sh
-bunx --package ripide ripide scan oldFn --profile full
+RIPIDE_RUN_EXTERNAL_CODE=1 bunx --package ripide ripide scan oldFn --profile full
 
 RIPIDE_RUN_EXTERNAL_CODE=1 bunx --package ripide ripide \
   rename oldFn newFn --scope src/helper.ts --profile full

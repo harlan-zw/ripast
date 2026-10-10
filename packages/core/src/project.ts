@@ -53,10 +53,11 @@ export function isInsideAutoImportScope(path: string, scopes: Set<string>): bool
 /** Refuse unregistered authored code discovered outside the native source suffixes. */
 export function assertSourceSupport(cwd: string, engine?: EngineServices): void {
   const nonCode = new Set(['.json', '.md', '.yaml', '.yml', '.txt', '.css', '.scss', '.sass', '.less', '.html', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.woff', '.woff2', '.lock', '.map'])
-  for (const path of rgFiles('', { cwd, glob: '*', listAll: true })) {
+  const files = rgFiles('', { cwd, glob: '*', listAll: true })
+  if (files.some(path => path.endsWith('.tsrx')) && files.some(path => engine?.owns(path)))
+    throw new Error('TSRX semantic operations cannot run with framework extensions. Use separate projects.')
+  for (const path of files) {
     const suffix = extname(path)
-    if (suffix === '.tsrx' && engine?.extensions.some(extension => rgFiles('', { cwd, glob: extension.suffixes.map(value => `*${value}`), listAll: true }).length))
-      throw new Error('TSRX semantic operations cannot run with framework extensions. Use separate projects.')
     if (nonCode.has(suffix) || /^(?:\.ts|\.tsx|\.tsrx|\.js|\.jsx|\.mts|\.cts|\.mjs|\.cjs)$/.test(suffix) || engine?.owns(path))
       continue
     const source = readFileSync(path, 'utf8')

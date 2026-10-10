@@ -13,6 +13,8 @@ export function resolveTsrxModule(from: string, entry: 'compiler' | 'package.jso
 
 /** Parse authored positions, never the generated TSX that refactors would corrupt. */
 export function parseTsrxSource(path: string, source: string) {
+  if (process.env.RIPIDE_RUN_EXTERNAL_CODE !== '1')
+    throw new Error('ripide: TSRX parsing requires RIPIDE_RUN_EXTERNAL_CODE=1 and a project-local Octane compiler')
   const require = createRequire(path)
   let compiler: { compile_to_volar_mappings: typeof compile_to_volar_mappings }
   try {
