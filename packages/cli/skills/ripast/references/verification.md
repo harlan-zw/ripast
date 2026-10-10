@@ -4,6 +4,12 @@ Rename, replace, move, delete, and rename-file compare type diagnostics by defau
 New diagnostics block `--apply`. Results report checks that ran against proposed content.
 JSON defaults to compact output in every environment. Agent detection only changes default text output.
 Every JSON response contains `_tag`, `command`, `base`, and `data`.
+Compact stdout defaults to 32 KiB. Use `--max-bytes` to change the byte limit; the minimum is 1024.
+Full output has no default byte limit. Byte limits do not change discovery, verification, or applied changes.
+If `data.output._tag` is `Omitted`, the command outcome still appears in `_tag`.
+Narrow output with supported filters or increase `--max-bytes` to retrieve the missing detail.
+Use `--json --artifact <new-file.json>` for complete evidence outside model context.
+Artifacts remain complete. Stdout limits do not bound stderr logs.
 Mutation tags are `Preview`, `Applied`, `Refused`, or `Empty`. Discovery uses `Result`; failures use `Error`.
 Compact JSON uses `data.verification: [[checker, scope, files, newErrors, ignoredErrors?]]`.
 `typescript` pulls error diagnostics from the native TypeScript language server.

@@ -2,7 +2,7 @@ import type { FileChange } from 'ripide-api'
 import process from 'node:process'
 import { createPatch } from 'diff'
 
-export function printDiffs(changes: FileChange[], out: NodeJS.WritableStream = process.stdout): void {
+export function printDiffs(changes: FileChange[], out: { write: (text: string) => unknown } = process.stdout): void {
   for (const c of changes) {
     const patch = createPatch(c.rel, c.before, c.after, '', '', { context: 2 })
     out.write(patch)

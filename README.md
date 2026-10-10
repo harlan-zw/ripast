@@ -79,6 +79,35 @@ This fallback can be slower. It supports fixed-string searches, file listing, gl
 Programmatic regex searches use ripgrep syntax when available, or Git extended regular expressions with the Git fallback.
 Regex searches require ripgrep, or Git and a Git working tree.
 
+### Cursor and Claude Code
+
+Requires Node 22.13+, pnpm, and an agent with shell access.
+Run from your project root:
+
+```bash
+npm install -g ripide
+pnpm dlx skills add harlan-zw/ripide --skill ripast --agent cursor claude-code --yes
+```
+
+Then ask in Agent chat or Claude Code:
+
+```text
+/ripast Preview renaming useStore to useAppStore.
+```
+
+The CLI is named `ripide`. The Agent Skill is named `ripast`.
+The installer adds the Skill and its references for both clients.
+For manual installation, copy the whole [Skill directory](./packages/cli/skills/ripast), including `references/`:
+
+| Client | Project directory |
+| --- | --- |
+| [Cursor](https://cursor.com/docs/skills) | `.cursor/skills/ripast/` |
+| [Claude Code and its IDE extension](https://code.claude.com/docs/en/skills) | `.claude/skills/ripast/` |
+
+RipIDE runs through the agent's shell. It includes no MCP server or MCP configuration.
+Each CLI invocation uses its current working directory.
+If you switch projects or monorepo packages, run from the intended root.
+
 ## Usage
 
 Run commands from your project root. Commands preview changes by default; pass `--apply` to write.
@@ -332,6 +361,39 @@ CSS class renames do not run a typecheck.
 For text, `auto` uses `std-env`'s `isAgent` detection.
 Agents get compact summaries; terminals get full diffs and trees. JSON `auto` always uses compact output.
 
+### Output limits
+
+Agent output defaults to 40 displayed results and 32 KiB of stdout.
+Some commands use smaller or larger result counts. Check their help for details.
+Full output has no default byte limit. Add `--max-bytes` to bound either profile.
+The minimum byte limit is 1024.
+Long project or artifact paths can require a larger limit to retain response metadata.
+An insufficient metadata budget refuses the operation before writes. Its error response can exceed the rejected limit.
+
+```bash
+ripide tree --profile agent --limit 10
+ripide tree --profile agent --limit 10 --offset 10
+ripide tree --json --file src/store.ts --fields file,declarations --max-bytes 8192
+ripide tree --json --artifact /tmp/ripide-tree.json
+```
+
+Paging counts results. For `tree`, each result is a file.
+The byte limit also protects against one oversized result.
+Limits change display only. Discovery, verification, and applied changes remain complete.
+
+If JSON exceeds the byte limit, `data.output._tag` is `Omitted`.
+The response preserves `_tag`, `command`, and `base` and provides recovery instructions.
+Text retains complete leading lines and reports omitted output.
+Oversized graphs return an empty graph with an omission comment.
+Stdout limits do not bound stderr logs.
+
+If output is omitted, narrow the results or increase `--max-bytes`.
+Use `--json --artifact <new-file.json>` to save complete evidence outside model context.
+The artifact path must be new. Artifacts have no display limit.
+
+Reusable helpers are exported from `ripide/presentation`:
+`selectOutput` pages results, `renderBoundedOutput` bounds arbitrary rendered values, and `createTextOutput` bounds cumulative text writes.
+
 See [API contract migration](docs/api-contracts.md) for JSON consumers and SDK formatting imports.
 
 ## Commands
@@ -396,6 +458,10 @@ It also works with `buildUnusedDeclarations`; only declaration analysis is cache
 Instances belong to the caller. Independent CLI processes do not share this cache.
 
 ## Limitations
+
+**CSS custom properties.** CSS class migration handles class tokens and `@apply`.
+It does not rename custom properties such as `--foo-a` in CSS, JavaScript, or Vue styles.
+It does not report dynamic variable candidates such as `` `--foo-${bar}` ``.
 
 **Scoping with `--glob`.** Pass comma-separated patterns. Prefix a pattern with `!` to exclude matching files:
 
