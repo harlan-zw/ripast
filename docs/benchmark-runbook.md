@@ -74,6 +74,16 @@ Keep publication work separate from implementation measurements.
 Inspect the effective native prompt without a model call.
 Configuration flags alone may retain global instructions or Skills.
 Apply the same personal-context isolation boundary to every arm. Preserve authentication.
+Read-only mounts still allow reading. Restrict candidate visibility to an explicit resource list.
+Expose its project, public runtime checks, and selected treatment resources.
+Keep full reference solutions and answer maps outside that list. Run semantic acceptance in the controller after candidate completion.
+Hide other attempts, preparation reports, notes, and historical native sessions.
+Mount only the current attempt's native record directory at the runner's normal session path.
+Keep authentication available without changing the runner's home or exposing credential bytes in receipts.
+Before registration, prove denied and allowed reads inside each exact candidate namespace without model calls.
+Include reference sources, answer maps, previous answers, and historical native sessions in the denied-read probes.
+Prove public checks execute and current native records persist. Preserve failed probes and mount corrections.
+Record readable answer artifacts in earlier runs as availability evidence. Do not infer that a model used them.
 Record the effective configuration, prompt, mount rules, and treatment Skill hashes.
 Supply the complete linked Skill resource tree and its source base path to the runner.
 Pin each resource's hash. Resolve every relative link from that base during no-model preflight.
