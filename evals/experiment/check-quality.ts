@@ -6,10 +6,17 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { checkCases } from './check-cases.ts'
+import { projectContext } from './check-context.ts'
 import { sha256 } from './manifest.ts'
 
 async function main() {
-  const [project, task, provenance, mode] = process.argv.slice(2)
+  const [project, task, provenance, mode, ...flags] = process.argv.slice(2)
+  if (flags.length === 1 && flags[0] === '--help') {
+    console.log('Usage: check-behavior [--help]\nCheck behavior, source preservation, red and green execution evidence, and temporary code cleanup.\nKeep identical assertions for red and green. Remove existing artifacts before reusing their paths.\nRemove new test modules and code helpers from .checks. Keep assertions.txt.\nProject build and typecheck run separately.')
+    return
+  }
+  if (flags.length)
+    throw new Error(`Unsupported argument: ${flags[0]}`)
   function authored(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap(entry =>
       ['node_modules', '.git', '.build'].includes(entry.name) ? [] : entry.isDirectory() ? authored(join(directory, entry.name)) : [join(directory, entry.name)])
@@ -59,7 +66,7 @@ async function main() {
       const overlap = peak
       release()
       await work
-      assert.equal(overlap, Math.min(Math.max(concurrency, 1), 4))
+      assert.equal(overlap, Math.min(Math.max(concurrency, 1), 4), `Concurrency ${concurrency} must start ${Math.min(Math.max(concurrency, 1), 4)} workers.`)
       assert.equal(peak, overlap)
       assert.deepEqual(visited.sort((a, b) => a[1] - b[1]), [[4, 0], [5, 1], [6, 2], [7, 3]])
     }
@@ -123,11 +130,18 @@ async function main() {
     }
     const called = readFileSync(join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'commands.called'), 'utf8').trim().split('\n')
     const commandFile = join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'check-commands.jsonl')
-    const commands = readFileSync(commandFile, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { name: string, args: string[], started: string, assertionHash: string | null, sourceHash: string | null, exit: number })
-    const evidence = (color: string) => commands.filter(command => command.args.some(arg => arg.endsWith(`.checks/${color}.json`))).at(-1)
+    const commands = readFileSync(commandFile, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { name: string, args: string[], started: string, assertionHash: string | null, sourceHash: string | null, artifact: string, artifactHash: string | null, testPath: string | null, exit: number })
+    const evidence = (color: string) => commands.filter(command => command.artifact === join(project, '.checks', `${color}.json`)).at(-1)
     const before = evidence('red')
     const after = evidence('green')
     assert.ok(before?.assertionHash && after?.assertionHash, 'Record both assertion sources.')
+    for (const [color, command, report] of [['red', before, red], ['green', after, green]] as const) {
+      assert.equal(command.artifactHash, sha256(readFileSync(join(project, '.checks', `${color}.json`))), 'Keep the artifact from the recorded execution.')
+      if (command.name === 'vitest') {
+        assert.ok(command.testPath && [projectContext(task).testPath, '.checks/proof.test.ts'].some(path => join(project, path) === command.testPath), 'Run the registered temporary module.')
+        assert.deepEqual(report.testResults.map((file: { name: string }) => resolve(project, file.name)), [command.testPath], 'Run only the registered temporary module.')
+      }
+    }
     assert.equal(before.exit, 1, 'Record a failing execution before repair.')
     assert.equal(after.exit, 0, 'Record a passing execution after repair.')
     assert.equal(before.assertionHash, after.assertionHash, 'Reuse identical assertions for red and green.')
