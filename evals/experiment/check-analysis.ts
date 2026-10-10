@@ -38,11 +38,28 @@ export function compareCheckStudies(baseline: Manifest, candidate: Manifest, bas
   }
   if (normalized(baseline) !== normalized(candidate))
     return { _tag: 'Err', message: 'Inputs, runtime artifacts, model, oracle, schedule, or budgets differ. Register a controlled comparison.' }
+  for (const [label, input] of [['Baseline', baselineRows], ['Candidate', candidateRows]] as const) {
+    if (input.some(row => !baseline.tasks.some(task => task.id === row.task)
+      || !['direct', 'forced', 'hybrid'].includes(row.mode)
+      || !Number.isSafeInteger(row.repeat) || row.repeat < 0 || row.repeat >= baseline.repeats
+      || !Number.isSafeInteger(row.attempt) || row.attempt < 0 || row.attempt > baseline.repairs)) {
+      return { _tag: 'Err', message: `${label} contains an unregistered task, mode, repeat, or repair attempt.` }
+    }
+    for (const task of baseline.tasks) {
+      for (const mode of ['direct', 'forced', 'hybrid']) {
+        for (let repeat = 0; repeat < baseline.repeats; repeat++) {
+          const rows = input.filter(row => row.task === task.id && row.mode === mode && row.repeat === repeat).sort((a, b) => a.attempt - b.attempt)
+          if (!rows.length || rows.some((row, index) => row.attempt !== index))
+            return { _tag: 'Err', message: `${label} needs complete, unique, consecutive attempts for ${task.id}/${mode}/${repeat}.` }
+        }
+      }
+    }
+  }
   const comparisons = baseline.tasks.flatMap(task => ['direct', 'forced', 'hybrid'].map((mode) => {
-    const rows = (input: AttemptMetric[]) => input.filter(row => row.task === task.id && row.mode === mode)
+    const rows = (input: AttemptMetric[]) => input.filter(row => row.task === task.id && row.mode === mode).sort((a, b) => a.attempt - b.attempt)
     const before = rows(baselineRows)
     const after = rows(candidateRows)
-    const pairs = Array.from({ length: baseline.repeats }, (_, repeat) => ({ before: before.filter(row => row.repeat === repeat), after: after.filter(row => row.repeat === repeat) })).filter(pair => pair.before.length && pair.after.length)
+    const pairs = Array.from({ length: baseline.repeats }, (_, repeat) => ({ before: before.filter(row => row.repeat === repeat), after: after.filter(row => row.repeat === repeat) }))
     const sum = (input: AttemptMetric[], field: 'uncachedInput' | 'output') => input.every(row => row.usage._tag === 'Recorded') ? input.reduce((sum, row) => sum + (row.usage._tag === 'Recorded' ? row.usage.value.tokens[field] : 0), 0) : null
     const tokenDelta = (field: 'uncachedInput' | 'output') => {
       const deltas = pairs.flatMap((pair) => {

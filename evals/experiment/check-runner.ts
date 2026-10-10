@@ -1,14 +1,14 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkCases } from './check-cases.ts'
 import { projectContext, workflowInstructions } from './check-context.ts'
 
 const [action, project, promptFile, task, root, model, opencode, variant = 'baseline', scope = 'slices', provenance] = process.argv.slice(2)
-function run(command: string[], env = process.env) {
-  const result = spawnSync(command[0], command.slice(1), { cwd: project, env, stdio: 'inherit' })
+function run(command: string[], env = process.env, cwd = project) {
+  const result = spawnSync(command[0], command.slice(1), { cwd, env, stdio: 'inherit' })
   if (result.error)
     throw result.error
   if (result.signal)
@@ -33,7 +33,10 @@ else {
     throw new Error('Run fixture preflight before the workflow.')
   const home = join(record, 'home')
   const bin = join(home, 'bin')
+  // OpenCode project-copy initialization can stall when its startup folder has Git metadata.
+  const startup = join(home, 'startup')
   mkdirSync(bin, { recursive: true, mode: 0o700 })
+  mkdirSync(startup, { recursive: true, mode: 0o700 })
   const shell = (value: string) => `'${value.replaceAll('\'', '\'\\\'\'')}'`
   const cli = join(root, 'packages/cli/bin/ripide.mjs')
   const vitest = join(project, 'node_modules/vitest/vitest.mjs')
@@ -51,13 +54,14 @@ else {
     XDG_CONFIG_HOME: join(home, 'config'),
     XDG_DATA_HOME: join(home, 'data'),
     XDG_STATE_HOME: join(home, 'state'),
+    XDG_CACHE_HOME: join(home, 'cache'),
     PATH: `${bin}:${process.env.PATH}`,
     RIPIDE_EXPERIMENT_TEST_PATH: join(project, scope === 'projects' ? projectContext(task).testPath : '.checks/proof.test.ts'),
     OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
     OPENCODE_DISABLE_CLAUDE_CODE: '1',
     OPENCODE_DISABLE_AUTOUPDATE: '1',
     OPENCODE_DISABLE_SHARE: '1',
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider, autoupdate: false, share: 'disabled', instructions: [], agent: { build: { steps: 24 } }, permission: { task: 'deny', external_directory: 'deny', webfetch: 'deny', websearch: 'deny', skill: 'deny' } }),
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider, autoupdate: false, share: 'disabled', instructions: [], agent: { build: { steps: 24 } }, permission: { task: 'deny', external_directory: { '*': 'deny', [project]: 'allow', [`${project}/**`]: 'allow' }, webfetch: 'deny', websearch: 'deny', skill: 'deny' } }),
     ...(existsSync(authPath) ? { OPENCODE_AUTH_CONTENT: readFileSync(authPath, 'utf8') } : {}),
   }
   delete env.OPENCODE_CONFIG
@@ -72,9 +76,11 @@ else {
     ['pty', ['script', '-q', '-c', 'test -t 0 && test -t 1 && node --version', '/dev/null']],
     ['native-agent', [opencode, 'debug', '--pure', 'agent', 'build']],
     ['native-skills', [opencode, 'debug', '--pure', 'skill']],
+    ['native-startup', [opencode, 'debug', '--pure', 'file', 'list', '.']],
   ] as const) {
-    const checked = spawnSync(command[0], command.slice(1), { cwd: project, env, encoding: 'utf8' })
-    writeFileSync(join(record, `${name}-preflight.json`), JSON.stringify({ arguments: command, status: checked.status, stdout: checked.stdout, stderr: checked.stderr }), { mode: 0o600 })
+    const cwd = name === 'native-startup' ? startup : project
+    const checked = spawnSync(command[0], command.slice(1), { cwd, env, encoding: 'utf8' })
+    writeFileSync(join(record, `${name}-preflight.json`), JSON.stringify({ arguments: command, cwd, status: checked.status, stdout: checked.stdout, stderr: checked.stderr }), { mode: 0o600 })
     if (checked.error)
       throw checked.error
     if (checked.status)
@@ -84,8 +90,9 @@ else {
     process.exit(0)
   const prompt = readFileSync(promptFile, 'utf8')
   const scenario = checkCases.find(row => row.id === task)!
-  const text = `${prompt}\n\n${workflowInstructions(action, scenario, scope, variant)}`
+  const text = `${prompt}\n\n${workflowInstructions(action, scenario, scope, variant)}\nWorking project: ${project}. Set every shell workdir to this project. Use absolute file paths under this project. Keep all Git commands and test outputs in this project.`
+  writeFileSync(join(record, `effective-${basename(promptFile)}`), text, { flag: 'wx', mode: 0o600 })
   writeFileSync(join(record, 'effective-prompt.txt'), text, { mode: 0o600 })
   // A fixed title avoids an unrelated title-model request during evaluation.
-  process.exitCode = run([opencode, 'run', '--pure', '--auto', '--title', 'ripide eval', '--format', 'json', '--dir', project, '-m', model, text], env)
+  process.exitCode = run([opencode, 'run', '--pure', '--auto', '--title', 'ripide eval', '--format', 'json', '--dir', startup, '-m', model, text], env, startup)
 }

@@ -1,3 +1,4 @@
+export { compareCheckStudies, summarizeCheckCommands } from './check-analysis.ts'
 export { checkEnginePlanCapability } from './engine-plan-gate.ts'
 export { executeExperiment } from './execute.ts'
 export { checkChangedVerifiedPlan, expectedProject, gradeProject, snapshotProject } from './grading.ts'

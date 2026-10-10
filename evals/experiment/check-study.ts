@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,7 +28,7 @@ if (readdirSync(out).length)
   throw new Error('Choose an empty registration directory.')
 const runner = fileURLToPath(new URL('./check-runner.ts', import.meta.url))
 const quality = fileURLToPath(new URL('./check-quality.ts', import.meta.url))
-const opencode = execFileSync('which', ['opencode'], { encoding: 'utf8' }).trim()
+const opencode = realpathSync(execFileSync('which', ['opencode'], { encoding: 'utf8' }).trim())
 const lockProject = join(out, 'dependency-lock')
 mkdirSync(lockProject)
 const packageSource = '{"name":"ripide-check-study","private":true,"type":"module","devDependencies":{"vitest":"5.0.3"}}\n'
@@ -56,7 +56,7 @@ const manifest = parseManifest({
   commonInstructions: `This is a ${values.scope === 'projects' ? 'complete Git project' : 'Git source slice'} with a seeded bug. Dependencies are installed. Show failing assertions before editing, repair only the named function body, then show passing assertions. Preserve signatures, comments, other functions, existing tests, configuration, and dependencies. Use TypeScript for new code. Remove newly authored test modules. The supplied vitest, ripide, and check-behavior executables are on PATH. Do not install dependencies.`,
   runners: Object.fromEntries(['direct', 'forced', 'hybrid'].map(mode => [mode, { model: values.model, reasoning: 'provider-default', command: [process.execPath, runner, mode, '{project}', '{promptFile}', '{task}', root, values.model!, opencode, values.variant!, values.scope!, sourcePath] }])),
   artifacts: [...new Set(pinned)].map(path => ({ path, sha256: sha256(readFileSync(path)) })),
-  versions: [[process.execPath, '--version'], ['pnpm', '--version'], ['opencode', '--version'], ['/usr/bin/strace', '--version']],
+  versions: [[process.execPath, '--version'], ['pnpm', '--version'], [opencode, '--version'], ['/usr/bin/strace', '--version']],
   usageImports: [],
   tasks: captured.map(({ scenario, capture }) => ({
     id: scenario.id,

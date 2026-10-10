@@ -109,8 +109,17 @@ Keep reusable assertions in `.checks/assertions.txt`. Remove code helpers before
 The supplied `check-behavior` command checks behavior, preservation, cleanup, and execution evidence.
 The controller also runs the registered build and typecheck commands.
 OpenCode receives a fixed session title. Evaluation does not need a separate title-model request.
+OpenCode starts in a private folder without Git metadata to avoid its project-copy startup stall.
+The evaluated Git project remains the working directory for every source edit, test, and Git command.
+External-directory permissions allow only that project. Each attempt uses a private runtime cache.
+Both variants use the same startup behavior. Registration pins the resolved OpenCode binary and runner code.
+The runner records the complete delivered prompt before dispatch, including its working-directory instructions.
+Each repair prompt has a separate immutable capture. The latest capture also appears in `effective-prompt.txt`.
 
 The comparison refuses changed models, source inputs, oracles, schedules, runtime artifacts, and budgets.
+Both studies require complete, hash-verified reports. Interrupted checkpoints cannot become formal comparisons.
+Every registered task, mode, and repeat needs unique, consecutive attempts within the repair budget.
+The comparison orders repairs before selecting final quality and sums every repair's resources.
 It reports paired changes in uncached input, output, agent time, and prepared workflow time.
 Failed executions, assertion revisions, and tool output bytes identify the next optimization.
 All failed workflows remain in the paired resource totals. Faster candidates with lower quality receive `Reject`.
