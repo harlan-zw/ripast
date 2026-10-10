@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { captureCheckCase, checkCases } from './check-cases.ts'
-import { projectContext } from './check-context.ts'
+import { checkPrompt, projectContext } from './check-context.ts'
 import { parseManifest, sha256 } from './manifest.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -62,7 +62,7 @@ const manifest = parseManifest({
     id: scenario.id,
     cohort: 'mixed',
     operation: 'behavior-repair',
-    prompt: `${scenario.prompt}\nSelected export: ${scenario.symbol}. Source: ${scenario.file}.`,
+    prompt: checkPrompt(scenario),
     source: values.scope === 'projects' ? { _tag: 'Git', repository: join(homedir(), scenario.repository), commit: capture.provenance.commit } : { files: { ...capture.files, 'package.json': packageSource, 'pnpm-lock.yaml': lock } },
     expected: {},
     acceptance: { _tag: 'Behavior', files: [scenario.file] },

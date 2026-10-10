@@ -7,6 +7,7 @@ export interface CheckCase {
   repository: string
   paths: string[]
   file: string
+  from: string
   symbol: string
   prompt: string
   mutation: [string, string]
@@ -18,8 +19,9 @@ export const checkCases: CheckCase[] = [
     repository: 'pkg/nuxt-link-checker',
     paths: ['src/build/util.ts'],
     file: 'src/build/util.ts',
+    from: 'src/build/util.ts',
     symbol: 'runParallel',
-    prompt: 'Repair runParallel. Honor the requested concurrency, keep callback indices, and finish all inputs after callback errors. Demonstrate overlapping callbacks with deterministic promise gates. Mock console.error when checking callback errors. Preserve truncateString.',
+    prompt: 'Repair runParallel. Honor requested concurrency, with at least one worker and no more workers than inputs. Preserve the minimum-one behavior when concurrency is zero. Keep callback indices and finish all inputs after callback errors. Demonstrate overlap with deterministic promise gates. Mock console.error when checking callback errors. Preserve truncateString.',
     mutation: ['Math.min(Math.max(opts.concurrency, 1), queue.length)', '1'],
     tests: `test('overlap and finish', async () => {
   let active = 0; let peak = 0; const visited: number[] = []
@@ -44,8 +46,9 @@ test('callback errors keep remaining work', async () => {
     repository: 'pkg/unhead',
     paths: ['packages/unhead/src/utils/unsafeKey.ts', 'packages/unhead/src/utils/walkResolver.ts'],
     file: 'packages/unhead/src/utils/unsafeKey.ts',
+    from: 'packages/unhead/src/utils/walkResolver.ts',
     symbol: 'walkResolver',
-    prompt: 'Repair isUnsafeKey so it rejects __proto__, constructor, and prototype. Test walkResolver through the real guard. Static safe input must retain object identity. Changed input must unwrap functions, drop unsafe keys, and preserve safe values. Do not mock the guard.',
+    prompt: 'Repair isUnsafeKey so it rejects __proto__, constructor, and prototype. Test constructor directly through isUnsafeKey. Test walkResolver through the real guard. The caller only traverses objects whose constructor is Object. A shadowed constructor excludes the object from traversal. Static safe input must retain object identity. Changed input must unwrap functions, drop unsafe keys, and preserve safe values. Do not mock the guard.',
     mutation: [' || key === \'prototype\'', ''],
     tests: `test('real guard drops unsafe keys', () => {
   const input = JSON.parse('{"prototype":"unsafe","safe":2}')
