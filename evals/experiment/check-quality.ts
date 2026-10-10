@@ -141,7 +141,7 @@ async function main() {
       assert.equal(after.name, 'vitest')
     }
     let checklist: unknown = { _tag: 'Unavailable', reason: 'Ordinary Vitest does not record check receipts.' }
-    if (called.includes('ripide')) {
+    if (after.name === 'ripide') {
       const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
       const record = process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!
       const output = execFileSync(process.execPath, [join(root, 'packages/cli/bin/ripide.mjs'), 'check', '--base', 'HEAD', '--profile', 'full', '--json'], { cwd: project, env: { ...process.env, HOME: join(record, 'home') }, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
@@ -150,7 +150,7 @@ async function main() {
       assert.ok(value.data.checklist.items.some(item => item.kind === 'unit' && item.status === 'executed'), 'Record execution of the repaired function.')
       checklist = value.data.checklist
     }
-    writeFileSync(join(project, '.checks', 'quality.json'), JSON.stringify({ _tag: 'Passed', newTestFiles: 0, assertionHash: before.assertionHash, workflow: called.includes('ripide') ? 'ripide' : 'vitest', checklist }))
+    writeFileSync(join(project, '.checks', 'quality.json'), JSON.stringify({ _tag: 'Passed', newTestFiles: 0, assertionHash: before.assertionHash, workflow: after.name, checklist }))
   }
   console.log('Independent Node behavior checks passed.')
 }

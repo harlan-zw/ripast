@@ -62,8 +62,15 @@ describe('registered experiments', () => {
     expect(summarizeCheckCommands([
       { name: 'ripide', args: [], exit: 1, assertionHash: 'a', stdoutBytes: 100, stderrBytes: 20 },
       { name: 'ripide', args: [], exit: 1, assertionHash: 'b', stdoutBytes: 50, stderrBytes: 0 },
-      { name: 'ripide', args: [], exit: 0, assertionHash: 'b', stdoutBytes: 10, stderrBytes: 0 },
+      { name: 'ripide', args: ['--artifact', '.checks/green.json'], exit: 0, assertionHash: 'b', stdoutBytes: 10, stderrBytes: 0 },
     ])).toEqual({ invocations: 3, failedExecutions: 2, assertionVersions: 2, toolOutputBytes: 180, workflow: 'ripide' })
+  })
+  it('identifies the executed workflow after the agent reads another tool help', () => {
+    const commands = [
+      { name: 'ripide', args: ['--help'], exit: 0, assertionHash: null, stdoutBytes: 100, stderrBytes: 0 },
+      { name: 'vitest', args: ['--outputFile=.checks/green.json'], exit: 0, assertionHash: 'a', stdoutBytes: 10, stderrBytes: 0 },
+    ]
+    expect(summarizeCheckCommands(commands).workflow).toBe('vitest')
   })
   it('preserves project source while ignoring nested workspace dependency changes', () => {
     const dir = mkdtempSync(join(tmpdir(), 'experiment-workspace-'))

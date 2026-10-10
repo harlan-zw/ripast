@@ -13,12 +13,14 @@ export interface CheckCommand {
 
 export function summarizeCheckCommands(commands: CheckCommand[]) {
   const hashes = commands.flatMap(command => command.assertionHash ? [command.assertionHash] : [])
+  const evidence = (color: string) => commands.filter(command => command.args.some(arg => arg.endsWith(`.checks/${color}.json`))).at(-1)
+  const method = (evidence('green') ?? evidence('red'))?.name
   return {
     invocations: commands.length,
     failedExecutions: commands.filter(command => command.exit !== 0).length,
     assertionVersions: new Set(hashes).size,
     toolOutputBytes: commands.reduce((sum, command) => sum + command.stdoutBytes + command.stderrBytes, 0),
-    workflow: commands.some(command => command.name === 'ripide') ? 'ripide' : commands.some(command => command.name === 'vitest') ? 'vitest' : 'unavailable',
+    workflow: method === 'ripide' || method === 'vitest' ? method : 'unavailable',
   }
 }
 
