@@ -1,7 +1,9 @@
 import type { AutoImportRenamePlan, DiagnosticRecorder, FileChange, Regression, RenameSite } from 'ripide-api/adapter'
+import type { TextEdit as LspTextEdit } from 'vscode-languageserver-protocol'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { diagnosticRegressions, posToLineCol } from 'ripide-api/adapter'
+import ts from '@typescript/typescript6'
+import { diagnosticRegressions, offsetOfPosition, posToLineCol } from 'ripide-api/adapter'
 import { URI } from 'vscode-uri'
 import { createVueService, vueProjectConfigs, withFilteredConsoleWarn, workspaceEditToChanges, workspaceRelativePath } from './service.ts'
 import { hasVueFilesContaining, listVueFiles, listVueFilesContaining } from './vue-files.ts'
@@ -18,22 +20,54 @@ export async function applyVueRename(
   autoImportPlan?: AutoImportRenamePlan,
 ): Promise<FileChange[]> {
   const byPath = new Map<string, FileChange>()
-  for (const project of vueProjectConfigs(tsconfigPath)) {
+  const projects = vueProjectConfigs(tsconfigPath)
+  for (const project of projects) {
     const vue = createVueService(project.tsconfigPath, cwd)
     try {
-      for (const site of sites) {
+      // A single TS-only config can still have authored Vue consumers.
+      if (projects.length === 1) {
+        for (const path of listVueFilesContaining(cwd, from))
+          vue.setSnapshot(path, readFileSync(path, 'utf8'))
+      }
+      const editsByUri = new Map<string, Map<string, LspTextEdit>>()
+      const renameSites = [...sites, ...await namedReexportSites(vue, project.files, sites, from)]
+      for (const site of renameSites) {
         const uri = URI.file(resolve(cwd, site.filePath))
         const { line, col } = posToLineCol(site.source, site.pos)
         const edits = await vue.service.getRenameEdits(uri, { line: line - 1, character: col - 1 }, to)
         if (!edits)
           continue
-        const vueChanges = workspaceEditToChanges(edits, vue, cwd, fileName => fileName.endsWith('.vue'), autoImportPlan?.transformEdits)
-        for (const c of vueChanges) {
-          const existing = byPath.get(c.path)
-          if (existing && existing.after !== c.after)
-            throw new Error(`ripide: Vue projects disagree on edits for ${c.rel}. Use an explicit tsconfig.`)
-          byPath.set(c.path, c)
+        const collect = (uri: string, edits: LspTextEdit[]) => {
+          if (!vue.uriToFile(URI.parse(uri)).endsWith('.vue'))
+            return
+          const selected = editsByUri.get(uri) ?? new Map<string, LspTextEdit>()
+          for (const edit of edits) {
+            const key = JSON.stringify(edit.range)
+            const existing = selected.get(key)
+            if (existing && existing.newText !== edit.newText)
+              throw new Error(`ripide: Vue rename sites disagree on edits for ${uri}.`)
+            selected.set(key, edit)
+          }
+          editsByUri.set(uri, selected)
         }
+        for (const [uri, changes] of Object.entries(edits.changes ?? {})) collect(uri, changes)
+        for (const change of edits.documentChanges ?? []) {
+          if ('textDocument' in change) {
+            for (const edit of change.edits) {
+              if (!('newText' in edit))
+                throw new Error('ripide: Vue rename returned an unsupported snippet edit.')
+              collect(change.textDocument.uri, [edit])
+            }
+          }
+        }
+      }
+      const combined = { changes: Object.fromEntries([...editsByUri].map(([uri, edits]) => [uri, [...edits.values()]])) }
+      const vueChanges = workspaceEditToChanges(combined, vue, cwd, undefined, autoImportPlan?.transformEdits)
+      for (const c of vueChanges) {
+        const existing = byPath.get(c.path)
+        if (existing && existing.after !== c.after)
+          throw new Error(`ripide: Vue projects disagree on edits for ${c.rel}. Use an explicit tsconfig.`)
+        byPath.set(c.path, c)
       }
     }
     finally { vue.dispose() }
@@ -66,11 +100,54 @@ export async function applyVueRename(
   return [...byPath.values()]
 }
 
+/** Volar preserves a re-export's public name when renaming its provider. */
+async function namedReexportSites(vue: ReturnType<typeof createVueService>, files: string[], sites: RenameSite[], from: string): Promise<RenameSite[]> {
+  const out: RenameSite[] = []
+  for (const filePath of files) {
+    if (filePath.endsWith('.vue') || filePath.endsWith('.d.ts'))
+      continue
+    const source = vue.read(filePath)
+    if (!source?.includes(from))
+      continue
+    const file = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true)
+    for (const statement of file.statements) {
+      if (!ts.isExportDeclaration(statement) || !statement.moduleSpecifier || !statement.exportClause || !ts.isNamedExports(statement.exportClause))
+        continue
+      for (const specifier of statement.exportClause.elements) {
+        // Explicit public aliases remain stable, even when the provider changes.
+        if (specifier.name.text !== from)
+          continue
+        const pos = specifier.name.getStart(file)
+        const { line, col } = posToLineCol(source, pos)
+        const definitions = await vue.service.getDefinition(vue.fileToUri(filePath), { line: line - 1, character: col - 1 })
+        const selected = definitions?.some(definition => sites.some(site =>
+          vue.uriToFile(URI.parse(definition.targetUri)) === resolve(site.filePath)
+          && offsetOfPosition(site.source, definition.targetSelectionRange.start) === site.pos,
+        ))
+        if (selected)
+          out.push({ filePath, source, pos })
+      }
+    }
+  }
+  return out
+}
+
 function hasLocalScriptBinding(source: string, name: string): boolean {
   const script = extractScript(source)
   if (!script?.includes(name))
     return false
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const file = ts.createSourceFile('consumer.ts', script, ts.ScriptTarget.Latest, true)
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) || !statement.importClause)
+      continue
+    const clause = statement.importClause
+    if (clause.name?.text === name)
+      return true
+    const bindings = clause.namedBindings
+    if (bindings && (ts.isNamespaceImport(bindings) ? bindings.name.text === name : bindings.elements.some(binding => binding.name.text === name)))
+      return true
+  }
   const withoutImports = script.replace(/^\s*import [^;\n]*;?$/gm, '')
   return new RegExp(`\\b(?:const|let|var|function|class|interface|type|enum)\\s+${escaped}\\b`).test(withoutImports)
 }
