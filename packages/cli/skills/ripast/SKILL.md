@@ -54,4 +54,4 @@ For Nuxt auto-imports or verification scope and output limits, read [verificatio
 
 For transient behaviour checks, use `ripide check <export> --base <ref>` with Vitest code on stdin.
 The CLI imports the function, `test`, `expect`, and `vi`. Add `--from` only for an ambiguous export.
-Read [transient checks](references/commands.md#transient-checks) for mocks, integration obligations, and stale execution evidence.
+Read [transient checks](references/check.md) for mocks, integration obligations, and stale execution evidence.
