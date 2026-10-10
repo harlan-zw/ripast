@@ -786,7 +786,7 @@ function bindingName(node: any): string | undefined {
   return undefined
 }
 
-const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.tsrx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 
 function resolveModuleSpecifier(fromFile: string, specifier: string, engine?: EngineServices): string | null {
   if (!specifier.startsWith('.'))

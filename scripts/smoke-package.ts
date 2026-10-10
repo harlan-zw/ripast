@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
@@ -8,13 +8,13 @@ import process from 'node:process'
 assert.ok(process.argv[2], 'Pass the directory containing the package tarballs.')
 const packageDirectory = resolve(process.argv[2])
 const tarballs = readdirSync(packageDirectory).filter(path => path.endsWith('.tgz')).map(path => join(packageDirectory, path))
-assert.equal(tarballs.length, 3, 'Pass the core, CLI, and Vue package tarballs.')
+assert.equal(tarballs.length, 4, 'Pass the core, CLI, Vue, and TSRX package tarballs.')
 assert.ok(process.env.npm_execpath?.endsWith('npm-cli.js'), 'Run this smoke check with npm run smoke:package.')
 const cwd = mkdtempSync(join(tmpdir(), 'ripide-package-'))
-const run = (args: string[], env = process.env) => execFileSync(process.execPath, args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+const run = (args: string[], env = process.env, directory = cwd) => execFileSync(process.execPath, args, { cwd: directory, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 try {
   writeFileSync(join(cwd, 'package.json'), '{"type":"module","private":true}')
-  run([process.env.npm_execpath!, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...tarballs, '@typescript/typescript6@6.0.2', '@types/node@^22'])
+  run([process.env.npm_execpath!, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...tarballs.filter(path => !path.includes('ripide-tsrx-')), '@typescript/typescript6@6.0.2', '@types/node@^22'])
   writeFileSync(join(cwd, 'tsconfig.json'), '{"compilerOptions":{"target":"ES2022","module":"NodeNext","types":["node"],"strict":true,"skipLibCheck":true,"noEmit":true},"include":["*.ts"]}')
   writeFileSync(join(cwd, 'source.ts'), 'export const target = 1\n')
   writeFileSync(join(cwd, 'component.vue'), '<script setup lang="ts">import { target } from "./source.ts"; const doubled = target * 2</script><template>{{ doubled }}</template>\n')
@@ -59,6 +59,23 @@ console.log(JSON.stringify({ changes: result.changes.length, rendered, vueMatch:
   assert.equal(sdk.vueMatch, true)
   assert.match(sdk.rendered, /source\.ts:1:14\s+identifier-binding\s+export const target = 1/)
   assert.match(sdk.rendered, /1 hits across 1 files/)
-  process.stdout.write('Packed CLI and SDK passed installation, typecheck, rename, and transient checks.\n')
+  run([process.env.npm_execpath!, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...tarballs.filter(path => path.includes('ripide-tsrx-')), 'octane@0.10.2'])
+  const tsrxDirectory = join(cwd, 'tsrx')
+  mkdirSync(tsrxDirectory)
+  writeFileSync(join(tsrxDirectory, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', strict: true, skipLibCheck: true, noEmit: true, jsx: 'react-jsx', jsxImportSource: 'octane', allowImportingTsExtensions: true },
+    contentMappers: [{ package: '@tsrx/content-mapper', extensions: ['.tsrx'], options: { compiler: 'ripide-tsrx/compiler' } }],
+    include: ['*.ts', '*.tsrx'],
+  }))
+  writeFileSync(join(tsrxDirectory, 'source.ts'), 'export function target() { return 1 }\n')
+  writeFileSync(join(tsrxDirectory, 'View.tsrx'), 'import { target } from \'./source.ts\'\nexport function View() @{ <span>{target()}</span> }\n')
+  run([cli, 'rename', 'target', 'next', '--scope', 'source.ts', '--apply', '--json'], { ...process.env, RIPIDE_RUN_EXTERNAL_CODE: '1' }, tsrxDirectory)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    run([cli, 'rename', 'next', 'final', '--scope', 'source.ts', '--json'], { ...process.env, RIPIDE_RUN_EXTERNAL_CODE: '1' }, tsrxDirectory)
+  }
+  assert.match(readFileSync(join(tsrxDirectory, 'source.ts'), 'utf8'), /function next\(/)
+  assert.match(readFileSync(join(tsrxDirectory, 'View.tsrx'), 'utf8'), /import \{ next \}/)
+  assert.match(readFileSync(join(tsrxDirectory, 'View.tsrx'), 'utf8'), /\{next\(\)\}/)
+  process.stdout.write('Packed CLI, SDK, and TSRX adapter passed installation, typecheck, rename, and transient checks.\n')
 }
 finally { rmSync(cwd, { recursive: true, force: true }) }

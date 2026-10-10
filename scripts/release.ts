@@ -6,8 +6,8 @@ import process from 'node:process'
 import { setTimeout } from 'node:timers/promises'
 import { pathToFileURL } from 'node:url'
 
-const folders = ['core', 'vue', 'cli'] as const
-const packageNames = { core: 'ripide-api', vue: 'ripide-vue', cli: 'ripide' } as const
+const folders = ['core', 'vue', 'tsrx', 'cli'] as const
+const packageNames = { core: 'ripide-api', vue: 'ripide-vue', tsrx: 'ripide-tsrx', cli: 'ripide' } as const
 interface ReleasePackage { name: string, version: string }
 interface RegistryResponse { status: number | null, stdout: string }
 
@@ -41,8 +41,8 @@ export function planRelease(tag: string, packages: ReleasePackage[]) {
     throw new Error('Pass a version tag, such as v0.5.0 or v0.6.0-beta.1.')
   const version = match[1]
   const names = new Set(packages.map(pkg => pkg.name))
-  if (packages.length !== 3 || names.size !== 3 || folders.some(folder => !names.has(packageNames[folder])))
-    throw new Error('Release the core, Vue, and CLI packages together.')
+  if (packages.length !== folders.length || names.size !== folders.length || folders.some(folder => !names.has(packageNames[folder])))
+    throw new Error('Release the core, Vue, TSRX, and CLI packages together.')
   if (packages.some(pkg => pkg.version !== version))
     throw new Error('Every package version must match the release tag.')
   const channel = match[2]?.split('.')[0].toLowerCase()
@@ -87,13 +87,13 @@ async function run() {
   }
   if (command === 'deprecate' && process.env.npm_execpath?.endsWith('npm-cli.js')) {
     const npm = process.env.npm_execpath
-    for (const folder of folders) {
+    for (const folder of ['core', 'vue', 'cli'] as const) {
       const response = spawnSync(process.execPath, [npm, 'view', `${packageNames[folder]}@${plan.version}`, 'version', '--json'], { encoding: 'utf8' })
       if (response.error)
         throw response.error
       assertReplacementPublished(response, plan.version)
     }
-    for (const folder of folders) {
+    for (const folder of ['core', 'vue', 'cli'] as const) {
       const legacy = `@ripast/${folder}`
       const replacement = packageNames[folder]
       const response = spawnSync(process.execPath, [npm, 'deprecate', legacy, `Renamed to ${replacement}. Install ${replacement} instead.`], { stdio: 'inherit' })

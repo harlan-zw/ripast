@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { assertReplacementPublished, downloadPublishedPackages, planRelease, publicationDecision } from '../scripts/release.ts'
 
-const packages = ['ripide-api', 'ripide-vue', 'ripide'].map(name => ({ name, version: '0.5.0' }))
+const packages = ['ripide-api', 'ripide-vue', 'ripide-tsrx', 'ripide'].map(name => ({ name, version: '0.5.0' }))
 
 describe('legacy package deprecation', () => {
   it('requires the replacement release before deprecating legacy packages', () => {
@@ -65,8 +65,8 @@ describe('release plan', () => {
   })
 
   it('rejects missing or duplicate packages', () => {
-    expect(() => planRelease('v0.5.0', packages.slice(1))).toThrow('core, Vue, and CLI')
-    expect(() => planRelease('v0.5.0', [packages[0], packages[0], packages[2]])).toThrow('core, Vue, and CLI')
+    expect(() => planRelease('v0.5.0', packages.slice(1))).toThrow('core, Vue, TSRX, and CLI')
+    expect(() => planRelease('v0.5.0', [packages[0], packages[0], ...packages.slice(2)])).toThrow('core, Vue, TSRX, and CLI')
   })
 })
 

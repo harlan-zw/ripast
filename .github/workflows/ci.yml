@@ -30,7 +30,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm exec vitest run test/ts-server.test.ts test/launcher-platform.test.ts test/platform-paths.test.ts test/inline-test.test.ts test/check.test.ts
+      - run: pnpm exec vitest run test/ts-server.test.ts test/launcher-platform.test.ts test/platform-paths.test.ts test/inline-test.test.ts test/check.test.ts test/tsrx.test.ts
       - run: pnpm -r --filter './packages/*' pack --pack-destination "${{ runner.temp }}/ripide-pack"
       - run: npm run smoke:package -- "${{ runner.temp }}/ripide-pack"
 
