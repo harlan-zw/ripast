@@ -11,6 +11,8 @@ Ripgrep is optional. If it is missing, Git discovers tracked and untracked files
 Use direct edits for small local changes, prose, strings, and comments.
 During architecture work, design contracts with direct edits. Use RipIDE for the supported mechanical steps.
 Svelte markup and arbitrary custom codemods are unsupported.
+For provider replacement, use `--source-scope` to keep imported aliases and public barrel names.
+Read [replacement scope and limits](references/commands.md#scope-and-output) before choosing direct edits for aliases or barrels.
 
 ## Launcher
 

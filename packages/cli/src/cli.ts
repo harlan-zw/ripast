@@ -353,6 +353,7 @@ const replaceCmd = defineCommand({
     'to': { type: 'positional', required: true },
     'glob': globArg,
     'target-scope': { type: 'string', description: 'Restrict target symbol resolution to a single file when multiple files export the same name.' },
+    'source-scope': { type: 'string', description: 'Select the source export by provider file and preserve local aliases.' },
     'target-import': { type: 'string', description: 'Import specifier for the validated replacement, including framework aliases.' },
     'apply': applyArg,
     'verifyMode': { ...verifyModeArg, description: 'Verification mode: touched, project, or none. Defaults to project.' },
@@ -368,6 +369,7 @@ const replaceCmd = defineCommand({
       glob: args.glob ? splitGlobs(args.glob as string) : undefined,
       verifyMode,
       targetScope: args['target-scope'] as string | undefined,
+      sourceScope: args['source-scope'] as string | undefined,
       targetImport: args['target-import'] as string | undefined,
     })
     emitResult(r, !!args.apply, !!args.json, resolveProfile(args.profile, !!args.json).agentProfile, args)

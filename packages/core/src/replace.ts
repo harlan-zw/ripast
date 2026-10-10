@@ -14,8 +14,9 @@ import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffse
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
 import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerificationOptions, verifyScope } from './project.ts'
+import { createSourceReplacement } from './replace-source.ts'
 import { startTsServer } from './ts-server.ts'
-import { applyTextEdits, findFilesMany } from './util.ts'
+import { applyTextEdits, findFiles, findFilesMany } from './util.ts'
 import { createVerification } from './verification.ts'
 import { findExtensionRegressions, findRegressions } from './verify.ts'
 
@@ -26,6 +27,8 @@ export interface ReplaceOptions {
   glob?: string | string[]
   verifyMode?: VerifyMode
   targetScope?: string
+  /** Select the exported source symbol by provider file, preserving local aliases. */
+  sourceScope?: string
   /** Import specifier for the validated target, including framework aliases. */
   targetImport?: string
 }
@@ -51,6 +54,10 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   const engine = opts.engine
   assertSourceSupport(cwd, engine)
   engine?.assertOperation({ operation: 'replace', from, to }, cwd)
+  if (opts.sourceScope !== undefined && !opts.sourceScope)
+    throw new Error('ripide replace: --source-scope requires a provider file')
+  if (opts.sourceScope !== undefined && findFiles('', { cwd, engine, glob: opts.glob, listAll: true }).some(path => isExtensionPath(path, engine)))
+    throw new Error('ripide replace: source replacement requires a native TypeScript or JavaScript project')
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
     : timed(profile, 'target discovery', () => findFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine)))
@@ -61,13 +68,15 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   try {
     const target = await timedAsync(profile, 'resolve replacement', () => findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope))
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = timed(profile, 'candidate files', () => findFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine) && !target.declarationFiles.includes(path)))
+    const sourcePath = opts.sourceScope === undefined ? undefined : resolve(cwd, opts.sourceScope)
     const projectStyle = inferProjectSpecifierStyle(cwd)
+    const sourceReplacement = sourcePath ? await createSourceReplacement(server, sourcePath, from, target, projectStyle, opts.targetImport) : undefined
+    const candidatePaths = timed(profile, 'candidate files', () => (sourceReplacement ? projectScriptFiles(cwd, opts.glob, engine) : findFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob })).filter(path => !isExtensionPath(path, engine) && path !== sourcePath && !target.declarationFiles.includes(path)))
     const changes: FileChange[] = []
     const referenceCache = new Map<string, SourceSite[]>()
     for (const path of candidatePaths) {
       const before = readFileSync(path, 'utf8')
-      const after = await replaceImportedSymbol(server, referenceCache, path, before, from, to, target, projectStyle, opts.targetImport)
+      const after = sourceReplacement ? await sourceReplacement(path, before) : await replaceImportedSymbol(server, referenceCache, path, before, from, to, target, projectStyle, opts.targetImport)
       if (after !== before)
         changes.push({ path, rel: relative(cwd, path), before, after })
     }

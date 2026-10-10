@@ -5,7 +5,7 @@ Mutations default to dry-run. If the target is uncertain, review the result, the
 | Command | Use |
 | --- | --- |
 | `ripide rename <from> <to>` | Rename a symbol and its references. |
-| `ripide replace <from> <to>` | Replace a local imported binding with a project export. |
+| `ripide replace <from> <to>` | Replace a local imported binding, or select its provider with `--source-scope`. |
 | `ripide move <symbol> --from <a> --to <b>` | Move an export and update imports. |
 | `ripide delete <symbol> --from <file>` | Delete a declaration without references. |
 | `ripide rename-file <old> <new>` | Rename a file and update importers, including Vue consumers. |
@@ -22,11 +22,19 @@ For transient tests and execution evidence, read [transient checks](check.md).
 
 ## Scope and output
 
-`replace <from> <to>` selects an imported binding by its local name, `<from>`.
+Without `--source-scope`, `replace <from> <to>` selects an imported binding by its local name, `<from>`.
 Matching references use `<to>`, unless that name is already occupied.
 For `import { old as current }`, use `replace current next`; matching calls become `next(...)`.
-If local aliases must stay unchanged, edit those imports directly.
-Source re-export barrels also require direct edits. Preserve their public aliases.
+To select a provider, use `replace old next --source-scope src/old.ts --target-scope src/next.ts`.
+Here, `old` names the provider's export. Imported local aliases and public barrel names stay unchanged.
+Named and star barrel chains follow the selected export. Same-name exports from other providers stay unchanged.
+Use `default` as the source name for a named default declaration or exported default identifier.
+Provider selection supports native TypeScript and JavaScript projects.
+Namespaces, cyclic barrels, ambiguous providers, and anonymous defaults cause an error before writes.
+Edits inside replacement dependencies also fail. Dynamic imports and `require` calls in those dependencies fail.
+Unresolved dependencies and declaration-only package entries also fail, because their runtime dependencies cannot be proved.
+Framework consumers cause an error. A file glob limits changed files, without adding unsupported source shapes.
+If provider selection refuses a shape, inspect the reason before choosing direct edits.
 `--target-scope` selects the replacement export's file.
 Use `replace --target-scope <file>` when several files export the replacement.
 Quote `--glob` patterns. CSS transforms affect strings, Vue classes, and CSS `@apply` sites.

@@ -158,11 +158,30 @@ ripide replace eventHandler defineAdminApiHandler --target-scope layers/admin/se
 
 # Route an existing binding through a named barrel and a framework alias
 ripide replace getSiteConfig getSiteConfig --target-scope ../nuxt-site-config/src/runtime/server/index.ts --target-import '#site-config/server' --apply
+
+# Select the original provider, including imported aliases and public barrels
+ripide replace eventHandler defineAdminApiHandler --source-scope server/legacy.ts --target-scope server/admin.ts --apply
 ```
 
 `--target-scope` can select a named re-export barrel outside the consumer project.
 `--target-import` sets its import path explicitly, including Nuxt aliases.
 Value and type exports retain their import kind. Existing imports from that path merge safely.
+
+`--source-scope` selects `from` as an export of the provider file.
+It follows local import aliases and named or star barrel chains.
+Local binding names and public export names stay unchanged.
+An unrelated provider with the same export name stays unchanged.
+Use `from=default` to select a named default declaration or an exported default identifier.
+The SDK accepts the same provider as `sourceScope` in `runReplace` or `engine.replace` options.
+
+Source replacement requires a native TypeScript or JavaScript project.
+Namespace imports, namespace exports, cyclic barrels, and ambiguous providers cause an error before writes.
+Anonymous default declarations cannot identify a source export.
+An edit inside the replacement's static dependency closure also causes an error, preventing wrapper recursion.
+Dynamic imports and `require` calls in that closure also cause an error.
+Unresolved dependencies and package entries that resolve only to declaration files also cause an error.
+`--glob` limits changed files. It does not expand these supported source shapes.
+Without `--source-scope`, replacement keeps its existing local binding selection.
 Default discovery still selects direct declarations and keeps the relative import policy.
 
 </details>
