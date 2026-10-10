@@ -162,6 +162,7 @@ export interface AttemptMetric {
   seconds: number
   setupSeconds?: number
   preparedSeconds?: number
+  armSeconds?: number
   usage: { _tag: 'Recorded', value: Usage } | { _tag: 'Unavailable', reason: string }
 }
 export function median(values: number[]): number {

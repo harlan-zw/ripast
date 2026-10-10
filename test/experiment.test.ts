@@ -1,9 +1,10 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
 import { describe, expect, it } from 'vitest'
-import { aggregateAttempts, buildSchedule, checkChangedVerifiedPlan, combineUsage, freezeManifest, gradeProject, pairAttempts, parseManifest, parseUsage, recordCommand, verifyFrozenManifest } from '../evals/experiment/index.ts'
+import { compareCheckStudies, summarizeCheckCommands } from '../evals/experiment/check-analysis.ts'
+import { aggregateAttempts, buildSchedule, checkChangedVerifiedPlan, combineUsage, executeExperiment, freezeManifest, gradeProject, pairAttempts, parseManifest, parseUsage, recordCommand, verifyFrozenManifest } from '../evals/experiment/index.ts'
 
 function fixture() {
   return {
@@ -24,6 +25,74 @@ function fixture() {
   }
 }
 describe('registered experiments', () => {
+  it('refuses optimization comparisons when model or deadline changes', () => {
+    const parsed = parseManifest(fixture())
+    if (parsed._tag === 'Err')
+      throw new Error(parsed.message)
+    const candidate = structuredClone(parsed.value)
+    candidate.runners.forced.model = 'another-model'
+    expect(compareCheckStudies(parsed.value, candidate, [], [])._tag).toBe('Err')
+    candidate.runners.forced.model = parsed.value.runners.forced.model
+    candidate.timeoutMs++
+    expect(compareCheckStudies(parsed.value, candidate, [], [])._tag).toBe('Err')
+  })
+  it('compares instruction variants when native preflight records the same variant argument', () => {
+    const input = fixture()
+    const command = ['node', '/repo/check-runner.ts', 'preflight', '{project}', '-', 'rename', '/repo', 'model', 'opencode', 'baseline', 'projects']
+    const parsed = parseManifest({ ...input, tasks: [{ ...input.tasks[0], setup: [{ command, phase: 'setup', role: 'controller' }] }] })
+    if (parsed._tag === 'Err')
+      throw new Error(parsed.message)
+    const candidate = structuredClone(parsed.value)
+    candidate.tasks[0].setup[0].command[9] = 'guided'
+    expect(compareCheckStudies(parsed.value, candidate, [], [])._tag).toBe('Ok')
+    candidate.tasks[0].setup[0].command[7] = 'different-model'
+    expect(compareCheckStudies(parsed.value, candidate, [], [])._tag).toBe('Err')
+  })
+  it('rejects faster candidates that lose verified workflows', () => {
+    const parsed = parseManifest({ ...fixture(), repeats: 1 })
+    if (parsed._tag === 'Err')
+      throw new Error(parsed.message)
+    const before = { task: 'rename', mode: 'forced' as const, cohort: 'mechanical' as const, repeat: 0, attempt: 0, quality: 'passed' as const, seconds: 10, usage: { _tag: 'Unavailable' as const, reason: 'No model usage.' } }
+    const compared = compareCheckStudies(parsed.value, parsed.value, [before], [{ ...before, quality: 'failed', seconds: 1 }])
+    expect(compared).toMatchObject({ _tag: 'Ok', value: { decision: 'Reject' } })
+    if (compared._tag === 'Ok')
+      expect(compared.value.comparisons.find(row => row.mode === 'forced')).toMatchObject({ medianPreparedSecondsChange: -9, medianUncachedInputChange: null })
+  })
+  it('counts assertion revisions and failed execution output for optimization', () => {
+    expect(summarizeCheckCommands([
+      { name: 'ripide', args: [], exit: 1, assertionHash: 'a', stdoutBytes: 100, stderrBytes: 20 },
+      { name: 'ripide', args: [], exit: 1, assertionHash: 'b', stdoutBytes: 50, stderrBytes: 0 },
+      { name: 'ripide', args: ['--artifact', '.checks/green.json'], exit: 0, assertionHash: 'b', stdoutBytes: 10, stderrBytes: 0 },
+    ])).toEqual({ invocations: 3, failedExecutions: 2, assertionVersions: 2, toolOutputBytes: 180, workflow: 'ripide' })
+  })
+  it('identifies the executed workflow after the agent reads another tool help', () => {
+    const commands = [
+      { name: 'ripide', args: ['--help'], exit: 0, assertionHash: null, stdoutBytes: 100, stderrBytes: 0 },
+      { name: 'vitest', args: ['--outputFile=.checks/green.json'], exit: 0, assertionHash: 'a', stdoutBytes: 10, stderrBytes: 0 },
+    ]
+    expect(summarizeCheckCommands(commands).workflow).toBe('vitest')
+  })
+  it('preserves project source while ignoring nested workspace dependency changes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'experiment-workspace-'))
+    mkdirSync(join(dir, 'packages/app/node_modules/cache'), { recursive: true })
+    writeFileSync(join(dir, 'source.ts'), 'export const answer = 42\n')
+    writeFileSync(join(dir, 'packages/app/node_modules/cache/state.json'), '{}')
+    expect(gradeProject(dir, { 'source.ts': 'export const answer = 42\n' }, [], [])).toEqual({ _tag: 'Passed' })
+    writeFileSync(join(dir, 'source.ts'), 'export const answer = 0\n')
+    expect(gradeProject(dir, { 'source.ts': 'export const answer = 42\n' }, [], [])._tag).toBe('Failed')
+  })
+  it.skipIf(process.platform !== 'linux')('retains timed-out arm costs and continues only after all child exits are proven', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'experiment-timeouts-'))
+    const runner = join(dir, 'slow.ts')
+    writeFileSync(runner, 'setTimeout(() => process.exit(0), 10000)\n')
+    const input = fixture()
+    const parsed = parseManifest({ ...input, timeoutMs: 300, repeats: 1, repairs: 0, timeoutPolicy: 'continue-study', runners: Object.fromEntries(['direct', 'forced', 'hybrid'].map(mode => [mode, { model: 'scripted', reasoning: 'none', command: [process.execPath, runner] }])) })
+    if (parsed._tag === 'Err')
+      throw new Error(parsed.message)
+    const report = await executeExperiment(parsed.value, join(dir, 'results'))
+    expect(report.attempts.map(row => row.quality)).toEqual(['failed', 'failed', 'failed'])
+    expect(report.attempts.every(row => row.preparedSeconds! >= 0.3)).toBe(true)
+  })
   it('accepts an equivalent implementation only in registered behavioral files', () => {
     const dir = mkdtempSync(join(tmpdir(), 'experiment-behavior-'))
     const expected = { 'src.ts': 'export const absolute = Math.abs\n', 'notes.txt': 'preserve' }

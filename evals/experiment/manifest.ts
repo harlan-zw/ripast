@@ -60,6 +60,7 @@ export interface Manifest {
   repeats: number
   cache: 'cold' | 'warm' | 'uncontrolled'
   timeoutMs: number
+  timeoutPolicy: 'stop-study' | 'continue-study'
   repairs: number
   tracing: 'strace' | 'top-level'
   commonInstructions: string
@@ -187,6 +188,7 @@ export function parseManifest(raw: unknown): Result<Manifest> {
       repeats: integer(row.repeats, 1),
       cache: choice(row.cache, ['cold', 'warm', 'uncontrolled']),
       timeoutMs: integer(row.timeoutMs, 1),
+      timeoutPolicy: choice(row.timeoutPolicy ?? 'stop-study', ['stop-study', 'continue-study']),
       repairs: integer(row.repairs),
       tracing: choice(row.tracing, ['strace', 'top-level']),
       commonInstructions: text(row.commonInstructions),

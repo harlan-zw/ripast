@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import { checkCases } from './check-cases.ts'
+import { sha256 } from './manifest.ts'
 
 async function main() {
   const [project, task, provenance, mode] = process.argv.slice(2)
@@ -11,11 +15,13 @@ async function main() {
       ['node_modules', '.git', '.build'].includes(entry.name) ? [] : entry.isDirectory() ? authored(join(directory, entry.name)) : [join(directory, entry.name)])
   }
   const paths = authored(project)
-  assert.deepEqual(paths.filter(path => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path)), [], 'Remove every temporary test module.')
-  const build = join(project, '.build')
+  const tracked = new Set(execFileSync('git', ['ls-files', '-z'], { cwd: project, encoding: 'utf8' }).split('\0'))
+  assert.deepEqual(paths.filter(path => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path) && !tracked.has(relative(project, path))), [], 'Remove every new test module.')
+  const build = join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'oracle-build')
   mkdirSync(build, { recursive: true })
   writeFileSync(join(build, 'package.json'), '{"type":"commonjs"}')
-  for (const path of paths.filter(path => path.endsWith('.ts') && !relative(project, path).startsWith('.checks/'))) {
+  const scenario = checkCases.find(row => row.id === task)!
+  for (const path of scenario.paths.map(path => join(project, path))) {
     const source = readFileSync(path, 'utf8')
     const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }, fileName: path, reportDiagnostics: true })
     assert.equal(compiled.diagnostics?.length ?? 0, 0, 'Source must compile.')
@@ -111,13 +117,40 @@ async function main() {
       assert.ok(green.numPassedTests > 0)
     }
     const called = readFileSync(join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'commands.called'), 'utf8').trim().split('\n')
-    if (mode === 'forced')
+    const commandFile = join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'check-commands.jsonl')
+    const commands = readFileSync(commandFile, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { name: string, args: string[], started: string, assertionHash: string | null, sourceHash: string | null, exit: number })
+    const evidence = (color: string) => commands.filter(command => command.args.some(arg => arg.endsWith(`.checks/${color}.json`))).at(-1)
+    const before = evidence('red')
+    const after = evidence('green')
+    assert.ok(before?.assertionHash && after?.assertionHash, 'Record both assertion sources.')
+    assert.equal(before.exit, 1, 'Record a failing execution before repair.')
+    assert.equal(after.exit, 0, 'Record a passing execution after repair.')
+    assert.equal(before.assertionHash, after.assertionHash, 'Reuse identical assertions for red and green.')
+    assert.equal(before.sourceHash, sha256(selected.capture.files[selected.scenario.file]), 'Run red against the seeded source.')
+    assert.equal(after.sourceHash, sha256(readFileSync(join(project, selected.scenario.file))), 'Run green against the submitted source.')
+    assert.ok(before.started < after.started, 'Record red before green.')
+    if (mode === 'forced') {
       assert.ok(called.includes('ripide'), 'Use the supplied check command.')
+      assert.equal(before.name, 'ripide', 'Use transient checks for red.')
+      assert.equal(after.name, 'ripide', 'Use transient checks for green.')
+    }
     if (mode === 'direct') {
       assert.ok(called.includes('vitest'))
       assert.ok(!called.includes('ripide'))
+      assert.equal(before.name, 'vitest')
+      assert.equal(after.name, 'vitest')
     }
-    writeFileSync(join(project, '.checks', 'quality.json'), JSON.stringify({ _tag: 'Passed', testFiles: 0, workflow: called.includes('ripide') ? 'ripide' : 'vitest' }))
+    let checklist: unknown = { _tag: 'Unavailable', reason: 'Ordinary Vitest does not record check receipts.' }
+    if (after.name === 'ripide') {
+      const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+      const record = process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!
+      const output = execFileSync(process.execPath, [join(root, 'packages/cli/bin/ripide.mjs'), 'check', '--base', 'HEAD', '--profile', 'full', '--json'], { cwd: project, env: { ...process.env, HOME: join(record, 'home') }, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
+      const value = JSON.parse(output) as { data: { checklist: { items: { kind: string, status: string }[], counts: unknown } } }
+      assert.ok(value.data.checklist.items.filter(item => item.kind === 'integration' || item.kind === 'api' || item.kind === 'manual').every(item => item.status !== 'executed'), 'Keep assertion review separate from execution.')
+      assert.ok(value.data.checklist.items.some(item => item.kind === 'unit' && item.status === 'executed'), 'Record execution of the repaired function.')
+      checklist = value.data.checklist
+    }
+    writeFileSync(join(project, '.checks', 'quality.json'), JSON.stringify({ _tag: 'Passed', newTestFiles: 0, assertionHash: before.assertionHash, workflow: after.name, checklist }))
   }
   console.log('Independent Node behavior checks passed.')
 }
