@@ -92,6 +92,16 @@ Keep shared task constraints explicit after isolating personal instructions.
 Require TypeScript for new scripts. Ordinary shell tools remain allowed.
 State whether temporary edit helpers are permitted.
 Record whether the fixture is a Git checkout. Supply that fact equally to every arm before dispatch.
+Prove each advertised project capability inside the exact child environment before registration.
+Shell and PTY success do not prove an initialized Git baseline.
+If the prompt promises Git status or diffs, require a recorded `HEAD` and a clean authored baseline.
+Select a Git source or declare explicit task setup for that baseline.
+For explicit setup, prepare dependencies and supplied Skill resources before the initial commit.
+Track every authored file. Exclude declared generated directories, dependencies, and supplied Skill copies equally.
+Use `.git/info/exclude` for controller exclusions. Do not add an undeclared authored `.gitignore`.
+Prove an authored edit appears in `git status` and `git diff`, then restore the baseline.
+Before each dispatch, check `HEAD`, authored tracking, and clean status. Missing capability receipts must stop setup.
+Generic `Files` fixtures require Git only when their registered task or prompt advertises it.
 Supply identical fixture facts and required check coverage to every arm.
 If required checks cover the whole fixture, scope additional post-apply review to changed hunks.
 For optional `rg` searches, exit 1 means no matches. Propagate exit 2 or higher as infrastructure failure.
