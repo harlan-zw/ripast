@@ -24,6 +24,20 @@ function fixture() {
   }
 }
 describe('registered experiments', () => {
+  it('accepts an equivalent implementation only in registered behavioral files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'experiment-behavior-'))
+    const expected = { 'src.ts': 'export const absolute = Math.abs\n', 'notes.txt': 'preserve' }
+    writeFileSync(join(dir, 'src.ts'), 'export const absolute = (value: number) => value < 0 ? -value : value\n')
+    writeFileSync(join(dir, 'notes.txt'), 'preserve')
+    expect(gradeProject(dir, expected, [], [], false, ['src.ts'])).toEqual({ _tag: 'Passed' })
+    writeFileSync(join(dir, 'notes.txt'), 'changed')
+    expect(gradeProject(dir, expected, [], [], false, ['src.ts'])._tag).toBe('Failed')
+  })
+  it('refuses behavioral acceptance without an independent required gate', () => {
+    const input = fixture()
+    const task = { ...input.tasks[0], acceptance: { _tag: 'Behavior', files: ['src.ts'] } }
+    expect(parseManifest({ ...input, tasks: [task] })).toMatchObject({ _tag: 'Err' })
+  })
   it('counterbalances every mode in each serial position', () => {
     const parsed = parseManifest(fixture())
     if (parsed._tag !== 'Ok')

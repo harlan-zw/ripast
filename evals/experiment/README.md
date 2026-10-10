@@ -41,6 +41,31 @@ Unchanged files, comments, unrelated bindings, and non-source assets remain byte
 TypeScript references must resolve to the expected declaration. Matching text alone cannot pass.
 Nuxt's separate whole-project typecheck grades generated auto-import bindings.
 
+## Transient check pilot
+
+The check pilot compares temporary Vitest modules with `ripide check` through OpenCode.
+It captures committed source slices from local Nuxt Link Checker and Unhead checkouts.
+It seeds one bug per task and preserves the source commits in private registration evidence.
+Run deterministic preflight before authorizing model calls.
+
+```sh
+pnpm build
+pnpm exec tsx evals/experiment/check-study.ts --out ~/scratch/check-registration
+pnpm exec tsx evals/experiment/check-preflight.ts run ~/scratch/check-registration/check-manifest.json ~/scratch/check-preflight
+pnpm exec tsx evals/experiment/cli.ts run --manifest ~/scratch/check-registration/check-manifest.json --out ~/scratch/check-results --allow-model-calls
+```
+
+Use `--case unhead-real-caller` to register one case. Use `--timeout 360000` for a different preregistered deadline.
+Every revision needs fresh registration and result directories. Preserve failures and their recorded usage.
+These are pilots. One attempt per method cannot establish token or time savings.
+Source slices cannot establish whole-project typecheck, build, or framework compatibility.
+
+Behavior acceptance permits different implementations only in named source files.
+A required independent gate preserves signatures and surrounding bytes, then asserts behavior through Node.
+The gate requires failing and passing JSON evidence, method adherence, and removal of named test modules.
+Generated helper directories remain allowed. The gate does not prove the quality of every agent assertion.
+No persistent test source is needed in the evaluated fixture after completion.
+
 ## Register a held-out study
 
 Copy the generated JSON and replace the scripted commands with authorized external commands.

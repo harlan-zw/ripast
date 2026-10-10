@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process'
-import { readdirSync, symlinkSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { readdirSync, readFileSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
@@ -20,6 +20,24 @@ function project() {
 }
 
 describe('change checks', () => {
+  it('keeps full failure evidence in the artifact and short errors in agent output', () => {
+    const fixture = project()
+    try {
+      const artifact = resolve(fixture.dir, 'failure.json')
+      const run = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', resolve('packages/cli/src/cli.ts'), 'check', 'absolute', '--json', '--artifact', artifact], {
+        cwd: fixture.dir,
+        encoding: 'utf8',
+        input: 'test(\'wrong\', () => expect(absolute(-2)).toBe(9))',
+      })
+      expect(run.status).toBe(1)
+      const compact = JSON.parse(run.stdout)
+      expect(compact.data.result.tests[0].errors[0]).toMatchObject({ message: expect.stringContaining('expected 2 to be 9') })
+      expect(compact.data.result.tests[0].errors[0].stack).toBeUndefined()
+      const full = JSON.parse(readFileSync(artifact, 'utf8'))
+      expect(full.result.tests[0].errors[0].stack).toContain('<stdin>')
+    }
+    finally { fixture.cleanup() }
+  })
   it('runs checks through a symlink to the project root', async () => {
     const fixture = project()
     const link = makeFixture({})

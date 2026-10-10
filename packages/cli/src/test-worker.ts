@@ -6,7 +6,8 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { inspect } from 'node:util'
+import { inspect, stripVTControlCharacters } from 'node:util'
+import { parseSourceFile } from 'ripide-api/adapter'
 import { createVitest, resolveConfig, version } from 'vitest/node'
 import { appendTestLog, emptyTestReport, MAX_TEST_SOURCE_BYTES } from './test-result.ts'
 
@@ -19,14 +20,64 @@ function errorReport(value: unknown, virtualPath: string, lineOffset = 0): Inlin
   const frame = Array.isArray(error.stacks) ? error.stacks.find((entry: unknown) => object(entry).file === virtualPath) : undefined
   const position = frame ? object(frame) : undefined
   return {
-    message: String(error.message ?? value).slice(0, 2000),
+    message: stripVTControlCharacters(String(error.message ?? value)).slice(0, 2000),
     ...(error.expected !== undefined ? { expected: (typeof error.expected === 'string' ? error.expected : inspect(error.expected, { depth: 3, colors: false })).slice(0, 1000) } : {}),
     ...(error.actual !== undefined ? { actual: (typeof error.actual === 'string' ? error.actual : inspect(error.actual, { depth: 3, colors: false })).slice(0, 1000) } : {}),
-    ...(typeof error.diff === 'string' ? { diff: error.diff.slice(0, 2000) } : {}),
-    ...(typeof error.stack === 'string' ? { stack: error.stack.split(virtualPath).join('<stdin>').slice(0, 2000) } : {}),
+    ...(typeof error.diff === 'string' ? { diff: stripVTControlCharacters(error.diff).slice(0, 2000) } : {}),
+    ...(typeof error.stack === 'string' ? { stack: stripVTControlCharacters(error.stack).split(virtualPath).join('<stdin>').slice(0, 2000) } : {}),
     ...(typeof position?.line === 'number' ? { line: Math.max(1, position.line - lineOffset) } : {}),
     ...(typeof position?.column === 'number' ? { column: position.column } : {}),
   }
+}
+
+function importPrologue(request: ResolvedInlineTestRequest, virtualPath: string): string {
+  if (!request.symbol)
+    return ''
+  interface Node { type: string, [key: string]: unknown }
+  const program = parseSourceFile(virtualPath, request.source, request.cwd).program as unknown as { body: Node[] }
+  const bindings = new Set<string>()
+  function bind(value: unknown): void {
+    if (!value || typeof value !== 'object')
+      return
+    const node = value as Node
+    if (node.type === 'Identifier' && typeof node.name === 'string') {
+      bindings.add(node.name)
+    }
+    else if (node.type === 'ObjectPattern') {
+      for (const property of node.properties as Node[]) bind(property.type === 'RestElement' ? property.argument : property.value)
+    }
+    else if (node.type === 'ArrayPattern') {
+      for (const element of node.elements as unknown[]) bind(element)
+    }
+    else if (node.type === 'AssignmentPattern') {
+      bind(node.left)
+    }
+    else if (node.type === 'RestElement') {
+      bind(node.argument)
+    }
+  }
+  for (const statement of program.body) {
+    const declaration = (statement.declaration ?? statement) as Node
+    if (declaration.type === 'ImportDeclaration' && declaration.importKind !== 'type') {
+      for (const specifier of declaration.specifiers as Node[]) {
+        if (specifier.importKind !== 'type')
+          bind(specifier.local)
+      }
+    }
+    else if (declaration.type === 'VariableDeclaration') {
+      for (const variable of declaration.declarations as Node[]) bind(variable.id)
+    }
+    else if (declaration.type === 'FunctionDeclaration' || declaration.type === 'ClassDeclaration') {
+      bind(declaration.id)
+    }
+  }
+  const helpers = ['test', 'expect', 'vi'].filter(name => !bindings.has(name))
+  const lines = helpers.length ? [`import { ${helpers.join(', ')} } from 'vitest'`] : []
+  if (!bindings.has(request.symbol)) {
+    const imported = request.importName === 'default' ? request.symbol : `{ ${request.symbol} }`
+    lines.push(`import ${imported} from ${JSON.stringify(`./${relative(dirname(request.from), request.from).replaceAll('\\', '/')}`)}`)
+  }
+  return lines.length ? `${lines.join('\n')}\n` : ''
 }
 
 function buildReport(modules: TestModule[], unhandledErrors: unknown[], report: InlineTestReport, virtualPath: string, lineOffset: number): InlineTestResult {
@@ -63,9 +114,7 @@ async function execute(request: ResolvedInlineTestRequest): Promise<InlineTestRe
   const rootRelative = `/${relative(request.cwd, virtualPath).replaceAll('\\', '/')}`
   const vitestEntry = import.meta.resolve('vitest')
   const report = { ...emptyTestReport(), runner: { name: 'vitest' as const, version } }
-  const prologue = request.symbol
-    ? `import { test, expect, vi } from 'vitest'\nimport ${request.importName === 'default' ? request.symbol : `{ ${request.symbol} }`} from ${JSON.stringify(`./${relative(dirname(request.from), request.from).replaceAll('\\', '/')}`)}\n`
-    : ''
+  const prologue = importPrologue(request, virtualPath)
   const plugin = {
     name: 'ripide-inline-test',
     enforce: 'pre' as const,
@@ -167,12 +216,12 @@ async function execute(request: ResolvedInlineTestRequest): Promise<InlineTestRe
       return { ...report, _tag: 'Error', phase: 'resolve', message: 'Browser test projects are unsupported. Select a Node test project.', errors: [] }
     await runner.standalone()
     const result = await runner.runTestSpecifications([project.createSpecification(virtualPath)])
-    return buildReport(result.testModules, result.unhandledErrors, report, virtualPath, request.symbol ? 2 : 0)
+    return buildReport(result.testModules, result.unhandledErrors, report, virtualPath, prologue.split('\n').length - 1)
   })().catch((error: unknown): InlineTestResult => ({
     ...report,
     _tag: 'Error',
     phase: 'execute',
-    message: error instanceof Error ? error.message : String(error),
+    message: stripVTControlCharacters(error instanceof Error ? error.message : String(error)).slice(0, 2000),
     errors: [errorReport(error, virtualPath)],
   })).finally(async () => {
     await runner?.close()
@@ -196,7 +245,7 @@ process.once('message', (message: unknown) => {
     ...emptyTestReport(),
     _tag: 'Error',
     phase: 'execute',
-    message: error instanceof Error ? error.message : String(error),
+    message: stripVTControlCharacters(error instanceof Error ? error.message : String(error)).slice(0, 2000),
     errors: [],
   })).then((result) => {
     process.send?.(result, () => process.disconnect?.())

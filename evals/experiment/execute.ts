@@ -186,7 +186,7 @@ export async function executeExperiment(manifest: Manifest, directory: string, o
       const gradingStarted = new Date().toISOString()
       const gradingStart = performance.now()
       const gradingBefore = process.resourceUsage()
-      const grade = gradeProject(project, expected, task.generatedDirectories, task.symbols, true)
+      const grade = gradeProject(project, expected, task.generatedDirectories, task.symbols, true, task.acceptance?._tag === 'Behavior' ? task.acceptance.files : [])
       const gradingAfter = process.resourceUsage()
       const gradingSeconds = (performance.now() - gradingStart) / 1000
       independentGrading.push({ phase: 'verification', role: 'controller', started: gradingStarted, completed: new Date().toISOString(), seconds: gradingSeconds, cpuSeconds: (gradingAfter.userCPUTime - gradingBefore.userCPUTime + gradingAfter.systemCPUTime - gradingBefore.systemCPUTime) / 1e6 })
