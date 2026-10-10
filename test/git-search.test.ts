@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { rmSync, symlinkSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { runRename, writeChanges } from '@ripast/core'
 import { findFiles, findFilesMany } from '@ripast/core/adapter'
 import { afterEach, beforeEach, it, vi } from 'vitest'
 import { makeGitFixture } from './helpers.ts'
@@ -32,7 +33,7 @@ it.skipIf(spawnSync('rg', ['--version']).error !== undefined)('prefers ripgrep a
   finally { fx.cleanup() }
 })
 
-it('Git fallback excludes ignored untracked files and searches only the requested folder', () => {
+it('excludes ignored untracked files and searches only the requested folder with Git', () => {
   const fx = makeGitFixture({ '.gitignore': 'ignored.ts\n', 'outside.ts': 'target' }, false)
   try {
     fx.write('src/new.ts', 'target')
@@ -46,7 +47,7 @@ it('Git fallback excludes ignored untracked files and searches only the requeste
   finally { fx.cleanup() }
 })
 
-it('Git regex searches include untracked files across path batches', () => {
+it('searches untracked files across path batches with Git regex', () => {
   const fx = makeGitFixture({}, false)
   try {
     const expected = Array.from({ length: 65 }, (_, index) => fx.write(`src/file${index}.ts`, 'target123')).sort()
@@ -65,6 +66,18 @@ it('searches tracked working files and untracked files', () => {
     assert.deepEqual(findFiles('target', { cwd: fx.dir }).sort(), expected)
     assert.deepEqual(findFilesMany(['target', 'old'], { cwd: fx.dir }).sort(), expected)
     assert.deepEqual(findFiles('', { cwd: fx.dir, listAll: true }).sort(), expected)
+  }
+  finally { fx.cleanup() }
+})
+
+it('renames references in untracked files with the Git fallback', async () => {
+  const fx = makeGitFixture({ 'source.ts': 'export const oldName = 1\n' })
+  try {
+    fx.write('consumer.ts', "import { oldName } from './source'\nexport const value = oldName\n")
+    const result = await runRename('oldName', 'newName', { cwd: fx.dir })
+    writeChanges(result.changes)
+    assert.equal(fx.read('source.ts'), 'export const newName = 1\n')
+    assert.equal(fx.read('consumer.ts'), "import { newName } from './source'\nexport const value = newName\n")
   }
   finally { fx.cleanup() }
 })

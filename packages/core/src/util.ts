@@ -101,7 +101,7 @@ function discoverySelection(userGlobs: string[]) {
 
 type CandidateSearch = { _tag: 'Files' } | { _tag: 'Text', patterns: string[] } | { _tag: 'Regex', pattern: string }
 
-function selectTrackedFiles(paths: string[], cwd: string, globs: string[]): string[] {
+function selectCandidateFiles(paths: string[], cwd: string, globs: string[]): string[] {
   const rules = globs.map((glob) => {
     const excluded = glob.startsWith('!')
     let pattern = excluded ? glob.slice(1) : glob
@@ -149,7 +149,7 @@ function runGitSearch(search: CandidateSearch, cwd: string, globs: string[]): st
   if (result.status !== 0)
     throw new Error(`Git search failed: ${result.stderr}`)
   const paths = [...new Set(result.stdout.split('\0').filter(Boolean).map(p => resolve(cwd, p)))]
-  const selected = selectTrackedFiles(paths, cwd, globs)
+  const selected = selectCandidateFiles(paths, cwd, globs)
   if (search._tag === 'Files')
     return selected
   if (search._tag === 'Text') {
