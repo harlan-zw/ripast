@@ -58,7 +58,8 @@ function buildReport(modules: TestModule[], unhandledErrors: unknown[], report: 
 }
 
 async function execute(request: ResolvedInlineTestRequest): Promise<InlineTestResult> {
-  const virtualPath = join(dirname(request.from), `__ripide_inline_${randomUUID()}.test.ts`)
+  // Vite resolves module IDs with forward slashes on every platform.
+  const virtualPath = join(dirname(request.from), `__ripide_inline_${randomUUID()}.test.ts`).replaceAll('\\', '/')
   const rootRelative = `/${relative(request.cwd, virtualPath).replaceAll('\\', '/')}`
   const vitestEntry = import.meta.resolve('vitest')
   const report = { ...emptyTestReport(), runner: { name: 'vitest' as const, version } }
@@ -75,12 +76,12 @@ async function execute(request: ResolvedInlineTestRequest): Promise<InlineTestRe
         ? await resolveConfig({ root: request.cwd, config: request.config, project: request.project ? [request.project] : undefined })
         : undefined
       const resolvedTest = fileProjects?.test as ResolvedConfig | undefined
-      const projectNames = new Map(resolvedTest?.resolvedProjects.map(entry => [entry.viteConfig.configFile, entry.projectConfig.name]))
+      const projectNames = new Map(resolvedTest?.resolvedProjects.map(entry => [entry.viteConfig.configFile?.replaceAll('\\', '/'), entry.projectConfig.name]))
       config.test.projects = config.test.projects.map((entry) => {
         if (typeof entry === 'string') {
           if (/[*{}]/.test(entry))
             throw new Error('Pass a project configuration file with --config instead of a project glob.')
-          const path = resolve(request.cwd, entry)
+          const path = resolve(request.cwd, entry).replaceAll('\\', '/')
           return { extends: path, plugins: [plugin], test: { name: projectNames.get(path) } }
         }
         if (typeof entry === 'function' || entry instanceof Promise)

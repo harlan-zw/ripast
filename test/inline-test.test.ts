@@ -87,7 +87,7 @@ test('uses the dependency mock', () => { expect(doubled()).toBe(14); expect(read
     const fixture = makeFixture({
       'src/math.ts': 'export const value = 42',
       'setup.ts': 'globalThis.inlineSetup = 9',
-      'vitest.config.mjs': `export default { resolve: { alias: { '@math': new URL('./src/math.ts', import.meta.url).pathname } }, test: { include: ['other/**/*.test.ts'], setupFiles: ['./setup.ts'] } }`,
+      'vitest.config.mjs': `import { fileURLToPath } from 'node:url'; export default { resolve: { alias: { '@math': fileURLToPath(new URL('./src/math.ts', import.meta.url)) } }, test: { include: ['other/**/*.test.ts'], setupFiles: ['./setup.ts'] } }`,
       'other/unrelated.test.ts': 'throw new Error("Do not discover unrelated tests")',
     })
     try {

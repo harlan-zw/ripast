@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { readdirSync } from 'node:fs'
+import { readdirSync, symlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { describe, expect, it } from 'vitest'
@@ -20,6 +20,21 @@ function project() {
 }
 
 describe('change checks', () => {
+  it('runs checks through a symlink to the project root', async () => {
+    const fixture = project()
+    const link = makeFixture({})
+    try {
+      symlinkSync(fixture.dir, resolve(link.dir, 'project'), 'junction')
+      const run = await runCheck({ cwd: resolve(link.dir, 'project'), base: 'HEAD', symbol: 'absolute', source: 'test(\'linked root\', () => expect(absolute(-2)).toBe(2))' })
+      expect(run._tag === 'Run' && run.result._tag).toBe('Passed')
+      if (run._tag === 'Run')
+        expect(run.checklist?.items.find(item => item.kind === 'unit')).toMatchObject({ status: 'executed' })
+    }
+    finally {
+      link.cleanup()
+      fixture.cleanup()
+    }
+  })
   it('automatically imports a named default function', async () => {
     const fixture = makeFixture({ 'math.ts': 'export default function absolute(value: number) { return Math.abs(value) }' })
     try {

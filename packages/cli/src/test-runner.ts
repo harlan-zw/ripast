@@ -2,7 +2,7 @@ import type { ChildProcess } from 'node:child_process'
 import type { InlineTestLogs, InlineTestRequest, InlineTestResult, ResolvedInlineTestRequest } from './test-result.ts'
 import { Buffer } from 'node:buffer'
 import { execFile, fork } from 'node:child_process'
-import { lstatSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, statSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -27,14 +27,15 @@ function resolveRequest(input: InlineTestRequest): ResolvedInlineTestRequest | I
   const testTimeoutMs = input.testTimeoutMs ?? 5000
   if (![timeoutMs, testTimeoutMs].every(value => Number.isSafeInteger(value) && value > 0 && value <= 2147483647))
     return inputError('Timeouts must be positive integers below 2147483648 milliseconds.')
-  const cwd = resolve(input.cwd ?? process.cwd())
-  if (!lstatSync(cwd, { throwIfNoEntry: false })?.isDirectory())
-    return inputError(`Project directory does not exist: ${cwd}.`, 'resolve')
+  const directory = resolve(input.cwd ?? process.cwd())
+  if (!statSync(directory, { throwIfNoEntry: false })?.isDirectory())
+    return inputError(`Project directory does not exist: ${directory}.`, 'resolve')
+  const cwd = realpathSync(directory)
   const from = resolve(cwd, input.from)
-  if (!lstatSync(from, { throwIfNoEntry: false })?.isFile())
+  if (!statSync(from, { throwIfNoEntry: false })?.isFile())
     return inputError(`Source file does not exist: ${from}.`, 'resolve')
   const config = input.config ? resolve(cwd, input.config) : undefined
-  if (config && !lstatSync(config, { throwIfNoEntry: false })?.isFile())
+  if (config && !statSync(config, { throwIfNoEntry: false })?.isFile())
     return inputError(`Configuration file does not exist: ${config}.`, 'resolve')
   if (input.symbol !== undefined && !/^[$A-Z_][$\w]*$/i.test(input.symbol))
     return inputError('The symbol must be a JavaScript identifier.')

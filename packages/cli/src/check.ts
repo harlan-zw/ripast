@@ -1,7 +1,7 @@
 import type { FunctionCoverage, InlineTestResult } from './test-result.ts'
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { parseSourceFile, rgFiles } from 'ripide-api/adapter'
@@ -149,9 +149,9 @@ function matchingCoverage(item: Pick<CheckItem, 'file' | 'body'>, coverage: Func
 
 /** Build a conservative checklist. Dynamic calls and type contracts still require review. */
 export function buildCheckChecklist(options: Pick<CheckOptions, 'cwd' | 'base'>): CheckChecklist {
-  const cwd = resolve(options.cwd)
+  const cwd = realpathSync(resolve(options.cwd))
   const repository = git(cwd, ['rev-parse', '--show-toplevel']).trim()
-  if (resolve(repository) !== cwd)
+  if (realpathSync(repository) !== cwd)
     throw new Error('Run the Git checklist from the repository root.')
   const base = git(cwd, ['rev-parse', '--verify', `${options.base ?? 'HEAD'}^{commit}`]).trim()
   const changed = new Set([...git(cwd, ['diff', '--name-only', '-z', base, '--']).split('\0'), ...git(cwd, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0')].filter(Boolean))
@@ -263,7 +263,7 @@ export function buildCheckChecklist(options: Pick<CheckOptions, 'cwd' | 'base'>)
 }
 
 export async function runCheck(options: CheckOptions): Promise<CheckResult> {
-  const cwd = resolve(options.cwd)
+  const cwd = realpathSync(resolve(options.cwd))
   if (options.source === undefined)
     return { _tag: 'Checklist', checklist: buildCheckChecklist(options) }
   if (options.symbol === 'default')
