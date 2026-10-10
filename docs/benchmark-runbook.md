@@ -51,6 +51,85 @@ Resolve the installed package's JavaScript `bin` target when invoking it through
 An executable shell shim is not a JavaScript module.
 Record both the outer launcher and actual executed artifact, including versions and hashes.
 
+## Coordinator handoffs
+
+Give each preparation agent a fresh task brief instead of a full transcript fork.
+Include the decision, owned paths, source commit, constraints, required checks, and private evidence references.
+Carry forward relevant corrections and unresolved failures. Do not copy unrelated attempts or historical tool streams.
+Keep evaluator answers outside candidate briefs, as required by Runner preflight.
+
+Set handoff budgets before delegation. Use 4 KiB per brief and 8 KiB per returned receipt by default.
+Measure UTF-8 bytes. These limits control context transfer, not provider token accounting or evidence retention.
+If required facts exceed a budget, split the task or provide an indexed artifact with focused retrieval.
+Never truncate a failure or omit an unresolved decision to fit the limit.
+
+Return at most three outcome bullets, followed by a structured evidence receipt.
+Use this TypeScript shape for preparation handoffs. It documents the contract; the harness does not enforce it.
+
+```ts
+interface Artifact {
+  path: string
+  sha256: string
+}
+
+type Outcome
+  = | { _tag: 'Passed', exit: 0 }
+    | { _tag: 'Failed', exit: number | null, cause: string }
+    | { _tag: 'Unavailable', reason: string }
+
+interface EvidenceReceipt {
+  task: string
+  sourceCommit: string
+  submittedCommit: string | null
+  changedPaths: string[]
+  checks: {
+    command: string[]
+    cwd: string
+    scope: string[]
+    startedAt: string
+    completedAt: string | null
+    outcome: Outcome
+    evidence: Artifact
+  }[]
+  diagnostics: {
+    total: number | null
+    shown: { path: string | null, message: string }[]
+    omitted: number | null
+    evidence: Artifact
+  }
+  limits: string[]
+  manifest: Artifact
+}
+```
+
+Use UTC timestamps. Record each executed child command separately.
+Use `Failed` for nonzero exits, signals, and timeouts. Explain null exits and incomplete timestamps in `limits`.
+Use `Unavailable` when execution evidence is missing. Never infer a passing check from a summary or command string.
+Record unknown diagnostic counts as null, with the reason in `limits`.
+The manifest indexes complete streams, failures, source hashes, session identifiers, and artifact provenance.
+Keep it and referenced raw artifacts in a private scratch directory, with directory mode `700` and file mode `600`.
+Keep credentials out of manifests. Verify artifact hashes before using a receipt to make a decision.
+If evidence is missing or stale, request the exact artifact or rerun the affected check.
+
+Before deep reads, inspect keys and select the fields needed for the pending decision.
+For example, inspect `jq 'keys' receipt.json`, then project check outcomes, changed paths, diagnostics, and limits.
+Select records before projecting fields. For Worktrunk, select the task branch before returning its worktree path:
+
+```sh
+wt list --format=json | jq '.items[] | select(.branch == "TASK_BRANCH") | .worktree.path'
+```
+
+Count entries and omitted diagnostics. Keep failure causes and evidence references in every outcome projection.
+Open complete failure evidence before deciding whether a defect is resolved or a check is redundant.
+Retrieve named records or line ranges from complete artifacts. Save the selection and its source hash.
+Avoid dumping a full worktree inventory, catalog, registration, or transcript into coordinator context.
+
+Freeze the handoff contract with the runbook revision before a new comparison.
+Keep historical session and token inventories separate from predicted benefits.
+Distinguish active phase sessions from historical sessions referenced only as evidence.
+A smaller handoff does not establish better completion, lower total usage, or faster execution.
+Measure those outcomes in a registered comparison with equal acceptance gates and retained failures.
+
 ## Checks and publication
 
 Keep meaningful failing-first tests.
