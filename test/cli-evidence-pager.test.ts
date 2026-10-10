@@ -104,3 +104,23 @@ it('accepts an explicit empty JSON Pointer for the root', () => {
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(JSON.parse(result.stdout).data.view.results, [1, 2])
 })
+
+it('navigates long saved source strings through bounded UTF-8 text pages', () => {
+  const source = `export const text = "${'🦎\\\\ '.repeat(2000)}"\n`
+  const fixture = makeFixture({ 'evidence.json': JSON.stringify({ source }) })
+  try {
+    const result = run(fixture.dir, ['page', '--input', 'evidence.json', '--path', '/source', '--session', '--limit', '2'], '{"_tag":"Next"}\n{"_tag":"Previous"}\n{"_tag":"Close"}\n')
+    assert.equal(result.status, 0, result.stderr)
+    const lines = result.stdout.trim().split('\n')
+    assert.ok(lines.every(line => Buffer.byteLength(`${line}\n`) <= 4096))
+    const responses = lines.map(line => JSON.parse(line))
+    assert.equal(responses[0].data.view.unit, 'text')
+    assert.equal(responses[0].data.view.nextOffset, 2)
+    assert.equal(responses[1].data.view.offset, 2)
+    assert.deepEqual(responses[2].data.view, responses[0].data.view)
+    const text = responses.slice(0, 2).flatMap(response => response.data.view.results).map((part: { text: string }) => part.text).join('')
+    assert.ok(source.startsWith(text))
+    assert.doesNotMatch(text, /�/)
+  }
+  finally { fixture.cleanup() }
+})

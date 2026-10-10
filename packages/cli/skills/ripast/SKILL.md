@@ -51,6 +51,7 @@ For saved-evidence pages, read the view and continuation at `data.view` and `dat
 Use `ripide page --input <artifact.json>` to inspect its root menu, then select the relevant JSON Pointer path.
 Do not assume the artifact root is an array. Command artifacts have different shapes.
 Use `--fields` for object rows. Select nested paths when one item exceeds the response ceiling.
+Long source strings page into text parts. Read their source line numbers; offsets count parts.
 For known requests, batch NDJSON through `page --session`. Use live navigation only if your shell preserves stdin.
 Separate `page` calls are a cheap fallback. They reread evidence without scanning the project.
 Never repeat a mutation or project scan just to retrieve omitted evidence.

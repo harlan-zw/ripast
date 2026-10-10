@@ -420,6 +420,8 @@ Use `--input -` for a single JSON document on stdin.
 Pages default to 40 results, a 4 KiB page target, and a 32 KiB response ceiling.
 Use `--limit`, `--offset`, `--page-bytes`, or `--max-bytes` to adjust them.
 For arrays of objects, use `--fields name,line` to select row fields.
+Long strings page into UTF-8 text parts with source line numbers. Offsets count parts.
+For saved source, select a path such as `/changes/0/after` from the artifact menu.
 Follow `data.view.nextOffset` to continue. If one item is too large, select its nested fields or raise the ceiling.
 
 For several known requests, keep one evidence session:

@@ -78,7 +78,11 @@ it('keeps change metadata and scalar paths when source strings exceed the menu b
   assert.deepEqual(result.value.values, { file: 'source.ts', count: 2 })
   assert.deepEqual(result.value.omittedValues, [{ path: '/before', bytes: 40000 }, { path: '/after', bytes: 50000 }])
   assert.ok(Buffer.byteLength(JSON.stringify(result.value)) <= 4096)
-  assert.deepEqual(inspectEvidence(input, '/before'), { _tag: 'Ok', value: { _tag: 'Value', path: '/before', value: input.before } })
+  const source = inspectEvidence(input, '/before')
+  if (source._tag !== 'Ok' || source.value._tag !== 'Collection')
+    assert.fail('Expected a text collection.')
+  assert.equal(source.value.unit, 'text')
+  assert.equal((source.value.results[0] as { text: string }).text, '🦎'.repeat(128))
 })
 
 it('traverses every immediate child of a large object with advancing offsets', () => {
@@ -125,4 +129,33 @@ it('applies the scalar preview threshold in UTF-8 bytes and pages mixed child ki
     assert.fail('Expected an object inspection.')
   assert.deepEqual(fourth.value.objects, ['/object'])
   assert.equal(fourth.value.nextOffset, undefined)
+})
+
+it('reconstructs long Unicode source strings across bounded text pages', () => {
+  const text = `${'🦎\\"'.repeat(1200)}\r\nsecond line\n${'x'.repeat(5000)}\n`
+  const evidence = { before: text }
+  const seen: { line: number, part: number, text: string }[] = []
+  let offset = 0
+  for (let pageIndex = 0; pageIndex < 100; pageIndex++) {
+    const result = inspectEvidence(evidence, '/before', { offset })
+    if (result._tag !== 'Ok' || result.value._tag !== 'Collection')
+      assert.fail('Expected source text fragments.')
+    assert.equal(result.value.unit, 'text')
+    assert.ok(Buffer.byteLength(JSON.stringify(result.value)) <= 4096)
+    const rows = result.value.results as { line: number, part: number, text: string }[]
+    assert.ok(rows.length > 0)
+    assert.ok(rows.every(row => Buffer.byteLength(row.text) <= 512 && !row.text.includes('�')))
+    seen.push(...rows)
+    if (result.value.nextOffset === undefined)
+      break
+    assert.ok(result.value.nextOffset > offset)
+    offset = result.value.nextOffset
+  }
+  assert.equal(seen.map(row => row.text).join(''), text)
+  assert.equal(evidence.before, text)
+  assert.equal(seen[0].line, 1)
+  assert.equal(seen[0].part, 1)
+  assert.ok(seen.filter(row => row.line === 1).every((row, index) => row.part === index + 1))
+  assert.deepEqual(seen.find(row => row.line === 2), { line: 2, part: 1, text: 'second line\n' })
+  assert.ok(seen.filter(row => row.line === 3).every((row, index) => row.part === index + 1))
 })

@@ -4,7 +4,7 @@ import { DEFAULT_PAGE_BYTES, selectOutput } from './output.ts'
 
 export type EvidenceScalar = string | number | boolean | null
 export type EvidenceInspection
-  = | ({ _tag: 'Collection', path: string } & OutputPage<unknown>)
+  = | ({ _tag: 'Collection', path: string, unit?: 'text' } & OutputPage<unknown>)
     | ({ _tag: 'Object', path: string, values: Record<string, EvidenceScalar>, omittedValues: { path: string, bytes: number }[], collections: { path: string, total: number }[], objects: string[] } & Omit<OutputPage<unknown>, 'results'>)
     | { _tag: 'Value', path: string, value: EvidenceScalar }
 
@@ -58,6 +58,38 @@ function isScalar(value: unknown): value is EvidenceScalar {
   return value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
 }
 
+function sourceFragments(text: string): { line: number, part: number, text: string }[] {
+  const rows: { line: number, part: number, text: string }[] = []
+  let line = 1
+  let part = 1
+  let offset = 0
+  let fragment = ''
+  let bytes = 0
+  const flush = () => {
+    if (!fragment)
+      return
+    rows.push({ line, part, text: fragment })
+    fragment = ''
+    bytes = 0
+    part++
+  }
+  for (const codePoint of text) {
+    const size = Buffer.byteLength(codePoint)
+    if (bytes + size > 512)
+      flush()
+    fragment += codePoint
+    bytes += size
+    offset += codePoint.length
+    if (codePoint === '\n' || (codePoint === '\r' && text[offset] !== '\n') || codePoint === '\u2028' || codePoint === '\u2029') {
+      flush()
+      line++
+      part = 1
+    }
+  }
+  flush()
+  return rows
+}
+
 /** Inspect immediate children or page a collection without changing saved evidence. */
 export function inspectEvidence(input: unknown, path = '', options: OutputSelection<unknown> = {}): EvidenceResult {
   const pointer = parseEvidencePointer(path)
@@ -87,6 +119,14 @@ export function inspectEvidence(input: unknown, path = '', options: OutputSelect
       render: options.render ?? (page => JSON.stringify({ _tag: 'Collection', path, ...page })),
     })
     return { _tag: 'Ok', value: { _tag: 'Collection', path, ...page } }
+  }
+  if (typeof value === 'string' && Buffer.byteLength(value) > 256) {
+    const page = selectOutput(sourceFragments(value), {
+      ...options,
+      pageBytes: options.pageBytes ?? DEFAULT_PAGE_BYTES,
+      render: options.render ?? (page => JSON.stringify({ _tag: 'Collection', path, unit: 'text', ...page })),
+    })
+    return { _tag: 'Ok', value: { _tag: 'Collection', path, unit: 'text', ...page } }
   }
   if (isScalar(value))
     return { _tag: 'Ok', value: { _tag: 'Value', path, value } }

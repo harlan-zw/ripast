@@ -14,6 +14,9 @@ ripide page --input /tmp/evidence.json
 Objects expose immediate scalar metadata and paths to nested collections and objects.
 Object menus page their children. Large strings expose paths and byte counts through `data.view.omittedValues`.
 Arrays page their items. Other values return their selected value.
+Long strings return text pages with `data.view.unit` set to `text`.
+Text rows contain `line`, `part`, and `text`. Offsets count text parts, not source lines.
+Parts preserve UTF-8 characters and newlines. Joining `text` fields from all pages reconstructs the selected string.
 Read the selected view at `data.view`. Collection paths appear in `data.view.collections`.
 Artifacts differ between commands. Select a path from the menu instead of assuming a root array.
 Paths use JSON Pointer syntax. The empty path selects the root.
@@ -30,6 +33,14 @@ For a tree artifact, inspect declarations in its first file:
 ```bash
 ripide page --input /tmp/evidence.json --path /files/0/declarations --fields name,line
 ```
+
+For a mutation's saved source, select its text directly:
+
+```bash
+ripide page --input /tmp/mutation.json --path /changes/0/after
+```
+
+Select the change path from your artifact's menu. Its shape can differ between operations.
 
 Defaults: `--limit 40`, `--offset 0`, `--page-bytes 4096`, and `--max-bytes 32768`.
 Follow `data.view.nextOffset`; page sizes vary with rendered bytes.
