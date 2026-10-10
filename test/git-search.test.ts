@@ -73,11 +73,11 @@ it('searches tracked working files and untracked files', () => {
 it('renames references in untracked files with the Git fallback', async () => {
   const fx = makeGitFixture({ 'source.ts': 'export const oldName = 1\n' })
   try {
-    fx.write('consumer.ts', "import { oldName } from './source'\nexport const value = oldName\n")
+    fx.write('consumer.ts', 'import { oldName } from \'./source\'\nexport const value = oldName\n')
     const result = await runRename('oldName', 'newName', { cwd: fx.dir })
     writeChanges(result.changes)
     assert.equal(fx.read('source.ts'), 'export const newName = 1\n')
-    assert.equal(fx.read('consumer.ts'), "import { newName } from './source'\nexport const value = newName\n")
+    assert.equal(fx.read('consumer.ts'), 'import { newName } from \'./source\'\nexport const value = newName\n')
   }
   finally { fx.cleanup() }
 })
