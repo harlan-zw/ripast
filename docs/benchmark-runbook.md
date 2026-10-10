@@ -224,6 +224,18 @@ Freeze these inputs before dispatch:
 - Token categories, phase endpoints, failure treatment, and aggregate weights.
 - Pilot, repeat count, task selection, and held-out scored tasks.
 
+Preregister pass, fail, unavailable, and infrastructure outcomes, plus the gate order and acceptance rules.
+Fix per-attempt deadlines, total attempt budget, retry and repair limits, and stop conditions.
+State how failures, timeouts, missing usage, and repairs enter quality and resource totals.
+Freeze cache assumptions, aggregation, and the rules for including complete pairs in comparisons.
+Use the existing [recording boundaries](../evals/experiment/README.md#recording-boundaries) and [accounting definitions](#accounting-and-claims).
+Record start and terminal times for gates, including failures and infrastructure errors.
+If timing evidence is unavailable, preserve the failure and explain the missing boundary.
+Report every attempt's status and resources in a table.
+List excluded pairs and reasons; retain their resources in totals.
+Define time speedup as `direct / hybrid` and resource reduction as `1 - hybrid / direct`.
+Label each ratio's metric and endpoint. Mark zero or unavailable denominators unavailable.
+
 Use an external recorder. Do not add arm-specific logging during scored work.
 Keep private transcripts, credentials, and raw context outside public result artifacts.
 Preserve stdout, stderr, child exits, starts, completions, and artifact locations separately.
@@ -236,10 +248,20 @@ If a capability is unavailable, disclose it. Do not treat an unavailable gate as
 Separate mechanical, mixed, and architecture cohorts.
 Pilot direct edits, forced tool use, and hybrid choice separately.
 Fix repeat counts before held-out registration. Record the sample-size rationale and limits of inference.
-Counterbalance method order. Record whether cache conditions are controlled or observed.
+Counterbalance method order within each task. Global alternation can leave one task always using the same first method.
+For repeated two-method comparisons, give every task both direct-first and hybrid-first pairs.
+Freeze the complete schedule and inspect first-method counts per task before dispatch.
+Odd repeat counts cannot provide exactly equal order counts. Disclose that imbalance.
+Record whether cache conditions are controlled or observed.
 Run serially or on demonstrably isolated resources.
 Use installed projects for full-project claims.
 Keep first-use setup separate from prepared-use measurements.
+
+A three-task, three-repeat comparison between two methods plans eighteen attempts. Label it a pilot.
+That budget does not establish broad framework or product performance, even with fresh task text.
+Previously seen operation classes and scaffold families limit the claim scope.
+Keep the [held-out protocol](../evals/experiment/README.md#register-a-held-out-study) unchanged, including repeats divisible by six.
+Do not increase the model budget to meet that protocol without authorization.
 
 Freeze task acceptance independently of treatment output.
 List allowed generated directories in both the common prompt and grader.
