@@ -2,6 +2,7 @@ import type { CommandDef } from 'citty'
 import type { ExportFilter, ProfileSink, Verification, VerifyMode } from 'ripide-api'
 import type { JsonTag } from './json.ts'
 import type { OutputPage } from './presentation/index.ts'
+import type { InlineTestError } from './test-result.ts'
 import { Buffer } from 'node:buffer'
 import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
@@ -1100,11 +1101,16 @@ const doctorCmd = defineCommand({
   },
 }, ['changed'])
 
+function compactCheckError({ stack: _stack, ...error }: InlineTestError): InlineTestError {
+  const diagnostics = error.message.split('\n').filter(line => /^\[[A-Z_]+\]/.test(line))
+  return { ...error, message: (diagnostics.length ? diagnostics.slice(0, 3).join('\n') : error.message.split('\n')[0]).slice(0, 500) }
+}
+
 const checkCmd = defineCommand({
-  meta: { name: 'check', description: 'Run transient Vitest checks from stdin or list changes that need checks.' },
+  meta: { name: 'check', description: 'Experimental. Run transient Vitest checks from stdin or list changes that need checks.' },
   args: {
     symbol: { type: 'positional', required: false, description: 'Exported function to import automatically.' },
-    from: { type: 'string', description: 'Source file. Required when the function name is ambiguous.' },
+    from: { type: 'string', description: 'Source file. Imports and mocks resolve beside this file. Required for ambiguous function names.' },
     base: { type: 'string', description: 'Git baseline. Enables the change checklist and execution evidence.' },
     config: { type: 'string', description: 'Vitest configuration file.' },
     project: { type: 'string', description: 'Vitest project name.' },
@@ -1157,7 +1163,9 @@ const checkCmd = defineCommand({
               ...(compactChecklist ? { checklist: compactChecklist } : {}),
               result: {
                 ...report.result,
-                tests: report.result.tests.filter(test => test.state !== 'passed'),
+                ...(report.result._tag === 'Error' ? { message: compactCheckError({ message: report.result.message }).message } : {}),
+                ...('errors' in report.result ? { errors: report.result.errors.map(compactCheckError) } : {}),
+                tests: report.result.tests.filter(test => test.state !== 'passed').map(test => ({ ...test, errors: test.errors.map(compactCheckError) })),
                 coverage: executedCoverage.slice(0, 20).map(fn => ({ file: fn.file, name: fn.name, line: fn.startLine, hits: fn.hits, uncoveredBranches: fn.branches.flatMap(branch => branch.hits).filter(hits => hits === 0).length })),
                 coverageOmitted: Math.max(0, executedCoverage.length - 20),
               },

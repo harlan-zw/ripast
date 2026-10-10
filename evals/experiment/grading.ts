@@ -38,12 +38,12 @@ export function expectedProject(initial: Record<string, string>, expected: Recor
   }
   return result
 }
-export function gradeProject(directory: string, expectedText: Record<string, string>, generatedDirectories: string[], assertions: SymbolAssertion[], encoded = false): Quality {
+export function gradeProject(directory: string, expectedText: Record<string, string>, generatedDirectories: string[], assertions: SymbolAssertion[], encoded = false, behavioralFiles: string[] = []): Quality {
   const actual = snapshotProject(directory, generatedDirectories)
   const expected = encoded ? expectedText : Object.fromEntries(Object.entries(expectedText).map(([k, v]) => [k, Buffer.from(v).toString('base64')]))
   const issues: string[] = []
   for (const [path, content] of Object.entries(expected)) {
-    if (actual[path] !== content)
+    if (!(path in actual) || (!behavioralFiles.includes(path) && actual[path] !== content))
       issues.push(`Unexpected file content: ${path}`)
   }
   for (const path of Object.keys(actual)) {

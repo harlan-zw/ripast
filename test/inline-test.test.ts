@@ -5,6 +5,18 @@ import { runInlineTest } from '../packages/cli/src/test-runner.ts'
 import { makeFixture } from './helpers.ts'
 
 describe('inline tests', () => {
+  it.each([
+    `import { test, expect } from 'vitest'\nimport { add } from './math.ts'`,
+    `import { test as run, expect } from 'vitest'\nconst { test } = { test: run }`,
+    `function nested(test: unknown) { return test }\nconst unrelated = { add: 1 }`,
+  ])('keeps explicit bindings while adding missing imports: %s', async (source) => {
+    const fixture = makeFixture({ 'src/math.ts': 'export const add = (a: number, b: number) => a + b' })
+    try {
+      const result = await runInlineTest({ cwd: fixture.dir, from: 'src/math.ts', symbol: 'add', source: `${source}\ntest('explicit imports', () => expect(add(2, 3)).toBe(5))` })
+      expect(result._tag, JSON.stringify(result)).toBe('Passed')
+    }
+    finally { fixture.cleanup() }
+  })
   it('loads a selected project configuration file', async () => {
     const fixture = makeFixture({
       'math.ts': 'export const add = (a: number, b: number) => a + b',

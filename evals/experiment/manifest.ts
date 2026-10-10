@@ -41,6 +41,7 @@ export interface Task {
     commit: string
   }
   expected: Record<string, string | null>
+  acceptance?: { _tag: 'Bytes' } | { _tag: 'Behavior', files: string[] }
   generatedDirectories: string[]
   setup: Command[]
   checks: Command[]
@@ -156,6 +157,9 @@ function task(raw: unknown): Task {
     prompt: text(row.prompt),
     source: parsedSource,
     expected: files(row.expected, true),
+    acceptance: row.acceptance === undefined || object(row.acceptance)._tag === 'Bytes'
+      ? { _tag: 'Bytes' }
+      : { _tag: choice(object(row.acceptance)._tag, ['Behavior']), files: array(object(row.acceptance).files).map(projectPath) },
     generatedDirectories: array(row.generatedDirectories).map(projectPath),
     setup: phaseCommands(row.setup),
     checks: phaseCommands(row.checks),
@@ -214,6 +218,17 @@ export function parseManifest(raw: unknown): Result<Manifest> {
     }
     if (!value.tasks.length || new Set(value.tasks.map(t => t.id)).size !== value.tasks.length)
       throw new Error('Tasks must have unique IDs.')
+    for (const task of value.tasks) {
+      if (task.acceptance?._tag !== 'Behavior')
+        continue
+      if (!task.acceptance.files.length || !task.checks.length || !task.qualityGates.some(gate => gate.required))
+        throw new Error('Behavioral acceptance requires editable files, independent checks, and a required quality gate.')
+      if (task.acceptance.files.some(file => task.generatedDirectories.some(dir => file === dir || file.startsWith(`${dir}/`))))
+        throw new Error('Behavioral files cannot be generated directories.')
+      const source = task.source
+      if (source._tag === 'Files' && task.acceptance.files.some(file => !(file in source.files)))
+        throw new Error('Behavioral files must exist in the source snapshot.')
+    }
     if (value.usageImports.some(source => !value.artifacts.some(artifact => artifact.path === source.path)))
       throw new Error('Pin every imported usage artifact.')
     const importedHashes = value.usageImports.map(source => value.artifacts.find(artifact => artifact.path === source.path)!.sha256)

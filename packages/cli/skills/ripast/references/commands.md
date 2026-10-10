@@ -20,6 +20,7 @@ Mutations default to dry-run. If the target is uncertain, review the result, the
 
 ## Transient checks
 
+The command is experimental. Verify its results against project checks.
 Use `check --base <ref>` at the repository root to list changed functions and direct callers.
 The checklist covers TS and JS functions, relative imports, named aliases, and namespace calls.
 Review framework calls, dynamic imports, barrel exports, and configured import aliases separately.
@@ -32,6 +33,7 @@ TS
 ```
 
 The CLI imports a unique exported function, `test`, `expect`, and `vi`.
+Explicit imports remain valid. The CLI adds only missing module bindings.
 If several exports match, pass `--from src/limit.ts`.
 Without a symbol, pass `--from` and supply a complete Vitest module with imports.
 Relative imports and mocks resolve beside that source file.
@@ -44,6 +46,7 @@ Each run uses a fresh Vitest process with a default 30-second deadline.
 Use `--timeout <milliseconds>` to change that deadline.
 Every running test needs an assertion. Empty and skipped-only modules fail.
 Failures, collection errors, and timeouts return exit code 1.
+Agent JSON omits error stacks. Use `--artifact <path>` to save full failure evidence.
 Tests execute with project permissions. The worker provides process isolation.
 Snapshot creation remains a project write. Use assertions when transient checks must leave source files unchanged.
 
