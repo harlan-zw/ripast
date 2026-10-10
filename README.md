@@ -377,9 +377,7 @@ An insufficient metadata budget refuses the operation before writes. Its error r
 
 ```bash
 ripide tree --profile agent --limit 10
-ripide tree --profile agent --offset <nextOffset>
 ripide tree --json --declarations --file src/store.ts --page-bytes 8192
-ripide tree --json --artifact /tmp/ripide-tree.json
 ```
 
 Paging counts results. For `tree`, each result is a file unless `--declarations` is supplied.
@@ -393,9 +391,59 @@ Text retains complete leading lines and reports omitted output.
 Oversized graphs return an empty graph with an omission comment.
 Stdout limits do not bound stderr logs.
 
-If output is omitted, narrow the results or increase `--max-bytes`.
 Use `--json --artifact <new-file.json>` to save complete evidence outside model context.
 The artifact path must be new. Artifacts have no display limit.
+If output is incomplete, inspect that artifact with `ripide page`. Keep the original command outcome and verification receipt.
+Paging saved evidence avoids another project scan. It never repeats a mutation.
+
+### Read saved evidence
+
+Run the operation once, then inspect its saved evidence:
+
+```bash
+ripide tree --json --artifact /tmp/ripide-tree.json
+ripide page --input /tmp/ripide-tree.json
+ripide page --input /tmp/ripide-tree.json --path /files/0/declarations
+ripide page --input - --path /files/0/declarations < /tmp/ripide-tree.json
+```
+
+Read the page at `data.view`. Its saved evidence identity appears at `data.source.sha256`.
+The root page lists scalar metadata and paths to nested collections and objects.
+Object menus also page their children. Large values expose paths and byte counts in `data.view.omittedValues`.
+If the selected value is an array, the command pages its items.
+Select paths from that menu. Artifact shapes differ between commands; the root is not always an array.
+Paths use JSON Pointer syntax. The empty path selects the root.
+Escape `/` as `~1` and `~` as `~0` inside property names.
+Each page is JSON; `--json` is unnecessary.
+Use `--input -` for a single JSON document on stdin.
+
+Pages default to 40 results, a 4 KiB page target, and a 32 KiB response ceiling.
+Use `--limit`, `--offset`, `--page-bytes`, or `--max-bytes` to adjust them.
+For arrays of objects, use `--fields name,line` to select row fields.
+Follow `data.view.nextOffset` to continue. If one item is too large, select its nested fields or raise the ceiling.
+
+For several known requests, keep one evidence session:
+
+```bash
+ripide page --input /tmp/ripide-tree.json --session <<'NDJSON'
+{"_tag":"Select","path":"/files/0/declarations"}
+{"_tag":"Select","path":"/files/0/imports"}
+{"_tag":"Close"}
+NDJSON
+```
+
+The session loads the artifact once and keeps an immutable snapshot.
+It writes an initial page, then one JSON response per NDJSON request.
+Requests are `Next`, `Previous`, `Select`, and `Close`.
+`Select` accepts a JSON Pointer `path` and an optional `offset`.
+It resets page history and defaults to offset zero. `Previous` returns the prior visited page for that path.
+If a page includes `nextOffset`, send `Next` to continue.
+Failed navigation requests return `Error` without changing the current path or history. Correct the request, then continue.
+Session navigation uses stdin, so `--session` requires a file input.
+Use live navigation only when your shell tool keeps stdin open between requests.
+Otherwise, batch known requests or use separate `ripide page` calls. These calls reread evidence without scanning the project.
+The original mutation outcome remains authoritative. A page response only reports evidence inspection.
+If you omitted the artifact during a mutation, do not apply again just to create evidence.
 
 Reusable helpers are exported from `ripide/presentation`:
 `selectOutput` accepts `pageBytes` and an optional page renderer to fit arbitrary result collections.
@@ -411,6 +459,7 @@ See [API contract migration](docs/api-contracts.md) for JSON consumers and SDK f
 | `ripide scan <pattern>` | Classify every occurrence (identifier vs string vs property vs JSX). Optional `--graph mermaid\|dot`. |
 | `ripide tree` | Print a project declaration tree, grouped by file. |
 | `ripide unused` | Find unreferenced top-level declarations. |
+| `ripide page --input <file.json>` | Page saved JSON evidence without repeating its operation. |
 | `ripide rename <from> <to>` | Scope-aware symbol rename via the native TypeScript server. |
 | `ripide replace <from> <to>` | Replace an imported symbol with another project export; rewrites imports and references. |
 | `ripide move <symbol> --from <a> --to <b>` | Move a top-level export and rewrite every import site. |

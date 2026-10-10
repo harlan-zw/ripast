@@ -31,6 +31,7 @@ import { agent, isAgent } from 'std-env'
 import { runCheck } from './check.ts'
 import { defineStrictCommand as defineCommand } from './command.ts'
 import { createCliEngine, discoverCliAdapters, loadVueOperations } from './engine.ts'
+import { runEvidencePager } from './evidence-pager.ts'
 import { jsonResult, mutationTag } from './json.ts'
 import {
   compactVerification,
@@ -137,6 +138,12 @@ function phaseSink(args: OutputArgs): ProfileSink | undefined {
 function selection(args: OutputArgs, agentProfile: boolean, defaultLimit = 40) {
   return { limit: args.limit == null ? agentProfile ? defaultLimit : undefined : Number(args.limit), offset: args.offset == null ? 0 : Number(args.offset), file: args.file as string | undefined, pageBytes: parsePageBytes(args['page-bytes'], agentProfile) }
 }
+function agentFilePage<T extends { rel: string }>(changes: readonly T[], args: OutputArgs): OutputPage<T> {
+  return selectOutput(changes, {
+    ...selection(args, true),
+    render: page => `${formatOutputPage(page)}\n${page.results.map(change => `  ${change.rel}`).join('\n')}`,
+  }, change => change.rel)
+}
 function selectedFields(items: unknown[], args: OutputArgs) {
   if (!args.fields)
     return items
@@ -188,7 +195,9 @@ function serializeJson(value: unknown, args: OutputArgs): string {
 function omittedJson(tag: JsonTag, command: string, base: string, args: OutputArgs, bytes: number, maxBytes: number | undefined): JsonResult {
   return jsonResult(tag, command, base, {
     output: { _tag: 'Omitted', bytes, maxBytes, ...(args.artifact ? { artifact: resolve(String(args.artifact)) } : {}) },
-    next: 'Use --limit, --offset, --file, --fields, or increase --max-bytes. Save complete evidence with --json --artifact <new-file.json>.',
+    next: command === 'page'
+      ? 'Use --fields, select a deeper --path, or increase --max-bytes. Read saved evidence without repeating its operation.'
+      : 'Use --limit, --offset, --file, --fields, or increase --max-bytes. Save complete evidence with --json --artifact <new-file.json>.',
   })
 }
 function preflightJsonOutput(args: OutputArgs, maxBytes: number | undefined): void {
@@ -597,8 +606,9 @@ function emitResult(r: MutatingResult, apply: boolean, json: boolean = false, ag
     if (r.regressions.length)
       writeText(args, `${diagnosticText(r, args, true)}\n`)
     if (r.changes.length) {
-      writeText(args, `files: ${formatOutputPage(selectOutput(r.changes, selection(args, true), c => c.rel))}\n`)
-      for (const c of selectOutput(r.changes, selection(args, true), c => c.rel).results)
+      const page = agentFilePage(r.changes, args)
+      writeText(args, `files: ${formatOutputPage(page)}\n`)
+      for (const c of page.results)
         writeText(args, `  ${c.rel}\n`)
     }
     if (r.regressions.length) {
@@ -721,8 +731,9 @@ const renameFileCmd = defineCommand({
       if (r.regressions.length)
         writeText(args, `${diagnosticText(r, args, true)}\n`)
       if (displayChanges.length) {
-        writeText(args, `files: ${formatOutputPage(selectOutput(displayChanges, selection(args, true), c => c.rel))}\n`)
-        for (const c of selectOutput(displayChanges, selection(args, true), c => c.rel).results)
+        const page = agentFilePage(displayChanges, args)
+        writeText(args, `files: ${formatOutputPage(page)}\n`)
+        for (const c of page.results)
           writeText(args, `  ${c.rel}${selfChangeDisplay && c === selfChangeDisplay ? ' (moved file, intra-file imports)' : ''}\n`)
       }
       if (r.regressions.length) {
@@ -1257,9 +1268,47 @@ const checkCmd = defineCommand({
   },
 })
 
+const pageCmd = defineCommand({
+  meta: { name: 'page', description: 'Inspect saved JSON evidence without repeating its operation. Session mode accepts NDJSON navigation requests.' },
+  args: {
+    'input': { type: 'string', required: true, description: 'Saved JSON evidence file. Use - to read one JSON document from stdin.' },
+    'path': { type: 'string', default: '', description: 'JSON Pointer to inspect. Empty selects the root. Escape ~ as ~0 and / as ~1.' },
+    'session': { type: 'boolean', default: false, description: 'Read Next, Previous, Select, and Close JSON requests from stdin. Requires an input file.' },
+    'json': { type: 'boolean', default: true, description: 'Page responses always use JSON.' },
+    'limit': outputArgs.limit,
+    'offset': outputArgs.offset,
+    'page-bytes': outputArgs['page-bytes'],
+    'max-bytes': outputArgs['max-bytes'],
+    'fields': outputArgs.fields,
+    'minify': outputArgs.minify,
+  },
+  async run({ args }) {
+    const input = args.input === '-' ? '-' : resolve(args.input)
+    const outcome = await runEvidencePager({
+      input,
+      path: args.path,
+      session: args.session,
+      limit: args.limit == null ? 40 : Number(args.limit),
+      offset: args.offset == null ? 0 : Number(args.offset),
+      pageBytes: parsePageBytes(args['page-bytes'], true)!,
+      ...(args.fields ? { fields: String(args.fields).split(',') } : {}),
+    }, {
+      stdin: process.stdin,
+      read: path => readFileSync(path, 'utf8'),
+      emit: (value, error) => {
+        emitJson(value, args, value, 'saved', error ? 'Error' : 'Result')
+      },
+      render: value => serializeJson(jsonResult('Result', 'page', process.cwd(), value), args),
+    })
+    if (outcome._tag === 'Refused')
+      process.exitCode = 1
+  },
+}, ['path'])
+
 const command = defineCommand({
   meta: { name: 'ripide', description: 'AST-aware refactor primitives. Ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
+    'page': pageCmd,
     'scan': scanCmd,
     'check': checkCmd,
     'tree': treeCmd,
@@ -1279,6 +1328,8 @@ const command = defineCommand({
 })
 
 function jsonRequested(rawArgs: string[]): boolean {
+  if (rawArgs[0] === 'page')
+    return true
   let requested = false
   for (const arg of rawArgs) {
     if (arg === '--')
@@ -1320,7 +1371,10 @@ export async function runCli(rawArgs: string[], ensureAdapters?: (needed: readon
     ? {
         ...selected,
         async run(context: Parameters<NonNullable<typeof selected.run>>[0]) {
-          ;(context.args as OutputArgs).command = name
+          const commandArgs = context.args as OutputArgs
+          commandArgs.command = name
+          if (name === 'page')
+            commandArgs.json = true
           const maxBytes = parseOutputBytes(context.args['max-bytes'], resolveProfile(context.args.profile, !!context.args.json).agentProfile)
           parsePageBytes(context.args['page-bytes'], resolveProfile(context.args.profile, !!context.args.json).agentProfile)
           preflightJsonOutput(context.args, maxBytes)

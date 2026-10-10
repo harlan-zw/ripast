@@ -8,12 +8,14 @@ Compact stdout defaults to 32 KiB. Use `--max-bytes` to change the byte limit; t
 Result pages target 4 KiB. Use `--page-bytes` to change the target; the minimum is 1024.
 Each collection has its own target. One large result can exceed it.
 Use the returned `nextOffset` for continuation. Do not assume every page contains 40 results.
-Use `tree --declarations --file <path>` to page declarations within a large file.
+For saved evidence, use `page --input <artifact.json>` and select the relevant collection from its root menu.
+If you have no artifact, use `tree --declarations --file <path>` to inspect a large file.
 Full output has no default byte limit. Byte limits do not change discovery, verification, or applied changes.
 If `data.output._tag` is `Omitted`, the command outcome still appears in `_tag`.
-Narrow output with supported filters or increase `--max-bytes` to retrieve the missing detail.
 Use `--json --artifact <new-file.json>` for complete evidence outside model context.
 Artifacts remain complete. Stdout limits do not bound stderr logs.
+If detail is missing, page the saved artifact. Do not rerun its operation just to change display limits.
+Read [saved evidence](paging.md) for bounded pages, JSON Pointer paths, and NDJSON sessions.
 Mutation tags are `Preview`, `Applied`, `Refused`, or `Empty`. Discovery uses `Result`; failures use `Error`.
 Compact JSON uses `data.verification: [[checker, scope, files, newErrors, ignoredErrors?]]`.
 `typescript` pulls error diagnostics from the native TypeScript language server.
@@ -49,7 +51,8 @@ If public types or exports change, rebuild affected declarations before downstre
 Do not reinstall dependencies when their graph is unchanged.
 
 If output is incomplete or malformed, preserve stdout, stderr, and the actual process exit separately.
-Recover complete diagnostics through a preview or focused inspection before deciding what failed.
+If an artifact exists, inspect its saved diagnostics and full verification receipt before deciding what failed.
+Otherwise, recover diagnostics through focused inspection. Do not repeat an applied mutation to recover output.
 Never infer a false positive from missing diagnostics. Never disable verification to bypass a refusal.
 Preserve all diagnostics in an artifact. Give the model the cause, relevant locations, and artifact path.
 

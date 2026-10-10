@@ -16,6 +16,7 @@ Mutations default to dry-run. If the target is uncertain, review the result, the
 | `ripide css-class-scan` | Discover class mappings when the target is unknown. |
 | `ripide tree` | Show declarations and imports. |
 | `ripide unused` | Find declarations without project references. |
+| `ripide page --input <file.json>` | Inspect saved evidence without repeating its operation. |
 | `ripide check [symbol]` | Run transient Vitest tests from stdin or list changed behaviour to check. |
 
 For transient tests and execution evidence, read [transient checks](check.md).
@@ -44,9 +45,10 @@ When ranges shift, entries use `[path, beforeLines, afterLines]`. Moves use `dat
 Lines are one-based and inclusive. Commas separate ranges; `3+` marks a gap after line 3.
 After apply, earlier file reads are outdated. Read changed ranges only when current code is needed.
 Follow any editing tool requirement for a fresh read. Do not reread every changed file just to confirm success.
-Use `--profile full --json` when you need complete before/after source.
 Use `--artifact <new-file.json>` to preserve the complete plan before apply.
 Display limits never narrow writes or the complete artifact.
+If more evidence is needed, use `page --input <artifact.json>` and select paths from its root menu.
+Read [saved evidence](paging.md) for session requests, budgets, and continuation.
 Save large results outside model context. Read the required fields or changed ranges on demand.
 Put actionable errors before optional previews. Preserve omitted details in a complete artifact.
 Batch independent searches. Keep dependent mutations and verification sequential.

@@ -11,6 +11,19 @@ const cli = resolve('packages/cli/src/cli.ts')
 function run(cwd: string, args: string[]) {
   return spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', cli, ...args], { cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 30_000 })
 }
+it('fits agent file lists using displayed paths instead of hidden source contents', () => {
+  const source = `export const classes = "${'old-token '.repeat(1000)}"\n`
+  const fixture = makeFixture(Object.fromEntries(Array.from({ length: 5 }, (_, index) => [`file${index}.ts`, source])))
+  try {
+    const result = run(fixture.dir, ['css-class-rename', 'old-token', 'new-token', '--profile', 'agent'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /shown: 5, omitted: 0/)
+    for (let index = 0; index < 5; index++)
+      assert.match(result.stdout, new RegExp(`file${index}\\.ts`))
+    assert.ok(Buffer.byteLength(result.stdout) < 4096)
+  }
+  finally { fixture.cleanup() }
+})
 it('blocked file move flushes large full JSON and leaves all files unchanged', () => {
   const source = 'import { value } from \'local-dependency\'\nexport { value }\n'
   const consumer = `import { value } from './packages/source/index'\nconst text: string = value\n${'// bulk context\n'.repeat(1400)}`
