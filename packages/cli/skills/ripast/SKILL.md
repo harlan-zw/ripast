@@ -1,6 +1,8 @@
 ---
 name: ripast
 description: "AST refactors: renames, moves, imports, and CSS classes in TS/JS/Vue."
+license: MIT
+compatibility: "Requires the ripide CLI, Node.js 22.13+, and shell access to the target project."
 ---
 
 Use RipIDE for mechanical refactors across TS, JS, JSX, and Vue files.
