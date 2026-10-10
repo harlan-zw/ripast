@@ -171,3 +171,12 @@ it('reports invalid Git regex patterns', () => {
   }
   finally { fx.cleanup() }
 })
+
+it('reports invalid Git regex patterns even when no source files exist', () => {
+  const fx = makeGitFixture({}, false)
+  try {
+    assert.throws(() => findFiles('[', { cwd: fx.dir, fixedStrings: false }), /Git search failed/)
+    assert.deepEqual(findFiles('valid', { cwd: fx.dir, fixedStrings: false }), [])
+  }
+  finally { fx.cleanup() }
+})

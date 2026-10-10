@@ -160,9 +160,12 @@ function runGitSearch(search: CandidateSearch, cwd: string, globs: string[]): st
   }
   const matches: string[] = []
   // Bound argument size when regex search passes selected paths to Git.
-  for (let index = 0; index < selected.length; index += 64) {
+  for (let index = 0; index < Math.max(selected.length, 1); index += 64) {
     const batch = selected.slice(index, index + 64).map(path => `./${relative(cwd, path)}`)
-    const result = spawnSync('git', ['--no-pager', '-c', 'grep.fullName=false', 'grep', '--no-index', '--no-exclude-standard', '--no-color', '--no-textconv', '-I', '-l', '-z', '-E', '-e', search.pattern, '--', ...batch], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
+    // An empty selection still compiles the regex, with every indexed path excluded.
+    const scope = batch.length ? ['--no-index', '--no-exclude-standard'] : []
+    const paths = batch.length ? batch : [':(exclude)**']
+    const result = spawnSync('git', ['--no-pager', '-c', 'grep.fullName=false', 'grep', ...scope, '--no-color', '--no-textconv', '-I', '-l', '-z', '-E', '-e', search.pattern, '--', ...paths], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
     if (result.error)
       throw new Error(`Could not start Git: ${result.error.message}`, { cause: result.error })
     if (result.status !== 0 && result.status !== 1)
