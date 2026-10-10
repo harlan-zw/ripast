@@ -2,7 +2,7 @@ import type { EngineServices } from './engine.ts'
 import type { ParsedFile } from './util.ts'
 import process from 'node:process'
 import { walk } from 'oxc-walker'
-import { parseFile, posToLineCol, rgFiles } from './util.ts'
+import { findFiles, parseFile, posToLineCol } from './util.ts'
 
 export interface NamedReexport {
   /** Name in the source module. '*' for `export *`. */
@@ -42,7 +42,7 @@ export interface DoctorIndex {
 
 export function buildDoctorIndex(opts: { engine?: EngineServices, cwd?: string, glob?: string | string[] } = {}): DoctorIndex {
   const cwd = opts.cwd ?? process.cwd()
-  const files = rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true })
+  const files = findFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true })
   return buildDoctorIndexFromParsedFiles(files.map(abs => parseFile(abs, cwd, opts.engine)), opts.engine)
 }
 

@@ -33,7 +33,7 @@ Recorded source-slice tasks used fewer total tokens. Results depend on the task 
 
 - ✂️ **IDE refactoring for your agent.** Rename functions, move files, and automatically update references across your project.
 - 📉 **Measured mechanical tasks.** [Local source-slice tests](./bench/README.md) recorded token and time reductions for symbol and static class renames.
-- 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
+- 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [Ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
 - 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript. Optional [Octane TSRX support](./packages/tsrx/README.md) covers authored-source scans and semantic renames.
 - 🧰 **One command, many files.** Move exports, replace imports, delete unused declarations, or migrate CSS classes across your project.
 - 🪂 **Preview first.** Dry runs show the diff; [type checking](#verify) blocks supported refactors that introduce errors.
@@ -62,13 +62,22 @@ Requires Node 22.13+.
    npx skills add harlan-zw/ripide --skill ripast
    ```
 
-3. Optionally install [ripgrep](https://github.com/BurntSushi/ripgrep#installation) for faster searches.
-
-4. Ask your coding agent:
+3. Ask your coding agent:
 
    ```text
    Find better names for functions.
    ```
+
+RipIDE uses ripgrep when available. You do not need to install it.
+If ripgrep is missing, Git discovers tracked and untracked files in the working tree.
+Searches read current file contents, including local edits. Git ignore rules exclude untracked files.
+Globs filter candidate paths. Git does not apply `.ignore` or `.rgignore`, or exclude tracked files through ignore rules.
+Run separately inside submodules and nested repositories when using the Git fallback.
+
+If both tools are missing, or Git has no working tree, RipIDE searches files in Node.
+This fallback can be slower. It supports fixed-string searches, file listing, globs, and standard ignore files.
+Programmatic regex searches use ripgrep syntax when available, or Git extended regular expressions with the Git fallback.
+Regex searches require ripgrep, or Git and a Git working tree.
 
 ## Usage
 
@@ -411,7 +420,7 @@ ripide tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 - [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind rename, references, file renames, and verification.
 - [Volar](https://github.com/volarjs/volar.js) + [@vue/language-tools](https://github.com/vuejs/language-tools): cross-`.vue` rename and diagnostics.
 - [oxc](https://github.com/oxc-project/oxc): fast parser for template-expression classification.
-- [ripgrep](https://github.com/BurntSushi/ripgrep): finds candidate files before parsing.
+- [Ripgrep](https://github.com/BurntSushi/ripgrep): finds candidate files before parsing, with Git and Node fallbacks.
 
 ## License
 

@@ -5,6 +5,7 @@ description: "AST refactors: renames, moves, imports, and CSS classes in TS/JS/V
 
 Use RipIDE for mechanical refactors across TS, JS, JSX, and Vue files.
 Run from the project root with Node 22.13+. Follow repository worktree and approval rules; keep unrelated work separate.
+Ripgrep is optional. If it is missing, Git discovers tracked and untracked files, including local edits.
 Use direct edits for small local changes, prose, strings, and comments.
 During architecture work, design contracts with direct edits. Use RipIDE for the supported mechanical steps.
 Svelte markup and arbitrary custom codemods are unsupported.

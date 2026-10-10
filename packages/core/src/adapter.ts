@@ -14,7 +14,7 @@ export { diagnosticRegressions } from './diagnostic-matching.ts'
 export { scan } from './scan.ts'
 export type { ScanHit, ScanOptions } from './scan.ts'
 export { offsetOfPosition } from './ts-server.ts'
-export { applyTextEdits, parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+export { applyTextEdits, findFiles, findFilesMany, parseFile, parseSourceFile, posToLineCol } from './util.ts'
 
 export type FrameworkName = string
 

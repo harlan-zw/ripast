@@ -15,7 +15,7 @@ import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNa
 import { timed, timedAsync } from './profile.ts'
 import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerificationOptions, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { applyTextEdits, rgFilesMany } from './util.ts'
+import { applyTextEdits, findFilesMany } from './util.ts'
 import { createVerification } from './verification.ts'
 import { findExtensionRegressions, findRegressions } from './verify.ts'
 
@@ -53,7 +53,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   engine?.assertOperation({ operation: 'replace', from, to }, cwd)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : timed(profile, 'target discovery', () => rgFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine)))
+    : timed(profile, 'target discovery', () => findFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine)))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
     throw new Error('ripide replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
@@ -61,7 +61,7 @@ export async function runReplace(from: string, to: string, opts: ReplaceOptions 
   try {
     const target = await timedAsync(profile, 'resolve replacement', () => findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope))
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine) && !target.declarationFiles.includes(path)))
+    const candidatePaths = timed(profile, 'candidate files', () => findFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine) && !target.declarationFiles.includes(path)))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
     const referenceCache = new Map<string, SourceSite[]>()

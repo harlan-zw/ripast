@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { rgFiles } from 'ripide-api/adapter'
+import { findFiles } from 'ripide-api/adapter'
 import { it } from 'vitest'
 import { createCliEngine } from '../packages/cli/src/engine.ts'
 import { makeFixture } from './helpers.ts'
@@ -26,7 +26,7 @@ it('returns every discovered file when filenames exceed the process output buffe
       writeFileSync(path, 'export const value = 1')
       expected.push(path)
     }
-    assert.deepEqual(new Set(rgFiles('', { cwd, listAll: true })), new Set(expected))
+    assert.deepEqual(new Set(findFiles('', { cwd, listAll: true })), new Set(expected))
   }
   finally {
     rmSync(cwd, { recursive: true, force: true })

@@ -57,7 +57,7 @@ import {
 
 export type { JsonResult, JsonTag } from './json.ts'
 
-const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...  Respects .gitignore.' }
+const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...' }
 
 function splitGlobs(value: string): string[] {
   const globs: string[] = []
@@ -265,7 +265,7 @@ function resolveExportFilter(raw: unknown): ExportFilter {
 }
 
 const scanCmd = defineCommand({
-  meta: { name: 'scan', description: 'rg-prefilter + AST-classify occurrences of an identifier.' },
+  meta: { name: 'scan', description: 'Find candidate files and classify identifier occurrences with the AST.' },
   args: {
     pattern: { type: 'positional', required: true },
     glob: globArg,
@@ -844,7 +844,7 @@ function resolveCssClassFileScanSort(raw: unknown): 'unique-desc' | 'unique-asc'
   return raw
 }
 
-const scopeArg = { type: 'string' as const, description: 'Restrict to a single .vue file (skips glob/rg).' }
+const scopeArg = { type: 'string' as const, description: 'Restrict to a single .vue file (skips file discovery).' }
 const rootOnlyArg = { type: 'boolean' as const, default: false, description: 'Match only template-root elements (direct children of <template>); ignores nested matches.' }
 
 const vueTemplateWrapCmd = defineCommand({
@@ -1098,7 +1098,7 @@ const doctorCmd = defineCommand({
 }, ['changed'])
 
 const command = defineCommand({
-  meta: { name: 'ripide', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
+  meta: { name: 'ripide', description: 'AST-aware refactor primitives. Ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
     'scan': scanCmd,
     'tree': treeCmd,

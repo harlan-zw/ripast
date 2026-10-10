@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { buildDeclarationTree, buildScanGraph, scan } from 'ripide-api'
-import { rgFilesMany } from 'ripide-api/adapter'
+import { findFilesMany } from 'ripide-api/adapter'
 import { it } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
@@ -11,7 +11,7 @@ it('scan preserves line breaks in source file names', () => {
   const fx = makeFixture({ [file]: 'export const target = 1\n' }, false)
   try {
     assert.deepEqual(scan('target', { ...{ cwd: fx.dir }, engine: vueServices() }).map(hit => hit.file), [file])
-    assert.deepEqual(rgFilesMany(['target'], { cwd: fx.dir }), [join(fx.dir, file)])
+    assert.deepEqual(findFilesMany(['target'], { cwd: fx.dir }), [join(fx.dir, file)])
   }
   finally { fx.cleanup() }
 })

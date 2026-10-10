@@ -1,7 +1,7 @@
 import type { EngineServices } from './engine.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { extname, resolve } from 'node:path'
-import { rgFiles } from './util.ts'
+import { findFiles } from './util.ts'
 
 export type VerifyMode = 'none' | 'touched' | 'project'
 
@@ -34,7 +34,7 @@ export function isExtensionPath(path: string, engine?: EngineServices): boolean 
 
 /** Every script file under `cwd` (respecting ignores), for project-wide verification. */
 export function projectScriptFiles(cwd: string, glob?: string | string[], engine?: EngineServices): string[] {
-  return rgFiles('', { cwd, glob, engine, listAll: true }).filter(path => !isExtensionPath(path, engine))
+  return findFiles('', { cwd, glob, engine, listAll: true }).filter(path => !isExtensionPath(path, engine))
 }
 
 /** Files to verify for a change set: the candidates plus every changed script file. */
@@ -53,7 +53,7 @@ export function isInsideAutoImportScope(path: string, scopes: Set<string>): bool
 /** Refuse unregistered authored code discovered outside the native source suffixes. */
 export function assertSourceSupport(cwd: string, engine?: EngineServices): void {
   const nonCode = new Set(['.json', '.md', '.yaml', '.yml', '.txt', '.css', '.scss', '.sass', '.less', '.html', '.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.woff', '.woff2', '.lock', '.map'])
-  const files = rgFiles('', { cwd, glob: '*', listAll: true })
+  const files = findFiles('', { cwd, glob: '*', listAll: true })
   if (files.some(path => path.endsWith('.tsrx')) && files.some(path => engine?.owns(path)))
     throw new Error('TSRX semantic operations cannot run with framework extensions. Use separate projects.')
   for (const path of files) {

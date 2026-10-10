@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import process from 'node:process'
 import { decode } from 'html-entities'
 import { completeClassBounds, rewriteClassString, visitClassTokens } from './css-class-token.ts'
-import { applyTextEdits, parseFile, rgFiles, rgFilesMany } from './util.ts'
+import { applyTextEdits, findFiles, findFilesMany, parseFile } from './util.ts'
 
 export interface CssClassSourceOptions {
   engine?: EngineServices
@@ -30,7 +30,7 @@ function defaultCssClassGlobs(engine?: EngineServices): string[] {
 export function readCssClassSourceFiles(opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs(opts.engine)
-  return readSourceFiles(rgFiles('', { cwd, glob, fixedStrings: false, listAll: true }), cwd, opts.engine)
+  return readSourceFiles(findFiles('', { cwd, glob, fixedStrings: false, listAll: true }), cwd, opts.engine)
 }
 
 export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSourceOptions = {}): CssClassSourceFile[] {
@@ -39,7 +39,7 @@ export function readCssClassSourceFilesForMap(map: RenameMap, opts: CssClassSour
   const cwd = opts.cwd ?? process.cwd()
   const glob = opts.glob ?? defaultCssClassGlobs(opts.engine)
   // Escapes and static expressions can split a class key across source text.
-  return readSourceFiles(rgFilesMany([...map.keys(), '\\', '&', '+', '`'], { cwd, glob }), cwd, opts.engine)
+  return readSourceFiles(findFilesMany([...map.keys(), '\\', '&', '+', '`'], { cwd, glob }), cwd, opts.engine)
 }
 
 export function visitCssClassTokensInFile(file: CssClassSourceFile, visit: (bare: string) => void): void {

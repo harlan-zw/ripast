@@ -5,7 +5,7 @@ import { scan } from 'ripide-api/adapter'
 import { addNuxtExplicitImports, extractTopLevelExportNames } from './nuxt-imports.ts'
 import { isGeneratedNuxtPath, loadNuxtPathAliases, resolveBestImportSpecifier } from './nuxt-paths.ts'
 import { isInsideAutoImportScope } from './nuxt.ts'
-import { rgVueFiles } from './source.ts'
+import { findVueFiles } from './source.ts'
 import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
 
 const TS_LIKE_RE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
@@ -108,7 +108,7 @@ function rewriteResolveComponentSites(
   newAbs: string,
   warnings: string[],
 ): FileChange[] {
-  const candidates = new Set(rgVueFiles('resolveComponent', { cwd }))
+  const candidates = new Set(findVueFiles('resolveComponent', { cwd }))
   if (!candidates.size)
     return []
   const byPath = new Map(changes.map(change => [change.path, change]))
@@ -154,7 +154,7 @@ function addExplicitComponentImports(
   const tokens = new Set([oldName, newName, hyphenateVueName(oldName), hyphenateVueName(newName)])
   const candidates = new Set<string>()
   for (const token of tokens) {
-    for (const path of rgVueFiles(token, { cwd, glob: '*.vue' }))
+    for (const path of findVueFiles(token, { cwd, glob: '*.vue' }))
       candidates.add(path)
   }
   if (!candidates.size)
@@ -197,8 +197,8 @@ function rewriteIsAttributeSites(
   const oldKebab = hyphenateVueName(oldName)
   const newKebab = hyphenateVueName(newName)
   const candidates = new Set([
-    ...rgVueFiles(oldName, { cwd, glob: '*.vue' }),
-    ...rgVueFiles(oldKebab, { cwd, glob: '*.vue' }),
+    ...findVueFiles(oldName, { cwd, glob: '*.vue' }),
+    ...findVueFiles(oldKebab, { cwd, glob: '*.vue' }),
   ])
   if (!candidates.size)
     return []
@@ -274,8 +274,8 @@ function applyComponentTemplateRenameFallback(cwd: string, oldAbs: string, newAb
     return []
   const byPath = new Map(changes.map(change => [change.path, change]))
   const candidates = new Set([
-    ...rgVueFiles(oldName, { cwd, glob: '*.vue' }),
-    ...rgVueFiles(hyphenateVueName(oldName), { cwd, glob: '*.vue' }),
+    ...findVueFiles(oldName, { cwd, glob: '*.vue' }),
+    ...findVueFiles(hyphenateVueName(oldName), { cwd, glob: '*.vue' }),
   ])
   const out: FileChange[] = []
   for (const path of candidates) {

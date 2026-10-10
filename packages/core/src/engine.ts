@@ -27,7 +27,7 @@ import { planNativeRename } from './rename.ts'
 import { runReplace } from './replace.ts'
 import { buildDeclarationTree, buildScanGraph, buildUnusedDeclarations, scan } from './scan.ts'
 import { startTsServer } from './ts-server.ts'
-import { rgFiles, writeChanges, writeFileRename } from './util.ts'
+import { findFiles, writeChanges, writeFileRename } from './util.ts'
 import { createVerification } from './verification.ts'
 import { findRegressions } from './verify.ts'
 
@@ -139,7 +139,7 @@ export function createEngine(options: EngineOptions = {}) {
     assertOperation(request, cwd) {
       const operation = request.operation
       for (const extension of extensions) {
-        if (!rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
+        if (!findFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
           continue
         const supported = extension.operations?.includes(operation)
           ?? Boolean(extension.semantic && (operation !== 'replace'))
@@ -196,7 +196,7 @@ export function createEngine(options: EngineOptions = {}) {
           if (!planChanged && previousVerification?._tag === 'Checked' && previousVerification.checks.some(check => check.checker === checker))
             continue
           const config = tsconfig
-          if (!config && rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
+          if (!config && findFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
             throw new Error(`Extension ${extension.name} verification requires a tsconfig`)
           if (config)
             result.regressions.push(...await extension.semantic.regressions(config, cwd, verificationChanges, verification.extension(extension.semantic.name)))
@@ -224,7 +224,7 @@ export function createEngine(options: EngineOptions = {}) {
     buildComponentInventory: (opts: Parameters<typeof buildComponentInventory>[0] = {}) => buildComponentInventory({ ...opts, engine: services }),
     buildComponentDetail: (name: string, opts: Parameters<typeof buildComponentDetail>[1] = {}) => buildComponentDetail(name, { ...opts, engine: services }),
     rename: (from: string, to: string, opts: RenameOptions = {}) => execute({ operation: 'rename', from, to }, opts, async () => {
-      const planners = extensions.filter(extension => extension.planRename && rgFiles(from, { cwd: opts.cwd, glob: extension.suffixes.map(suffix => `*${suffix}`) }).length)
+      const planners = extensions.filter(extension => extension.planRename && findFiles(from, { cwd: opts.cwd, glob: extension.suffixes.map(suffix => `*${suffix}`) }).length)
       const coreBindings = planners.length > 0 && scan(from, { cwd: opts.cwd, engine: services }).some(hit => !services.owns(hit.file) && hit.kind === 'identifier-binding')
       const results: RenameResult[] = []
       const projectors: ((changes: FileChange[]) => FileChange[])[] = []

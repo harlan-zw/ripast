@@ -14,7 +14,7 @@ import { listImports, pruneUnusedImports } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
 import { assertSourceSupport, findTsconfig, isExtensionPath, isInsideAutoImportScope, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { startTsServer } from './ts-server.ts'
-import { posToLineCol, rgFiles } from './util.ts'
+import { findFiles, posToLineCol } from './util.ts'
 import { createVerification } from './verification.ts'
 import { findExtensionRegressions, findRegressions } from './verify.ts'
 
@@ -47,7 +47,7 @@ export async function runDelete(symbol: string, fromPath: string, opts: DeleteOp
   engine?.assertOperation({ operation: 'delete', symbol, from: fromPath }, cwd)
   const fromAbs = resolve(cwd, fromPath)
   // Escaped identifiers and namespace use need not contain the symbol's text.
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFiles('', { cwd, engine, listAll: true }))
+  const candidatePaths = timed(profile, 'candidate files', () => findFiles('', { cwd, engine, listAll: true }))
 
   const before = readFileSync(fromAbs, 'utf8')
   const parsed = parseSource(fromAbs, before)

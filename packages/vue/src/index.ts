@@ -23,7 +23,7 @@ import { inspectNuxtAutoImportConsumers, validateNuxtAutoImportRename } from './
 import { addNuxtExplicitImports } from './nuxt-imports.ts'
 import { aliasResolvesToTarget, isGeneratedNuxtPath, loadConsumerLocalAliases, loadNuxtPathAliases, removeGeneratedNuxtChanges } from './nuxt-paths.ts'
 import { planNuxtAutoImportRename } from './nuxt-rename.ts'
-import { inspectAuthoredSource, parseAuthoredSource, rgVueFiles } from './source.ts'
+import { findVueFiles, inspectAuthoredSource, parseAuthoredSource } from './source.ts'
 import { extractTemplateExpressions } from './vue-template.ts'
 
 export { parseComponent, parseComponentSource } from './component-parse.ts'
@@ -129,7 +129,7 @@ function isNuxtProject(cwd: string): boolean {
 
 function nuxtAutoImportScopes(cwd: string): Set<string> {
   const scopes = new Set<string>()
-  const contexts = new Set([cwd, ...rgVueFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
+  const contexts = new Set([cwd, ...findVueFiles('', { cwd, listAll: true }).map(path => nuxtConsumerContext(path, cwd))])
   for (const context of contexts) {
     const configPath = ['nuxt.config.ts', 'nuxt.config.js', 'nuxt.config.mjs', 'nuxt.config.mts']
       .map(name => join(context, name))

@@ -44,3 +44,14 @@ The CLI installs missing Vue/Nuxt adapters through pnpm, then npm. pnpm is optio
 If neither is available, install the CLI and adapter together with the project's package manager.
 Yarn 2+ can include both temporarily: `yarn dlx -p ripide -p ripide-vue ripide <command> ...`.
 Keep Node available for Bun launchers. Do not force Bun's runtime with `--bun`.
+
+## File discovery
+
+RipIDE prefers ripgrep when available. You do not need to install it.
+If ripgrep is missing, Git discovers tracked and untracked files, including local edits.
+Git ignore rules exclude untracked files. Git does not apply `.ignore` or `.rgignore`.
+Globs filter candidate paths. Ignore rules do not exclude tracked files in the Git fallback.
+Run separately inside submodules and nested repositories when using the Git fallback.
+If both tools are missing, or Git has no working tree, RipIDE uses Node file search.
+Programmatic regex searches use ripgrep syntax, or Git extended regular expressions with the Git fallback.
+Regex searches require ripgrep, or Git and a Git working tree.

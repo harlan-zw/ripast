@@ -1,8 +1,7 @@
 import type { EngineServices } from './engine.ts'
 import type { RenameFileResult } from './rename-file.ts'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { parseSync } from 'oxc-parser'
@@ -63,7 +62,7 @@ export function applyTextEdits(source: string, edits: TextEdit[]): string {
 const EXTS = ['.ts', '.tsx', '.tsrx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 
 // Meta-project directories that aren't real source even when not in .gitignore.
-// `.git` is already excluded by ripgrep's built-in rules; the rest are workflow
+// Git excludes `.git` from tracked files; the rest are workflow
 // caches that frequently leak into open-ended scans (claude worktrees, skilld
 // snapshots, etc.).
 const DEFAULT_EXCLUDES = ['!.claude/worktrees/**', '!**/.claude/worktrees/**']
@@ -102,73 +101,126 @@ function discoverySelection(userGlobs: string[]) {
   return { globs, select }
 }
 
-function runRipgrep(args: string[], cwd: string, fallback: () => string[]): string[] {
-  // File lists can exceed spawnSync's pipe buffer. File-backed streams preserve all bytes.
-  const directory = mkdtempSync(join(tmpdir(), 'ripide-discovery-'))
-  const stdout = join(directory, 'stdout')
-  const stderr = join(directory, 'stderr')
-  const output = openSync(stdout, 'w')
-  const errors = openSync(stderr, 'w')
-  try {
-    const result = spawnSync('rg', ['--null', ...args], { cwd, stdio: ['ignore', output, errors] })
-    if (result.error) {
-      if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
-        process.stderr.write('ripide: rg was not found on PATH. Using Node file search; it may be slower.\n')
-        return fallback()
-      }
-      throw new Error(`Could not start rg: ${result.error.message}`, { cause: result.error })
+type CandidateSearch = { _tag: 'Files' } | { _tag: 'Text', patterns: string[] } | { _tag: 'Regex', pattern: string }
+
+function selectCandidateFiles(paths: string[], cwd: string, globs: string[]): string[] {
+  const rules = globs.map((glob) => {
+    const excluded = glob.startsWith('!')
+    let pattern = excluded ? glob.slice(1) : glob
+    for (;;) {
+      const next = pattern.replace(/(?<!\\)\{([^{}]*)\}/g, (match, body: string) => body.includes(',') ? match : body)
+      if (next === pattern)
+        break
+      pattern = next
     }
-    if (result.status !== 0 && result.status !== 1)
-      throw new Error(`rg failed: ${readFileSync(stderr, 'utf8')}${result.signal ? ` (signal ${result.signal})` : ''}`)
-    return readFileSync(stdout, 'utf8').split('\0').filter(Boolean).map(path => resolve(cwd, path))
-  }
-  finally {
-    closeSync(output)
-    closeSync(errors)
-    rmSync(directory, { recursive: true, force: true })
-  }
+    return { excluded, matches: picomatch(pattern.replace(/^\//, ''), { dot: true, nonegate: true, noext: true, strictSlashes: true, basename: !pattern.includes('/') }) }
+  })
+  const hasIncludes = rules.some(rule => !rule.excluded)
+  return paths.filter((path) => {
+    if (!existsSync(path) || !lstatSync(path).isFile())
+      return false
+    const rel = relative(cwd, path).replace(/\\/g, '/')
+    const segments = rel.split('/')
+    const ancestors = segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join('/'))
+    let selected = !hasIncludes
+    for (const rule of rules) {
+      if (rule.matches(rel) || ancestors.some(directory => rule.matches(directory)))
+        selected = !rule.excluded
+    }
+    return selected
+  })
 }
 
-export function rgFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean, engine?: EngineServices } = {}): string[] {
+function runGitSearch(search: CandidateSearch, cwd: string, globs: string[]): string[] {
+  const fallback = (): string[] => {
+    if (search._tag === 'Regex')
+      throw new Error('Regex searches require ripgrep, or Git and a Git working tree.')
+    return searchFiles(cwd, globs, search)
+  }
+  const args = ['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '.']
+  const result = spawnSync('git', ['--no-pager', ...args], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
+  if (result.error) {
+    if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
+      process.stderr.write('ripide: Git was not found on PATH. Using Node file search; it may be slower.\n')
+      return fallback()
+    }
+    throw new Error(`Could not start Git: ${result.error.message}`, { cause: result.error })
+  }
+  if (result.status === 128 && /not a git repository/i.test(result.stderr))
+    return fallback()
+  if (result.status !== 0)
+    throw new Error(`Git search failed: ${result.stderr}`)
+  const paths = [...new Set(result.stdout.split('\0').filter(Boolean).map(p => resolve(cwd, p)))]
+  const selected = selectCandidateFiles(paths, cwd, globs)
+  if (search._tag === 'Files')
+    return selected
+  if (search._tag === 'Text') {
+    return selected.filter((path) => {
+      const content = readFileSync(path)
+      return !content.includes(0) && search.patterns.some(pattern => content.includes(pattern))
+    })
+  }
+  const matches: string[] = []
+  // Bound argument size when regex search passes selected paths to Git.
+  for (let index = 0; index < Math.max(selected.length, 1); index += 64) {
+    const batch = selected.slice(index, index + 64).map(path => `./${relative(cwd, path)}`)
+    // An empty selection still compiles the regex, with every indexed path excluded.
+    const scope = batch.length ? ['--no-index', '--no-exclude-standard'] : []
+    const paths = batch.length ? batch : [':(exclude)**']
+    const result = spawnSync('git', ['--no-pager', '-c', 'grep.fullName=false', 'grep', ...scope, '--no-color', '--no-textconv', '-I', '-l', '-z', '-E', '-e', search.pattern, '--', ...paths], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
+    if (result.error)
+      throw new Error(`Could not start Git: ${result.error.message}`, { cause: result.error })
+    if (result.status !== 0 && result.status !== 1)
+      throw new Error(`Git search failed: ${result.stderr}`)
+    matches.push(...result.stdout.split('\0').filter(Boolean).map(path => resolve(cwd, path)))
+  }
+  return matches
+}
+
+function runSearch(search: CandidateSearch, cwd: string, globs: string[]): string[] {
+  const args = search._tag === 'Files'
+    ? ['--files']
+    : ['--files-with-matches', ...(search._tag === 'Regex' ? [] : ['--fixed-strings'])]
+  args.push('--null', '--hidden', '--no-messages')
+  for (const glob of globs)
+    args.push('-g', glob)
+  if (search._tag !== 'Files') {
+    for (const pattern of search._tag === 'Regex' ? [search.pattern] : search.patterns)
+      args.push('-e', pattern)
+  }
+  args.push('--', '.')
+  const result = spawnSync('rg', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  if (result.error) {
+    if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd))
+      return runGitSearch(search, cwd, globs)
+    throw new Error(`Could not start rg: ${result.error.message}`, { cause: result.error })
+  }
+  if (result.status !== 0 && result.status !== 1)
+    throw new Error(`rg failed: ${result.stderr}`)
+  return result.stdout.split('\0').filter(Boolean).map(path => resolve(cwd, path))
+}
+
+export function findFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean, engine?: EngineServices } = {}): string[] {
   const cwd = opts.cwd ?? process.cwd()
   const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : [...EXTS, ...opts.engine?.suffixes ?? []].map(e => `*${e}`)
   const { globs, select } = discoverySelection(userGlobs)
-  const args: string[] = []
-  if (opts.listAll) {
-    args.push('--files', '--hidden', '--no-messages')
-    for (const g of globs) args.push('-g', g)
-    args.push('.')
-  }
-  else {
-    args.push('--files-with-matches', '--hidden', '--no-messages')
-    if (opts.fixedStrings !== false)
-      args.push('--fixed-strings')
-    for (const g of globs)
-      args.push('-g', g)
-    args.push('--', pattern, '.')
-  }
-  return select(runRipgrep(args, cwd, () => {
-    if (!opts.listAll && opts.fixedStrings === false)
-      throw new Error('Regex searches require ripgrep. Install it: https://github.com/BurntSushi/ripgrep#installation')
-    return searchFiles(cwd, globs, opts.listAll ? { _tag: 'Files' } : { _tag: 'Text', patterns: [pattern] })
-  }), cwd)
+  const search: CandidateSearch = opts.listAll
+    ? { _tag: 'Files' }
+    : opts.fixedStrings === false ? { _tag: 'Regex', pattern } : { _tag: 'Text', patterns: [pattern] }
+  return select(runSearch(search, cwd, globs), cwd)
 }
 
 /**
- * Batch multiple fixed-string patterns into a single rg invocation via `-e <pat>`.
- * Returns the union of matching file paths. Empty `patterns` returns `[]` without spawning rg.
+ * Batch fixed-string patterns into one search with `-e <pattern>`.
+ * Empty patterns return no files without starting a search tool.
  */
-export function rgFilesMany(patterns: string[], opts: { glob?: string | string[], cwd?: string, engine?: EngineServices } = {}): string[] {
+export function findFilesMany(patterns: string[], opts: { glob?: string | string[], cwd?: string, engine?: EngineServices } = {}): string[] {
   if (!patterns.length)
     return []
   const cwd = opts.cwd ?? process.cwd()
   const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : [...EXTS, ...opts.engine?.suffixes ?? []].map(e => `*${e}`)
   const { globs, select } = discoverySelection(userGlobs)
-  const args: string[] = ['--files-with-matches', '--hidden', '--no-messages', '--fixed-strings']
-  for (const g of globs) args.push('-g', g)
-  for (const p of patterns) args.push('-e', p)
-  args.push('.')
-  return select(runRipgrep(args, cwd, () => searchFiles(cwd, globs, { _tag: 'Text', patterns })), cwd)
+  return select(runSearch({ _tag: 'Text', patterns }, cwd, globs), cwd)
 }
 
 export function parseFile(path: string, cwd: string = process.cwd(), engine?: Pick<EngineServices, 'parse'>): ParsedFile {

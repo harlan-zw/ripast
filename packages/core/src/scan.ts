@@ -10,7 +10,7 @@ import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifi
 import { listImports } from './imports.ts'
 import { timed, timedAsync } from './profile.ts'
 import { startTsServer } from './ts-server.ts'
-import { parseFile, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+import { findFiles, findFilesMany, parseFile, parseSourceFile, posToLineCol } from './util.ts'
 
 export interface ScanHit {
   file: string
@@ -158,7 +158,7 @@ export interface UnusedDeclarations {
 
 export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
   const cwd = opts.cwd ?? process.cwd()
-  const files = timed(opts.profile, 'scan discovery', () => rgFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob }))
+  const files = timed(opts.profile, 'scan discovery', () => findFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob }))
   return timed(opts.profile, 'scan parse', () => {
     const hits: ScanHit[] = []
     for (const f of files) {
@@ -190,7 +190,7 @@ export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
 
 export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGraph {
   const cwd = opts.cwd ?? process.cwd()
-  const files = timed(opts.profile, 'graph discovery', () => rgFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob }))
+  const files = timed(opts.profile, 'graph discovery', () => findFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob }))
   const hitsByFile = new Map<string, ScanHit[]>()
   const parsed = timed(opts.profile, 'graph parse', () => files.map((f) => {
     const file = parseFile(f, cwd, opts.engine)
@@ -249,7 +249,7 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
 
 export function buildDeclarationTree(opts: DeclarationTreeOptions = {}): DeclarationTree {
   const cwd = opts.cwd ?? process.cwd()
-  const files = timed(opts.profile, 'tree discovery', () => rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
+  const files = timed(opts.profile, 'tree discovery', () => findFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
   const exportFilter = opts.exports ?? 'all'
   return timed(opts.profile, 'tree parse', () => buildDeclarationTreeForPaths(cwd, files, exportFilter, opts.engine, opts.cache))
 }
@@ -317,7 +317,7 @@ function declarationTreeFromAnalyses(files: DeclarationTreeFile[], exportFilter:
 export async function buildUnusedDeclarations(opts: DeclarationTreeOptions = {}): Promise<UnusedDeclarations> {
   const cwd = opts.cwd ?? process.cwd()
   const exportFilter = opts.exports ?? 'local'
-  const sources = timed(opts.profile, 'unused discovery', () => rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
+  const sources = timed(opts.profile, 'unused discovery', () => findFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
   const candidates = sources.filter(path => !opts.engine?.owns(path))
   const tree = timed(opts.profile, 'unused parse', () => buildDeclarationTreeForPaths(cwd, candidates, exportFilter, opts.engine, opts.cache))
   const treeByFile = new Map(tree.files.map(file => [resolve(cwd, file.file), file]))

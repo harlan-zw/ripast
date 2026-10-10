@@ -1,7 +1,7 @@
 import type { SourceRegion } from 'ripide-api'
 import { parse } from '@vue/compiler-sfc'
 
-import { rgFiles as coreFiles } from 'ripide-api/adapter'
+import { findFiles as coreFiles } from 'ripide-api/adapter'
 
 export function parseAuthoredSource({ path, source }: { path: string, source: string }): SourceRegion {
   const { descriptor, errors } = parse(source, { filename: path })
@@ -28,7 +28,7 @@ export function inspectAuthoredSource({ path, source }: { path: string, source: 
   return { source: text.join(''), filename: `${path}.ripide-inspect.${blocks.some(block => block.lang === 'tsx' || block.lang === 'jsx') ? 'tsx' : 'ts'}` }
 }
 
-export { rgFiles as rgCoreFiles } from 'ripide-api/adapter'
-export function rgVueFiles(pattern: string, opts: Parameters<typeof coreFiles>[1] = {}) {
+export { findFiles as findCoreFiles } from 'ripide-api/adapter'
+export function findVueFiles(pattern: string, opts: Parameters<typeof coreFiles>[1] = {}) {
   return coreFiles(pattern, { ...opts, glob: opts.glob ?? ['*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs', '*.cjs', '*.vue'] })
 }

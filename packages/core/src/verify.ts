@@ -3,7 +3,7 @@ import type { TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
 import type { DiagnosticRecorder } from './verification.ts'
 import { diagnosticRegressions } from './diagnostic-matching.ts'
-import { rgFiles } from './util.ts'
+import { findFiles } from './util.ts'
 
 export interface Regression {
   file: string
@@ -22,7 +22,7 @@ export async function findExtensionRegressions(cwd: string, changes: FileChange[
     // Custom verifiers run after hooks at the engine's final verification boundary.
     if (extension.verify)
       continue
-    if (!rgFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
+    if (!findFiles('', { cwd, glob: extension.suffixes.map(suffix => `*${suffix}`), listAll: true }).length)
       continue
     if (!extension.semantic)
       throw new Error(`Extension ${extension.name} cannot verify consumers`)

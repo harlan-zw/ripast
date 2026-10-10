@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import process from 'node:process'
 import { it } from 'vitest'
-import { makeFixture } from './helpers.ts'
+import { makeFixture, makeGitFixture } from './helpers.ts'
 
 const cli = resolve('packages/cli/src/cli.ts')
 
@@ -24,7 +24,7 @@ function consumerValue(cwd: string): number {
 }
 
 it('cli refactors preserve executable consumers through dry-run, rename, move, file rename, and replacement', () => {
-  const fixture = makeFixture({
+  const fixture = makeGitFixture({
     'package.json': '{"type":"module"}',
     'source.ts': 'export const answer = 42\n',
     'replacement.ts': 'export const replacement = 7\n',
@@ -49,6 +49,7 @@ it('cli refactors preserve executable consumers through dry-run, rename, move, f
       assert.equal(result.status, 0, `${args.join(' ')}\n${result.stderr}\n${result.stdout}`)
       assert.equal(JSON.parse(result.stdout)._tag, 'Applied')
       assert.equal(consumerValue(fixture.dir), 42)
+      execFileSync('git', ['add', '--all'], { cwd: fixture.dir })
     }
     const replacement = run(fixture.dir, ['replace', 'value', 'replacement', '--apply'])
     assert.equal(replacement.status, 0, replacement.stderr)
@@ -59,7 +60,7 @@ it('cli refactors preserve executable consumers through dry-run, rename, move, f
 })
 
 it('cli verification rejects a conflicting rename without changing executable consumers', () => {
-  const fixture = makeFixture({
+  const fixture = makeGitFixture({
     'package.json': '{"type":"module"}',
     'source.ts': 'export const answer = 42\nexport const taken = 7\n',
     'consumer.ts': 'import { answer } from "./source.ts"\nconsole.log(answer)\n',
@@ -76,9 +77,8 @@ it('cli verification rejects a conflicting rename without changing executable co
 })
 
 it('doctor accepts a bare changed flag before JSON output', () => {
-  const fixture = makeFixture({ 'source.ts': 'export const value = 1\n' })
+  const fixture = makeGitFixture({ 'source.ts': 'export const value = 1\n' })
   try {
-    execFileSync('git', ['init', '--quiet'], { cwd: fixture.dir })
     const result = run(fixture.dir, ['doctor', '--checks', 'dangling-reexport', '--changed'])
     assert.equal(result.status, 0, result.stderr)
     const report = JSON.parse(result.stdout).data

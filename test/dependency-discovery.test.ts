@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
 import { runCssClassRename, writeChanges } from 'ripide-api'
-import { rgFiles, rgFilesMany } from 'ripide-api/adapter'
+import { findFiles, findFilesMany } from 'ripide-api/adapter'
 import { it, vi } from 'vitest'
 import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
@@ -71,9 +71,9 @@ it.each([
   const opts = { engine: vueServices(), cwd: fx.dir, glob: glob ? [...glob] : undefined }
   const paths = (values: string[]) => values.map(path => relative(fx.dir, path)).sort()
   const check = () => {
-    assert.deepEqual(paths(rgFiles('card', opts)), expected)
-    assert.deepEqual(paths(rgFiles('', { ...opts, listAll: true })), expected)
-    assert.deepEqual(paths(rgFilesMany(['card'], opts)), expected)
+    assert.deepEqual(paths(findFiles('card', opts)), expected)
+    assert.deepEqual(paths(findFiles('', { ...opts, listAll: true })), expected)
+    assert.deepEqual(paths(findFilesMany(['card'], opts)), expected)
   }
   try {
     check()

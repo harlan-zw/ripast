@@ -14,7 +14,7 @@ import { timed, timedAsync } from './profile.ts'
 import { assertSourceSupport, findTsconfig, isExtensionPath, isInsideAutoImportScope, resolveVerificationOptions, verifyScope } from './project.ts'
 import { recoverPropertyReferences } from './rename-property-references.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { applyTextEdits, parseSourceFile, posToLineCol, rgFiles, rgFilesMany } from './util.ts'
+import { applyTextEdits, findFiles, findFilesMany, parseSourceFile, posToLineCol } from './util.ts'
 import { createVerification } from './verification.ts'
 import { findExtensionRegressions, findRegressions } from './verify.ts'
 
@@ -58,7 +58,7 @@ export async function planNativeRename(from: string, to: string, opts: RenameOpt
   engine?.assertOperation({ operation: 'rename', from, to }, cwd)
   const profile = opts.profile
   const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
-  const candidatePaths = timed(profile, 'rg candidates', () => rgFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }))
+  const candidatePaths = timed(profile, 'candidate files', () => findFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }))
   const scriptCandidates = candidatePaths.filter(path => !isExtensionFile(path, engine))
 
   const declarationPaths = opts.scope
@@ -371,12 +371,12 @@ async function preserveConsumerBindings(server: TsServer, path: string, source: 
 // After a rename, the server's file set is bounded by the project it discovers.
 // A symbol re-exported through a package barrel and consumed from a file
 // outside that set (sibling test dirs, other packages) keeps the old name and
-// the server never sees it. Re-scan with rg and flag any file that still
+// the server never sees it. Search candidate files again and flag any file that still
 // imports the old name but was not rewritten.
 function detectStaleConsumers(cwd: string, from: string, changes: FileChange[], glob: string | string[] | undefined, unrelatedGeneratedImports?: Set<string>, engine?: EngineServices): string[] {
   const rewritten = new Set(changes.map(c => c.path))
   const stale: string[] = []
-  for (const path of rgFiles(from, { cwd, glob, engine })) {
+  for (const path of findFiles(from, { cwd, glob, engine })) {
     if (rewritten.has(path))
       continue
     let text: string

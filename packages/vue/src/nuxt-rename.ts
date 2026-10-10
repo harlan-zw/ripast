@@ -8,7 +8,7 @@ import { loadNuxtBindingNames, nuxtConsumerContext, nuxtImportMetadataPaths } fr
 import { inspectScript, inspectSetup } from './nuxt-consumers.ts'
 import { isGeneratedNuxtPath } from './nuxt-paths.ts'
 import { nuxtRenameVerificationChanges } from './nuxt-rename-verification.ts'
-import { rgVueFiles } from './source.ts'
+import { findVueFiles } from './source.ts'
 
 interface Reference {
   name: string
@@ -26,7 +26,7 @@ export const planNuxtAutoImportRename: NonNullable<FrameworkAdapter['planAutoImp
   const providers = new Set(sites.map(site => site.filePath))
   const bindings = new Map<string, ReturnType<typeof loadNuxtBindingNames>[]>()
   let runtimeBinding: boolean | undefined
-  for (const path of rgVueFiles('', { cwd, listAll: true })) {
+  for (const path of findVueFiles('', { cwd, listAll: true })) {
     if (providers.has(path) || isGeneratedNuxtPath(cwd, path))
       continue
     const before = readFileSync(path, 'utf8')

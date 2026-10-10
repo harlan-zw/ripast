@@ -1,3 +1,10 @@
+# Unreleased
+
+- Prefer ripgrep when available. If it is missing, Git discovers tracked and untracked files, including local edits.
+- Use Node file search when both tools are missing or Git has no working tree. Ripgrep remains optional.
+- Rename adapter SDK helpers `rgFiles` and `rgFilesMany` to `findFiles` and `findFilesMany`.
+- Programmatic regex searches use ripgrep syntax, or Git extended regular expressions with the Git fallback.
+
 # 0.5.0
 
 ## 👀 Highlights

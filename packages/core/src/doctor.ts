@@ -12,7 +12,7 @@ import { walk } from 'oxc-walker'
 import { buildDoctorIndexFromParsedFiles } from './doctor-index.ts'
 import { timed, timedAsync } from './profile.ts'
 import { buildDeclarationTreeFromParsedFiles } from './scan.ts'
-import { parseFile, rgFiles } from './util.ts'
+import { findFiles, parseFile } from './util.ts'
 
 export type DoctorCheck = 'dangling-reexport' | 'stale-reexport' | 'stale-import' | 'duplicate-export' | 'orphan-file' | 'orphan-test' | 'inconsistent-import-path' | 'circular-dep' | string
 
@@ -758,7 +758,7 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
   if (unknown.length)
     throw new Error(`Unknown doctor check: ${unknown.join(', ')}. Available checks: ${[...registered].sort().join(', ')}`)
   const selectedAdapters = adapters.filter(adapter => adapter.checks.some(check => checks.has(check)))
-  const paths = timed(opts.profile, 'doctor discovery', () => rgFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
+  const paths = timed(opts.profile, 'doctor discovery', () => findFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
   const files = timed(opts.profile, 'doctor parse', () => paths.map(path => parseFile(path, cwd, opts.engine)))
   const tree = timed(opts.profile, 'doctor declarations', () => buildDeclarationTreeFromParsedFiles(files))
   const needsIndex = checks.has('dangling-reexport') || checks.has('stale-reexport') || checks.has('stale-import') || checks.has('inconsistent-import-path') || checks.has('circular-dep')

@@ -7,7 +7,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolveTsrxModule } from './tsrx.ts'
-import { posToLineCol, rgFiles } from './util.ts'
+import { findFiles, posToLineCol } from './util.ts'
 
 // Client for the native TypeScript language server (TypeScript 7+, `tsc --lsp`).
 // Semantics (rename, references, definitions, diagnostics, file renames) come
@@ -132,7 +132,7 @@ export async function startTsServer(cwd: string, opts: TsServerOptions = {}): Pr
     throw new Error('TypeScript request deadline must be a positive number')
   if (opts.signal?.aborted)
     throw new Error('TypeScript server startup cancelled', { cause: opts.signal.reason })
-  const tsrxFiles = rgFiles('', { cwd, glob: '*.tsrx', listAll: true })
+  const tsrxFiles = findFiles('', { cwd, glob: '*.tsrx', listAll: true })
   const runExternalCode = process.env.RIPIDE_RUN_EXTERNAL_CODE === '1'
   if (tsrxFiles.length && !runExternalCode)
     throw new Error('ripide: TSRX semantic operations require RIPIDE_RUN_EXTERNAL_CODE=1 and a configured .tsrx content mapper')

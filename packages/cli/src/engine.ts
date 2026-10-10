@@ -4,10 +4,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { createEngine } from 'ripide-api'
-import { rgFiles } from 'ripide-api/adapter'
+import { findFiles } from 'ripide-api/adapter'
 
 export function discoverCliAdapters(cwd = process.cwd(), enabled = true): { authoredVue: boolean, adapters: readonly string[] } {
-  const authored = rgFiles('', { cwd, glob: '*.vue', listAll: true }).length > 0
+  const authored = findFiles('', { cwd, glob: '*.vue', listAll: true }).length > 0
   return { authoredVue: authored, adapters: enabled && (authored || hasVueDependency(cwd)) ? ['vue'] : [] }
 }
 
