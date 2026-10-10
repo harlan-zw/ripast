@@ -132,12 +132,10 @@ function selectTrackedFiles(paths: string[], cwd: string, globs: string[]): stri
 function runGitSearch(search: CandidateSearch, cwd: string, globs: string[]): string[] {
   const fallback = (): string[] => {
     if (search._tag === 'Regex')
-      throw new Error('Regex searches require Git and a Git working tree.')
+      throw new Error('Regex searches require ripgrep, or Git and a Git working tree.')
     return searchFiles(cwd, globs, search)
   }
-  const args = search._tag === 'Files'
-    ? ['ls-files', '--cached', '-z', '--', '.']
-    : ['-c', 'grep.fullName=false', 'grep', '--no-color', '--no-textconv', '--no-recurse-submodules', '-I', '-l', '-z', search._tag === 'Regex' ? '-E' : '-F', ...(search._tag === 'Regex' ? [search.pattern] : search.patterns).flatMap(pattern => ['-e', pattern]), '--', '.']
+  const args = ['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', '.']
   const result = spawnSync('git', ['--no-pager', ...args], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
   if (result.error) {
     if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
@@ -148,10 +146,53 @@ function runGitSearch(search: CandidateSearch, cwd: string, globs: string[]): st
   }
   if (result.status === 128 && /not a git repository/i.test(result.stderr))
     return fallback()
-  if (result.status !== 0 && !(search._tag !== 'Files' && result.status === 1))
+  if (result.status !== 0)
     throw new Error(`Git search failed: ${result.stderr}`)
   const paths = [...new Set(result.stdout.split('\0').filter(Boolean).map(p => resolve(cwd, p)))]
-  return selectTrackedFiles(paths, cwd, globs)
+  const selected = selectTrackedFiles(paths, cwd, globs)
+  if (search._tag === 'Files')
+    return selected
+  if (search._tag === 'Text') {
+    return selected.filter((path) => {
+      const content = readFileSync(path)
+      return !content.includes(0) && search.patterns.some(pattern => content.includes(pattern))
+    })
+  }
+  const matches: string[] = []
+  // Bound argument size when regex search passes selected paths to Git.
+  for (let index = 0; index < selected.length; index += 64) {
+    const batch = selected.slice(index, index + 64).map(path => `./${relative(cwd, path)}`)
+    const result = spawnSync('git', ['--no-pager', '-c', 'grep.fullName=false', 'grep', '--no-index', '--no-exclude-standard', '--no-color', '--no-textconv', '-I', '-l', '-z', '-E', '-e', search.pattern, '--', ...batch], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
+    if (result.error)
+      throw new Error(`Could not start Git: ${result.error.message}`, { cause: result.error })
+    if (result.status !== 0 && result.status !== 1)
+      throw new Error(`Git search failed: ${result.stderr}`)
+    matches.push(...result.stdout.split('\0').filter(Boolean).map(path => resolve(cwd, path)))
+  }
+  return matches
+}
+
+function runSearch(search: CandidateSearch, cwd: string, globs: string[]): string[] {
+  const args = search._tag === 'Files'
+    ? ['--files']
+    : ['--files-with-matches', ...(search._tag === 'Regex' ? [] : ['--fixed-strings'])]
+  args.push('--null', '--hidden', '--no-messages')
+  for (const glob of globs)
+    args.push('-g', glob)
+  if (search._tag !== 'Files') {
+    for (const pattern of search._tag === 'Regex' ? [search.pattern] : search.patterns)
+      args.push('-e', pattern)
+  }
+  args.push('--', '.')
+  const result = spawnSync('rg', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  if (result.error) {
+    if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd))
+      return runGitSearch(search, cwd, globs)
+    throw new Error(`Could not start rg: ${result.error.message}`, { cause: result.error })
+  }
+  if (result.status !== 0 && result.status !== 1)
+    throw new Error(`rg failed: ${result.stderr}`)
+  return result.stdout.split('\0').filter(Boolean).map(path => resolve(cwd, path))
 }
 
 export function findFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {
@@ -161,12 +202,12 @@ export function findFiles(pattern: string, opts: { glob?: string | string[], cwd
   const search: CandidateSearch = opts.listAll
     ? { _tag: 'Files' }
     : opts.fixedStrings === false ? { _tag: 'Regex', pattern } : { _tag: 'Text', patterns: [pattern] }
-  return select(runGitSearch(search, cwd, globs), cwd)
+  return select(runSearch(search, cwd, globs), cwd)
 }
 
 /**
- * Batch fixed-string patterns into one Git search with `-e <pattern>`.
- * Empty patterns return no files without starting Git.
+ * Batch fixed-string patterns into one search with `-e <pattern>`.
+ * Empty patterns return no files without starting a search tool.
  */
 export function findFilesMany(patterns: string[], opts: { glob?: string | string[], cwd?: string } = {}): string[] {
   if (!patterns.length)
@@ -174,7 +215,7 @@ export function findFilesMany(patterns: string[], opts: { glob?: string | string
   const cwd = opts.cwd ?? process.cwd()
   const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
   const { globs, select } = discoverySelection(userGlobs)
-  return select(runGitSearch({ _tag: 'Text', patterns }, cwd, globs), cwd)
+  return select(runSearch({ _tag: 'Text', patterns }, cwd, globs), cwd)
 }
 
 const SFC_SCRIPT_RE = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi

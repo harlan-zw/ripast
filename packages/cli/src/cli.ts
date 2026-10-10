@@ -47,7 +47,7 @@ import { runMain } from 'citty'
 import { agent, isAgent } from 'std-env'
 import { defineStrictCommand as defineCommand } from './command.ts'
 
-const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,... Git working trees use tracked files only.' }
+const globArg = { type: 'string' as const, description: 'File glob(s), comma-separated. Prefix with ! to exclude (e.g. "*.ts,!.nuxt/**,!**/*.d.ts"). Defaults to *.ts,*.tsx,*.vue,...' }
 
 function splitGlobs(value: string): string[] {
   const globs: string[] = []
@@ -862,7 +862,7 @@ const doctorCmd = defineCommand({
 }, ['changed'])
 
 runMain(defineCommand({
-  meta: { name: 'ripast', description: 'AST-aware refactor primitives. Git-prefiltered, dry-run by default.' },
+  meta: { name: 'ripast', description: 'AST-aware refactor primitives. Ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
     'scan': scanCmd,
     'tree': treeCmd,

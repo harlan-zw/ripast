@@ -69,15 +69,16 @@ Requires Node 22.13+.
    Find better names for functions.
    ```
 
-Ripast uses `git grep` and `git ls-files` to discover tracked files in Git working trees.
-Searches read current file contents, including local edits. Untracked files are excluded, even with explicit globs.
-Stage new files with `git add` before scanning them. Submodules and nested repositories need separate runs.
-Globs filter tracked paths. Ignore files do not exclude tracked files.
-Ripgrep is not required.
+Ripast uses ripgrep when available. You do not need to install it.
+If ripgrep is missing, Git discovers tracked and untracked files in the working tree.
+Searches read current file contents, including local edits. Git ignore rules exclude untracked files.
+Globs filter candidate paths. Git does not apply `.ignore` or `.rgignore`, or exclude tracked files through ignore rules.
+Run separately inside submodules and nested repositories when using the Git fallback.
 
-If Git is missing or the folder is outside Git, Ripast searches files in Node instead.
+If both tools are missing, or Git has no working tree, Ripast searches files in Node.
 This fallback can be slower. It supports fixed-string searches, file listing, globs, and standard ignore files.
-Programmatic regex searches require Git and a Git working tree. They use Git extended regular expressions.
+Programmatic regex searches use ripgrep syntax when available, or Git extended regular expressions with the Git fallback.
+Regex searches require ripgrep, or Git and a Git working tree.
 
 ## Usage
 
@@ -363,7 +364,7 @@ ripast tree --exports exported --glob '*.ts,*.vue,!.nuxt/**'
 - [TypeScript 7](https://github.com/microsoft/TypeScript): native language server behind rename, references, file renames, and `--verify`.
 - [Volar](https://github.com/volarjs/volar.js) + [@vue/language-tools](https://github.com/vuejs/language-tools): cross-`.vue` rename and diagnostics.
 - [oxc](https://github.com/oxc-project/oxc): fast parser for template-expression classification.
-- [Git](https://git-scm.com): finds tracked candidate files before parsing.
+- [Ripgrep](https://github.com/BurntSushi/ripgrep): finds candidate files before parsing, with Git and Node fallbacks.
 
 ## License
 

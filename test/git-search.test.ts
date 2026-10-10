@@ -1,30 +1,80 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { rmSync, symlinkSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { findFiles, findFilesMany } from '@ripast/core/adapter'
-import { it } from 'vitest'
+import { afterEach, beforeEach, it, vi } from 'vitest'
 import { makeGitFixture } from './helpers.ts'
 
-it('searches tracked working files and excludes untracked files', () => {
+const git = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+let tools: ReturnType<typeof makeGitFixture>
+beforeEach(() => {
+  tools = makeGitFixture({}, false)
+  symlinkSync(git, join(tools.dir, 'git'))
+  vi.stubEnv('PATH', tools.dir)
+})
+afterEach(() => {
+  vi.unstubAllEnvs()
+  tools.cleanup()
+})
+
+it.skipIf(spawnSync('rg', ['--version']).error !== undefined)('prefers ripgrep and does not retry a no-match result through Git', () => {
+  vi.unstubAllEnvs()
+  const fx = makeGitFixture({ 'source.ts': 'target' }, false)
+  try {
+    fx.write('.git/index', 'broken')
+    assert.deepEqual(findFiles('target', { cwd: fx.dir }), [join(fx.dir, 'source.ts')])
+    assert.deepEqual(findFilesMany(['target'], { cwd: fx.dir }), [join(fx.dir, 'source.ts')])
+    assert.deepEqual(findFiles('', { cwd: fx.dir, listAll: true }), [join(fx.dir, 'source.ts')])
+    assert.deepEqual(findFiles('missing', { cwd: fx.dir }), [])
+    assert.throws(() => findFiles('[', { cwd: fx.dir, fixedStrings: false }), /rg failed/)
+  }
+  finally { fx.cleanup() }
+})
+
+it('Git fallback excludes ignored untracked files and searches only the requested folder', () => {
+  const fx = makeGitFixture({ '.gitignore': 'ignored.ts\n', 'outside.ts': 'target' }, false)
+  try {
+    fx.write('src/new.ts', 'target')
+    fx.write('src/ignored.ts', 'target')
+    const opts = { cwd: join(fx.dir, 'src') }
+    const expected = [join(fx.dir, 'src/new.ts')]
+    assert.deepEqual(findFiles('target', opts), expected)
+    assert.deepEqual(findFilesMany(['target'], opts), expected)
+    assert.deepEqual(findFiles('', { ...opts, listAll: true }), expected)
+  }
+  finally { fx.cleanup() }
+})
+
+it('Git regex searches include untracked files across path batches', () => {
+  const fx = makeGitFixture({}, false)
+  try {
+    const expected = Array.from({ length: 65 }, (_, index) => fx.write(`src/file${index}.ts`, 'target123')).sort()
+    assert.deepEqual(findFiles('target[0-9]+', { cwd: join(fx.dir, 'src'), fixedStrings: false }).sort(), expected)
+  }
+  finally { fx.cleanup() }
+})
+
+it('searches tracked working files and untracked files', () => {
   const fx = makeGitFixture({ 'tracked.ts': 'old', 'deleted.ts': 'target' }, false)
   try {
     fx.write('tracked.ts', 'target')
     fx.write('untracked.ts', 'target')
     rmSync(join(fx.dir, 'deleted.ts'))
-    assert.deepEqual(findFiles('target', { cwd: fx.dir }), [join(fx.dir, 'tracked.ts')])
-    assert.deepEqual(findFilesMany(['target', 'old'], { cwd: fx.dir }), [join(fx.dir, 'tracked.ts')])
-    assert.deepEqual(findFiles('', { cwd: fx.dir, listAll: true }), [join(fx.dir, 'tracked.ts')])
+    const expected = ['tracked.ts', 'untracked.ts'].map(path => join(fx.dir, path))
+    assert.deepEqual(findFiles('target', { cwd: fx.dir }).sort(), expected)
+    assert.deepEqual(findFilesMany(['target', 'old'], { cwd: fx.dir }).sort(), expected)
+    assert.deepEqual(findFiles('', { cwd: fx.dir, listAll: true }).sort(), expected)
   }
   finally { fx.cleanup() }
 })
 
-it('an empty index does not fall back to untracked files', () => {
+it('searches untracked files with an empty index', () => {
   const fx = makeGitFixture({}, false)
   try {
     fx.write('untracked.ts', 'target')
-    assert.deepEqual(findFiles('target', { cwd: fx.dir }), [])
-    assert.deepEqual(findFiles('', { cwd: fx.dir, listAll: true }), [])
+    assert.deepEqual(findFiles('target', { cwd: fx.dir }), [join(fx.dir, 'untracked.ts')])
+    assert.deepEqual(findFiles('', { cwd: fx.dir, listAll: true }), [join(fx.dir, 'untracked.ts')])
   }
   finally { fx.cleanup() }
 })

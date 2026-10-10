@@ -18,7 +18,8 @@ If it is missing or stale, run the project's installed `nuxi prepare` command on
 Use the same package manager for Nuxt preparation and project checks.
 Pass `--tsconfig .nuxt/tsconfig.json` to rename, move, or rename-file.
 
-Missing `rg` uses slower Node file search. Programmatic regex searches still require `rg`.
+Missing `rg` uses Git discovery, then Node file search if Git is missing or has no working tree.
+Programmatic regex searches require `rg`, or Git and a Git working tree.
 
 CLI flags and output contracts: [CLI source](https://github.com/harlan-zw/ripast/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/src/cli.ts).
 Adapter selection: [launcher](https://github.com/harlan-zw/ripast/blob/c6ad115e765aea02f6a774e6939bee24a4e65405/packages/cli/bin/ripast.mjs).

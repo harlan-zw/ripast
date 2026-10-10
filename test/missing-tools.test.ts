@@ -165,7 +165,7 @@ it('fallback refuses regex searches without Git', () => {
   const fx = makeFixture({}, false)
   vi.stubEnv('PATH', fx.dir)
   try {
-    assert.throws(() => findFiles('target.*', { cwd: fx.dir, fixedStrings: false }), /Regex searches require Git/)
+    assert.throws(() => findFiles('target.*', { cwd: fx.dir, fixedStrings: false }), /Regex searches require ripgrep, or Git/)
   }
   finally {
     vi.unstubAllEnvs()

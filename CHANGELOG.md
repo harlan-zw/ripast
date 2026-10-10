@@ -1,9 +1,9 @@
 # Unreleased
 
-- Use Git to discover tracked files, including local edits. Stage new files before scanning them.
-- Use Node file search outside Git working trees or when Git is missing. Ripgrep is no longer required.
+- Prefer ripgrep when available. If it is missing, Git discovers tracked and untracked files, including local edits.
+- Use Node file search when both tools are missing or Git has no working tree. Ripgrep remains optional.
 - Rename adapter SDK helpers `rgFiles` and `rgFilesMany` to `findFiles` and `findFilesMany`.
-- Use Git extended regular expressions for programmatic regex searches. These require a Git working tree.
+- Programmatic regex searches use ripgrep syntax, or Git extended regular expressions with the Git fallback.
 
 # 0.5.0
 

@@ -47,8 +47,11 @@ Keep Node available for Bun launchers. Do not force Bun's runtime with `--bun`.
 
 ## File discovery
 
-Git working trees use tracked files only, including local edits.
-Stage new files with `git add` before scanning them. Run separately in submodules and nested repositories.
-Globs filter tracked paths. Ignore files do not exclude tracked files.
-If Git is missing or the folder is outside Git, Ripast uses Node file search.
-Programmatic regex searches require Git and a Git working tree. They use Git extended regular expressions.
+Ripast prefers ripgrep when available. You do not need to install it.
+If ripgrep is missing, Git discovers tracked and untracked files, including local edits.
+Git ignore rules exclude untracked files. Git does not apply `.ignore` or `.rgignore`.
+Globs filter candidate paths. Ignore rules do not exclude tracked files in the Git fallback.
+Run separately inside submodules and nested repositories when using the Git fallback.
+If both tools are missing, or Git has no working tree, Ripast uses Node file search.
+Programmatic regex searches use ripgrep syntax, or Git extended regular expressions with the Git fallback.
+Regex searches require ripgrep, or Git and a Git working tree.
