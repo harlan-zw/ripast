@@ -5,7 +5,7 @@ Mutations default to dry-run. If the target is uncertain, review the result, the
 | Command | Use |
 | --- | --- |
 | `ripide rename <from> <to>` | Rename a symbol and its references. |
-| `ripide replace <from> <to>` | Replace an imported binding with a project export. |
+| `ripide replace <from> <to>` | Replace a local imported binding with a project export. |
 | `ripide move <symbol> --from <a> --to <b>` | Move an export and update imports. |
 | `ripide delete <symbol> --from <file>` | Delete a declaration without references. |
 | `ripide rename-file <old> <new>` | Rename a file and update importers, including Vue consumers. |
@@ -62,6 +62,12 @@ Agent output hides passed test details. Use `--profile full --json --artifact <n
 
 ## Scope and output
 
+`replace <from> <to>` selects an imported binding by its local name, `<from>`.
+Matching references use `<to>`, unless that name is already occupied.
+For `import { old as current }`, use `replace current next`; matching calls become `next(...)`.
+If local aliases must stay unchanged, edit those imports directly.
+Source re-export barrels also require direct edits. Preserve their public aliases.
+`--target-scope` selects the replacement export's file.
 Use `replace --target-scope <file>` when several files export the replacement.
 Quote `--glob` patterns. CSS transforms affect strings, Vue classes, and CSS `@apply` sites.
 Use a file glob when the task limits files. A Vue glob also includes script strings in Vue files.
