@@ -34,7 +34,7 @@ Recorded source-slice tasks used fewer total tokens. Results depend on the task 
 - ✂️ **IDE refactoring for your agent.** Rename functions, move files, and automatically update references across your project.
 - 📉 **Measured mechanical tasks.** [Local source-slice tests](./bench/README.md) recorded token and time reductions for symbol and static class renames.
 - 🪨 Built on [TypeScript 7.1 (dev)](https://github.com/microsoft/TypeScript), [Oxc](https://oxc.rs), [ripgrep](https://github.com/BurntSushi/ripgrep), and [Volar](https://volarjs.dev).
-- 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript.
+- 🦎 Works with **Vue, Nuxt, React, and Solid**, plus plain TypeScript and JavaScript. Optional [Octane TSRX support](./packages/tsrx/README.md) covers authored-source scans and semantic renames.
 - 🧰 **One command, many files.** Move exports, replace imports, delete unused declarations, or migrate CSS classes across your project.
 - 🪂 **Preview first.** Dry runs show the diff; [type checking](#verify) blocks supported refactors that introduce errors.
 
