@@ -116,6 +116,24 @@ pnpm eval:projects --batch second --runner codex --case c12
 ```
 
 Options: `--batch first|second` and `--runner opencode|codex|split|both`.
+
+## Transient check evals
+
+Build the CLI, then run the deterministic preflight or OpenCode agent evals:
+
+```bash
+pnpm build
+pnpm eval:check --preflight
+pnpm eval:check --model zai-coding-plan/glm-5.3-flash --timeout 240
+```
+
+The cases cover a boundary bug, native dependency mocks, and a real caller with stale evidence after edits.
+Each agent must show a failing assertion, fix behaviour, and show passing assertions through stdin.
+The grader independently reruns expected behaviour and rejects added test files.
+The integration case must show stale evidence between an equivalent edit and the final recheck.
+OpenCode uses isolated settings, provider credentials, and a task directory.
+Raw transcripts, token counts, artifacts, and results stay under `~/scratch/`.
+Use `--out <empty-directory>` to choose the evidence directory.
 Defaults retain the first batch with OpenCode.
 Split mode assigns the first five cases in the chosen batch to Codex and the rest to OpenCode.
 Filtering by `--case` preserves that assignment.

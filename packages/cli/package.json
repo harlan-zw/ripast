@@ -26,7 +26,14 @@
     "rename",
     "codemod"
   ],
+  "imports": {
+    "#test-worker": "./dist/test-worker.mjs"
+  },
   "exports": {
+    "./check": {
+      "types": "./dist/check.d.mts",
+      "import": "./dist/check.mjs"
+    },
     ".": {
       "types": "./dist/cli.d.mts",
       "import": "./dist/cli.mjs"
@@ -54,10 +61,12 @@
     "dev:prepare": "obuild --stub"
   },
   "dependencies": {
+    "@vitest/coverage-v8": "5.0.3",
     "citty": "^0.2.2",
     "cross-spawn": "^7.0.6",
     "diff": "^9.0.0",
     "ripide-api": "workspace:*",
-    "std-env": "^4.3.0"
+    "std-env": "^4.3.0",
+    "vitest": "5.0.3"
   }
 }
