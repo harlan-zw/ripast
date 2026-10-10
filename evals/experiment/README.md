@@ -104,7 +104,11 @@ pnpm exec tsx evals/experiment/check-analyze.ts ~/scratch/check-baseline-results
 Commands record assertion hashes, source hashes, exits, and output bytes outside the evaluated project.
 Red must run against the seeded source. Green must run identical assertions against the submitted repair.
 Transient workflows must record repaired-function execution. Integration and API obligations remain pending for assertion review.
-Private evaluation evidence may retain assertion text. The evaluated project retains no new test modules.
+Private evaluation evidence may retain assertion text. The evaluated project retains no new test modules or code helpers.
+Keep reusable assertions in `.checks/assertions.txt`. Remove code helpers before recording the final green run.
+The supplied `check-behavior` command checks behavior, preservation, cleanup, and execution evidence.
+The controller also runs the registered build and typecheck commands.
+OpenCode receives a fixed session title. Evaluation does not need a separate title-model request.
 
 The comparison refuses changed models, source inputs, oracles, schedules, runtime artifacts, and budgets.
 It reports paired changes in uncached input, output, agent time, and prepared workflow time.

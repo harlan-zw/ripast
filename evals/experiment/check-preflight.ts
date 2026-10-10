@@ -38,6 +38,52 @@ async function main() {
     writeFileSync(join(project, row.scenario.file), row.capture.original)
     execute('green')
     rmSync(test, { force: true })
+    const check = (expected: number, message?: string) => {
+      const result = spawnSync(join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'home/bin/check-behavior'), [], { cwd: project, encoding: 'utf8', timeout: 60000 })
+      if (result.error)
+        throw result.error
+      assert.equal(result.status, expected, result.stderr || result.stdout)
+      if (message)
+        assert.ok(result.stderr.includes(message), result.stderr)
+    }
+    check(0)
+    const green = join(directory, 'green.json')
+    const greenBytes = readFileSync(green)
+    rmSync(green)
+    try {
+      check(1, 'green.json')
+    }
+    finally {
+      writeFileSync(green, greenBytes)
+    }
+    check(0)
+    for (const name of ['snippet.ts', 'helper.check.ts']) {
+      const helper = join(directory, name)
+      writeFileSync(helper, 'export const receiptNoise = true\n', { flag: 'wx' })
+      // Staging must not turn an authored helper into an original fixture file.
+      try {
+        const staged = spawnSync('git', ['add', '--force', '--', helper], { cwd: project, encoding: 'utf8' })
+        assert.equal(staged.status, 0, staged.stderr)
+        check(1, 'Remove every new code helper from .checks.')
+      }
+      finally {
+        const reset = spawnSync('git', ['reset', '--quiet', 'HEAD', '--', helper], { cwd: project, encoding: 'utf8' })
+        assert.equal(reset.status, 0, reset.stderr)
+        rmSync(helper)
+      }
+      check(0)
+    }
+    if (mode !== 'direct') {
+      const noise = join(project, 'receipt-noise.ts')
+      writeFileSync(noise, 'export const receiptNoise = true\n', { flag: 'wx' })
+      try {
+        check(1, 'Record execution of the repaired function.')
+      }
+      finally {
+        rmSync(noise)
+      }
+      check(0)
+    }
     return
   }
   const [manifestPath, out, selectedCase] = args
