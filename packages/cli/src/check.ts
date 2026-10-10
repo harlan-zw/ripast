@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
-import { parseSourceFile, rgFiles } from 'ripide-api/adapter'
+import { findFiles, parseSourceFile } from 'ripide-api/adapter'
 import { isFunctionCoverage } from './test-result.ts'
 import { runInlineTest } from './test-runner.ts'
 
@@ -81,7 +81,7 @@ function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 function projectFiles(cwd: string): string[] {
-  return rgFiles('', { cwd, listAll: true, glob: ['*.ts', '*.tsx', '*.js', '*.jsx', '*.mts', '*.mjs', '*.cts', '*.cjs', '!**/*.d.ts', '!**/dist/**', '!**/coverage/**'] }).sort()
+  return findFiles('', { cwd, listAll: true, glob: ['*.ts', '*.tsx', '*.js', '*.jsx', '*.mts', '*.mjs', '*.cts', '*.cjs', '!**/*.d.ts', '!**/dist/**', '!**/coverage/**'] }).sort()
 }
 function normalized(cwd: string, file: string): string {
   return relative(cwd, resolve(cwd, file)).replaceAll('\\', '/')
