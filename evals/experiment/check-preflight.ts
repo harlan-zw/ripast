@@ -27,7 +27,7 @@ async function main() {
         : ['run', context.testPath, ...context.args, '--reporter=json', `--outputFile=.checks/${color}.json`]
       if (!forced)
         writeFileSync(test, `import {test, expect, vi} from 'vitest'\nimport {${row.scenario.symbol}} from '${relative(dirname(test), join(project, module))}'\n${row.scenario.tests}\n`)
-      const result = spawnSync(process.execPath, [wrapper, forced ? 'ripide' : 'vitest', executable, ...params], { cwd: project, encoding: 'utf8', input: row.scenario.tests, timeout: 60000, env: { ...process.env, HOME: join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'home'), RIPIDE_EXPERIMENT_TEST_PATH: test } })
+      const result = spawnSync(process.execPath, [wrapper, forced ? 'ripide' : 'vitest', executable, ...params], { cwd: project, encoding: 'utf8', input: row.scenario.tests, timeout: 60000, env: { ...process.env, HOME: join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'home'), RIPIDE_EXPERIMENT_PROJECT: project, RIPIDE_EXPERIMENT_TEST_PATH: test } })
       if (result.error)
         throw result.error
       if (result.status !== (color === 'red' ? 1 : 0))

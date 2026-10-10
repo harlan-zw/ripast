@@ -56,6 +56,7 @@ else {
     XDG_STATE_HOME: join(home, 'state'),
     XDG_CACHE_HOME: join(home, 'cache'),
     PATH: `${bin}:${process.env.PATH}`,
+    RIPIDE_EXPERIMENT_PROJECT: project,
     RIPIDE_EXPERIMENT_TEST_PATH: join(project, scope === 'projects' ? projectContext(task).testPath : '.checks/proof.test.ts'),
     OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
     OPENCODE_DISABLE_CLAUDE_CODE: '1',
