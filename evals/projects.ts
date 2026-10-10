@@ -14,6 +14,7 @@ import { parseEvents, summarize } from './core.ts'
 import { projectCases, projectCasesBatchTwo, renameIdentifiers, renameStaticClasses } from './project-cases.ts'
 import { checkProject, diagnostics } from './project-check.ts'
 import { runnersForCase } from './project-plan.ts'
+import { loadSkillContext, prepareSkillContext, skillResourceMetadata } from './skill-context.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const model = 'zai-coding-plan/glm-5.3-flash'
@@ -128,7 +129,10 @@ async function main() {
   if (values.out && existsSync(out))
     throw new Error('Choose a new --out directory')
   mkdirSync(out, { recursive: true })
-  const skill = readFileSync(join(root, 'packages/cli/skills/ripast/SKILL.md'), 'utf8')
+  const loadedSkill = loadSkillContext(join(root, 'packages/cli/skills/ripast/SKILL.md'))
+  if (loadedSkill._tag === 'Err')
+    throw new Error(loadedSkill.message)
+  const skill = loadedSkill.value
   const providerFile = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'opencode/opencode.json')
   const provider = needsOpenCode ? (JSON.parse(readFileSync(providerFile, 'utf8')) as { provider?: unknown }).provider ?? {} : {}
   const authFile = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'opencode/auth.json')
@@ -136,10 +140,10 @@ async function main() {
   const cli = join(root, 'packages/cli/bin/ripide.mjs')
   const shell = (text: string) => `'${text.replaceAll('\'', '\'\\\'\'')}'`
   const results: (Measurement & { caseName: string, runner: string, model: string, issues: string[], tools: number, steps: number })[] = []
-  const harnessHashes = Object.fromEntries(['projects.ts', 'project-cases.ts', 'project-check.ts', 'project-plan.ts', 'core.ts', 'codex-runner.ts'].map(path => [path, createHash('sha256').update(readFileSync(join(root, 'evals', path))).digest('hex')]))
-  const metadata = { opencodeModel: model, ...codexConfig, runner: values.runner, batch: values.batch, revision: git(root, ['rev-parse', 'HEAD']).trim(), harnessHashes, started: new Date().toISOString(), skillHash: createHash('sha256').update(skill).digest('hex'), sourceMode: 'tracked HEAD source slices', concurrency: values.preflight ? 1 : 3 }
+  const harnessHashes = Object.fromEntries(['projects.ts', 'project-cases.ts', 'project-check.ts', 'project-plan.ts', 'core.ts', 'codex-runner.ts', 'skill-context.ts'].map(path => [path, createHash('sha256').update(readFileSync(join(root, 'evals', path))).digest('hex')]))
+  const metadata = { opencodeModel: model, ...codexConfig, runner: values.runner, batch: values.batch, revision: git(root, ['rev-parse', 'HEAD']).trim(), harnessHashes, started: new Date().toISOString(), skillHash: skill.resources.find(resource => resource.path === skill.entryPath)!.sha256, sourceMode: 'tracked HEAD source slices', concurrency: values.preflight ? 1 : 3 }
   console.log(`Results: ${out}`)
-  writeFileSync(join(out, 'metadata.json'), JSON.stringify(metadata, null, 2))
+  writeFileSync(join(out, 'metadata.json'), JSON.stringify({ ...metadata, skillContext: skillResourceMetadata(skill) }, null, 2))
   async function executeProject(c: ProjectCase, index: number) {
     const source = snapshot(c)
     writeFileSync(join(out, `${c.name}-source.json`), JSON.stringify({ ...source, initial: undefined, expected: undefined }, null, 2))
@@ -167,7 +171,8 @@ async function main() {
         if (auth)
           env.OPENCODE_AUTH_CONTENT = auth
         const task = c._tag === 'Symbol' ? `Rename the ${c.from} function in ${c.declaration} to ${c.to}. Update all references and preserve aliases, strings, and comments.` : `Rename static class token ${c.from} to ${c.to} in every Vue class attribute, including variants. Preserve prose, formatting, and all other source.`
-        const prompt = [task, 'This is an isolated real-project source slice, without Git or installed dependencies. Do not add dependencies or read external repositories, Skills, or the eval harness. Do not edit configuration.', arm === 'ripide' ? `Use RipIDE with this Skill. The ripide executable is on PATH.\n<skill>\n${skill}\n</skill>` : 'Use normal read, edit, and shell tools. You may write scripts. Do not use RipIDE or another refactor CLI.', 'Finish by running check-snapshot. It checks the expected source diff and compares TypeScript diagnostics against the snapshot baseline. It substitutes for Git diff and project checks here. Give a brief result.'].join('\n')
+        const preparedSkill = arm === 'ripide' ? prepareSkillContext(skill, project) : null
+        const prompt = [task, 'This is an isolated real-project source slice, without Git or installed dependencies. Do not add dependencies or read other repositories, Skills, or the eval harness. Do not edit configuration.', preparedSkill ? `Use RipIDE with this Skill. The ripide executable is on PATH.\n${preparedSkill.prompt}` : 'Use normal read, edit, and shell tools. You may write scripts. Do not use RipIDE or another refactor CLI.', 'Finish by running check-snapshot. It checks the expected source diff and compares TypeScript diagnostics against the snapshot baseline. It substitutes for Git diff and project checks here. Give a brief result.'].join('\n')
         writeFileSync(join(dir, 'prompt.txt'), prompt)
         const args = c._tag === 'Symbol' ? ['rename', c.from, c.to, '--scope', c.declaration, '--apply', '--no-vue', '--profile', 'agent'] : ['css-class-rename', c.from, c.to, '--apply', '--profile', 'agent']
         const execution = values.preflight

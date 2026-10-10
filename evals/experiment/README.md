@@ -19,6 +19,16 @@ Keep output directories under private `~/scratch/`.
 Use a fresh output directory for each revision.
 Follow the [runner preflight protocol](../../docs/benchmark-runbook.md#runner-preflight) before model dispatch.
 
+## Skill loading contract
+
+If a runner embeds a Skill entry, mark it already loaded. Do not request a second entry read.
+Supply its complete local reference tree and explicit base inside the allowed project.
+Keep instruction bytes unchanged. Record resource hashes and sizes separately in registration metadata.
+Resolve relative links from their containing resource. Keep external documentation outside the allowed scope.
+Prove every local reference is readable during no-model preflight. Reject missing, escaping, or symlink resources.
+Preserve historical registrations. Any loading change requires a fresh registration before model dispatch.
+An explicit loading contract does not prove model adherence or resource improvements.
+
 ```sh
 pnpm build
 pnpm exec tsx evals/experiment/cli.ts fixture --installed --nuxt --out ~/scratch/ripide-pilot-registration

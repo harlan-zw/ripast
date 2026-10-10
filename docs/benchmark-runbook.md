@@ -79,6 +79,9 @@ Supply the complete linked Skill resource tree and its source base path to the r
 Pin each resource's hash. Resolve every relative link from that base during no-model preflight.
 If only entry text is supplied, describe the treatment as an inline entry Skill.
 Do not describe that treatment as a complete installed Skill.
+If the entry is inline, state that it is already loaded. Do not request another entry read.
+Keep exact instruction bytes separate from resource metadata. Copy local references inside the allowed project scope.
+Missing references, escaping paths, and symlinks must stop preparation before model dispatch.
 Before registration, verify which native transcripts, response identifiers, and usage records the runner persists.
 Export available records. Preserve exact session identifiers and artifact hashes.
 Mark unavailable native or provider internals explicitly. Ephemeral sessions may not persist native records.
@@ -89,6 +92,12 @@ Keep shared task constraints explicit after isolating personal instructions.
 Require TypeScript for new scripts. Ordinary shell tools remain allowed.
 State whether temporary edit helpers are permitted.
 Record whether the fixture is a Git checkout. Supply that fact equally to every arm before dispatch.
+Supply identical fixture facts and required check coverage to every arm.
+If required checks cover the whole fixture, scope additional post-apply review to changed hunks.
+For optional `rg` searches, exit 1 means no matches. Propagate exit 2 or higher as infrastructure failure.
+Record duplicate entry reads, decision-changing reads, diff output, and completed required stages separately from acceptance.
+Before registration, freeze or suppress shared runtime warnings equally across arms.
+These rules guide future registrations. They do not establish a measured gain or change frozen scores.
 
 Before each model dispatch, run a shell and PTY smoke check inside the exact child environment.
 Preserve its arguments, start, completion, streams, and exit.
