@@ -4,11 +4,25 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } f
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-export const codexModel = 'gpt-6-luna'
-export const codexReasoning = 'medium'
+const reasoningLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
+export interface CodexConfig {
+  readonly codexModel: string
+  readonly codexReasoning: typeof reasoningLevels[number]
+}
+
+export function parseCodexConfig(input: { model?: unknown, reasoning?: unknown }): CodexConfig {
+  const model = input.model === undefined ? 'gpt-6-luna' : input.model
+  const reasoning = input.reasoning === undefined ? 'medium' : input.reasoning
+  if (typeof model !== 'string' || !model.trim() || model !== model.trim())
+    throw new Error('--codex-model requires a nonempty model identifier without surrounding whitespace')
+  const parsedReasoning = reasoningLevels.find(level => level === reasoning)
+  if (parsedReasoning === undefined)
+    throw new Error(`--codex-reasoning requires ${reasoningLevels.join('|')}`)
+  return Object.freeze({ codexModel: model, codexReasoning: parsedReasoning })
+}
 
 /** Keep user Skills and configuration out of both arms. Copy authentication into the isolated home. */
-export async function runCodex(project: string, prompt: string, env: NodeJS.ProcessEnv, timeout: number): Promise<{ stdout: string, stderr: string, code: number | null, seconds: number, timedOut: boolean }> {
+export async function runCodex(project: string, prompt: string, env: NodeJS.ProcessEnv, timeout: number, configuration: CodexConfig): Promise<{ stdout: string, stderr: string, code: number | null, seconds: number, timedOut: boolean, configuration: CodexConfig }> {
   const isolated = mkdtempSync(join(tmpdir(), 'ripide-codex-'))
   const codexHome = join(isolated, '.codex')
   mkdirSync(codexHome)
@@ -31,9 +45,9 @@ export async function runCodex(project: string, prompt: string, env: NodeJS.Proc
         '--color',
         'never',
         '-m',
-        codexModel,
+        configuration.codexModel,
         '-c',
-        `model_reasoning_effort="${codexReasoning}"`,
+        `model_reasoning_effort="${configuration.codexReasoning}"`,
         '-c',
         'approval_policy="never"',
         '-c',
@@ -81,7 +95,7 @@ export async function runCodex(project: string, prompt: string, env: NodeJS.Proc
       child.on('close', (code) => {
         clearTimeout(timer)
         clearTimeout(force)
-        done({ stdout, stderr, code, timedOut, seconds: (performance.now() - started) / 1000 })
+        done({ stdout, stderr, code, timedOut, seconds: (performance.now() - started) / 1000, configuration })
       })
     })
   }

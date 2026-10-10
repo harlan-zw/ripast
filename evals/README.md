@@ -116,6 +116,11 @@ pnpm eval:projects --batch second --runner codex --case c12
 ```
 
 Options: `--batch first|second` and `--runner opencode|codex|split|both`.
+Use `--codex-model` and `--codex-reasoning` to select Codex settings without editing the harness.
+These options affect only Codex runs, including Codex assignments in `split` and `both` modes.
+Defaults remain `gpt-6-luna` and `medium`.
+Reasoning values: `none`, `minimal`, `low`, `medium`, `high`, and `xhigh`.
+The selected model must support the chosen reasoning value.
 
 ## Transient check evals
 
@@ -181,6 +186,15 @@ The [GPT-6.1 Sol report](./results/2026-10-09-6.1-sol.md) records ten second-bat
 Both methods passed all ten cases. RipIDE used 60.4% fewer total tokens and 51.2% less total agent time.
 These are single-run measurements. The report includes source commits, model selection, and comparison limits.
 The [measurement file](./results/2026-10-09-6.1-sol.json) retains all twenty attempts.
+
+Use these settings to reproduce Sol model selection on the current harness:
+
+```sh
+pnpm eval:projects --batch second --runner codex --codex-model gpt-6.1-sol --codex-reasoning medium --timeout 150
+```
+
+This command selects the historical model and reasoning. It does not restore the historical harness revision or source snapshots.
+Model settings populate command arguments, run measurements, and `metadata.json` from one parsed configuration.
 
 ## New registered comparisons
 
