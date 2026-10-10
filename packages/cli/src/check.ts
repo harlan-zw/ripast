@@ -149,9 +149,9 @@ function matchingCoverage(item: Pick<CheckItem, 'file' | 'body'>, coverage: Func
 
 /** Build a conservative checklist. Dynamic calls and type contracts still require review. */
 export function buildCheckChecklist(options: Pick<CheckOptions, 'cwd' | 'base'>): CheckChecklist {
-  const cwd = realpathSync(resolve(options.cwd))
+  const cwd = realpathSync.native(resolve(options.cwd))
   const repository = git(cwd, ['rev-parse', '--show-toplevel']).trim()
-  if (realpathSync(repository) !== cwd)
+  if (relative(cwd, realpathSync.native(repository)))
     throw new Error('Run the Git checklist from the repository root.')
   const base = git(cwd, ['rev-parse', '--verify', `${options.base ?? 'HEAD'}^{commit}`]).trim()
   const changed = new Set([...git(cwd, ['diff', '--name-only', '-z', base, '--']).split('\0'), ...git(cwd, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0')].filter(Boolean))
@@ -263,7 +263,7 @@ export function buildCheckChecklist(options: Pick<CheckOptions, 'cwd' | 'base'>)
 }
 
 export async function runCheck(options: CheckOptions): Promise<CheckResult> {
-  const cwd = realpathSync(resolve(options.cwd))
+  const cwd = realpathSync.native(resolve(options.cwd))
   if (options.source === undefined)
     return { _tag: 'Checklist', checklist: buildCheckChecklist(options) }
   if (options.symbol === 'default')

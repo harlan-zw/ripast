@@ -30,7 +30,7 @@ function resolveRequest(input: InlineTestRequest): ResolvedInlineTestRequest | I
   const directory = resolve(input.cwd ?? process.cwd())
   if (!statSync(directory, { throwIfNoEntry: false })?.isDirectory())
     return inputError(`Project directory does not exist: ${directory}.`, 'resolve')
-  const cwd = realpathSync(directory)
+  const cwd = realpathSync.native(directory)
   const from = resolve(cwd, input.from)
   if (!statSync(from, { throwIfNoEntry: false })?.isFile())
     return inputError(`Source file does not exist: ${from}.`, 'resolve')
@@ -62,10 +62,23 @@ async function terminateWorker(child: ChildProcess): Promise<void> {
     const pid = child.pid
     await new Promise<void>((resolve, reject) => {
       execFile('taskkill', ['/pid', String(pid), '/T', '/F'], (error) => {
-        if (error && child.exitCode === null && child.signalCode === null)
+        if (error && child.exitCode === null && child.signalCode === null) {
+          try {
+            process.kill(pid, 0)
+          }
+          catch (probeError) {
+            // The worker can exit before Node receives its exit event.
+            if (probeError instanceof Error && 'code' in probeError && probeError.code === 'ESRCH') {
+              resolve()
+              return
+            }
+            reject(probeError)
+            return
+          }
           reject(error)
-        else
-          resolve()
+          return
+        }
+        resolve()
       })
     })
     return
