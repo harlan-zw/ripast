@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import { runReplace, writeChanges } from '@ripast/core'
+import { runReplace, writeChanges } from 'ripide-api'
 import { it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 it('migrates a same-name import to a curated barrel alias and merges imports', async () => {
@@ -14,12 +15,12 @@ it('migrates a same-name import to a curated barrel alias and merges imports', a
     'use.ts': 'import { getSiteConfig } from "./legacy.ts"\nimport { createSitePathResolver } from "#site-config/server"\nconsole.log(getSiteConfig() + createSitePathResolver())\n',
   })
   try {
-    const result = await runReplace('getSiteConfig', 'getSiteConfig', {
+    const result = await runReplace('getSiteConfig', 'getSiteConfig', { ...{
       cwd: fixture.dir,
       targetScope: 'server/index.ts',
       targetImport: '#site-config/server',
-      verify: false,
-    })
+      verifyMode: 'none' as const,
+    }, engine: vueServices() })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'use.ts'], { cwd: fixture.dir, encoding: 'utf8' })
     assert.equal(output.trim(), 'new-path')
@@ -38,7 +39,7 @@ it('preserves wrapper implementations behind a selected barrel', async () => {
     'use.ts': 'import { old } from "./old.ts"\nconsole.log(old())\n',
   })
   try {
-    const result = await runReplace('old', 'better', { cwd: fixture.dir, targetScope: 'index.ts', verify: false })
+    const result = await runReplace('old', 'better', { ...{ cwd: fixture.dir, targetScope: 'index.ts', verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'use.ts'], { cwd: fixture.dir, encoding: 'utf8' })
     assert.equal(output.trim(), '11')
@@ -59,7 +60,7 @@ it.each([
     'use.ts': 'import type { Legacy } from "./legacy.ts"\nconst item: Legacy = { value: 42 }\nconsole.log(item.value)\n',
   })
   try {
-    const result = await runReplace('Legacy', 'Shape', { cwd: fixture.dir, targetScope: 'server/index.ts', targetImport: '#public' })
+    const result = await runReplace('Legacy', 'Shape', { ...{ cwd: fixture.dir, targetScope: 'server/index.ts', targetImport: '#public' }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     const output = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'use.ts'], { cwd: fixture.dir, encoding: 'utf8' })
@@ -83,7 +84,7 @@ it('resolves an external producer barrel with an explicit consumer alias', async
     include: ['**/*.ts'],
   }))
   try {
-    const result = await runReplace('getSiteConfig', 'getSiteConfig', { cwd: consumer.dir, targetScope: `${producer.dir}/index.ts`, targetImport: '#site-config/server' })
+    const result = await runReplace('getSiteConfig', 'getSiteConfig', { ...{ cwd: consumer.dir, targetScope: `${producer.dir}/index.ts`, targetImport: '#site-config/server' }, engine: vueServices() })
     assert.deepEqual(result.regressions, [])
     writeChanges(result.changes)
     assert.match(consumer.read('use.ts'), /from ["']#site-config\/server["']/)
@@ -115,7 +116,8 @@ it('exposes barrel alias targeting through the public CLI', () => {
       'index.ts',
       '--target-import',
       '#public',
-      '--no-verify',
+      '--verify-mode',
+      'none',
       '--apply',
     ], { cwd: fixture.dir, encoding: 'utf8' })
     const output = execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', 'use.ts'], { cwd: fixture.dir, encoding: 'utf8' })
@@ -132,7 +134,7 @@ it('keeps default target discovery on direct declarations', async () => {
     'use.ts': 'import { old } from "./old.ts"\nconsole.log(old())\n',
   })
   try {
-    const result = await runReplace('old', 'better', { cwd: fixture.dir, verify: false })
+    const result = await runReplace('old', 'better', { ...{ cwd: fixture.dir, verifyMode: 'none' as const }, engine: vueServices() })
     writeChanges(result.changes)
     assert.match(fixture.read('use.ts'), /from ["']\.\/utils\.ts["']/)
   }
@@ -145,7 +147,7 @@ it.each(['', '#bad path', '#bad"path', '#bad\\path'])('refuses invalid explicit 
     'use.ts': 'import { old } from "legacy"\nconsole.log(old())\n',
   })
   try {
-    await assert.rejects(runReplace('old', 'better', { cwd: fixture.dir, targetImport }), /--target-import requires/)
+    await assert.rejects(runReplace('old', 'better', { ...{ cwd: fixture.dir, targetImport }, engine: vueServices() }), /--target-import requires/)
     assert.equal(fixture.read('use.ts'), 'import { old } from "legacy"\nconsole.log(old())\n')
   }
   finally { fixture.cleanup() }

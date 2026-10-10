@@ -1,11 +1,13 @@
+import type { EngineServices } from './engine.ts'
+import type { RenameFileResult } from './rename-file.ts'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { createPatch } from 'diff'
 import { parseSync } from 'oxc-parser'
 import picomatch from 'picomatch'
 import { searchFiles } from './file-search.ts'
+import { parseTsrxSource } from './tsrx.ts'
 
 export interface ParsedFile {
   path: string
@@ -57,7 +59,7 @@ export function applyTextEdits(source: string, edits: TextEdit[]): string {
   return out
 }
 
-const EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
+const EXTS = ['.ts', '.tsx', '.tsrx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 
 // Meta-project directories that aren't real source even when not in .gitignore.
 // Git excludes `.git` from tracked files; the rest are workflow
@@ -139,7 +141,7 @@ function runGitSearch(search: CandidateSearch, cwd: string, globs: string[]): st
   const result = spawnSync('git', ['--no-pager', ...args], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C' } })
   if (result.error) {
     if ('code' in result.error && result.error.code === 'ENOENT' && existsSync(cwd)) {
-      process.stderr.write('ripast: Git was not found on PATH. Using Node file search; it may be slower.\n')
+      process.stderr.write('ripide: Git was not found on PATH. Using Node file search; it may be slower.\n')
       return fallback()
     }
     throw new Error(`Could not start Git: ${result.error.message}`, { cause: result.error })
@@ -198,9 +200,9 @@ function runSearch(search: CandidateSearch, cwd: string, globs: string[]): strin
   return result.stdout.split('\0').filter(Boolean).map(path => resolve(cwd, path))
 }
 
-export function findFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean } = {}): string[] {
+export function findFiles(pattern: string, opts: { glob?: string | string[], cwd?: string, fixedStrings?: boolean, listAll?: boolean, engine?: EngineServices } = {}): string[] {
   const cwd = opts.cwd ?? process.cwd()
-  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
+  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : [...EXTS, ...opts.engine?.suffixes ?? []].map(e => `*${e}`)
   const { globs, select } = discoverySelection(userGlobs)
   const search: CandidateSearch = opts.listAll
     ? { _tag: 'Files' }
@@ -212,56 +214,33 @@ export function findFiles(pattern: string, opts: { glob?: string | string[], cwd
  * Batch fixed-string patterns into one search with `-e <pattern>`.
  * Empty patterns return no files without starting a search tool.
  */
-export function findFilesMany(patterns: string[], opts: { glob?: string | string[], cwd?: string } = {}): string[] {
+export function findFilesMany(patterns: string[], opts: { glob?: string | string[], cwd?: string, engine?: EngineServices } = {}): string[] {
   if (!patterns.length)
     return []
   const cwd = opts.cwd ?? process.cwd()
-  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : EXTS.map(e => `*${e}`)
+  const userGlobs = opts.glob ? (Array.isArray(opts.glob) ? opts.glob : [opts.glob]) : [...EXTS, ...opts.engine?.suffixes ?? []].map(e => `*${e}`)
   const { globs, select } = discoverySelection(userGlobs)
   return select(runSearch({ _tag: 'Text', patterns }, cwd, globs), cwd)
 }
 
-const SFC_SCRIPT_RE = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi
-const SFC_SRC_ATTR_RE = /\bsrc\s*=/
-
-function extractScript(source: string): { start: number, end: number, code: string } | null {
-  const blocks: { start: number, end: number, code: string, hasSrc: boolean }[] = []
-  for (const m of source.matchAll(SFC_SCRIPT_RE)) {
-    const tagStart = m.index ?? 0
-    const tagEnd = source.indexOf('>', tagStart) + 1
-    const attrs = source.slice(tagStart, tagEnd)
-    const hasSrc = SFC_SRC_ATTR_RE.test(attrs)
-    const code = m[1]
-    const start = tagEnd
-    const end = start + code.length
-    blocks.push({ start, end, code, hasSrc })
-  }
-  const usable = blocks.filter(b => !b.hasSrc)
-  if (!usable.length)
-    return null
-  return usable.reduce((a, b) => (b.code.length > a.code.length ? b : a))
+export function parseFile(path: string, cwd: string = process.cwd(), engine?: Pick<EngineServices, 'parse'>): ParsedFile {
+  return parseSourceFile(path, readFileSync(path, 'utf8'), cwd, engine)
 }
 
-export function parseFile(path: string, cwd: string = process.cwd()): ParsedFile {
-  const source = readFileSync(path, 'utf8')
-  return parseSourceFile(path, source, cwd)
-}
-
-export function parseSourceFile(path: string, source: string, cwd: string = process.cwd()): ParsedFile {
+export function parseSourceFile(path: string, source: string, cwd: string = process.cwd(), engine?: Pick<EngineServices, 'parse'>): ParsedFile {
   const rel = relative(cwd, path)
-  if (path.endsWith('.vue')) {
-    const block = extractScript(source)
-    if (!block)
-      return { path, rel, fullSource: source, scriptSource: '', scriptStart: 0, scriptEnd: 0, program: null, isSfc: true }
-    const { program, errors } = parseSync(`${path}.ts`, block.code)
-    if (errors?.length)
-      process.stderr.write(`parse warnings in ${rel}: ${errors.length}\n`)
-    return { path, rel, fullSource: source, scriptSource: block.code, scriptStart: block.start, scriptEnd: block.end, program, isSfc: true }
+  if (path.endsWith('.tsrx')) {
+    const { program } = parseTsrxSource(path, source)
+    return { path, rel, fullSource: source, scriptSource: source, scriptStart: 0, scriptEnd: source.length, program, isSfc: false }
   }
-  const { program, errors } = parseSync(path, source)
+  const region = engine?.parse(path, source, cwd)
+  const scriptSource = region?._tag === 'Script' ? region.source : source
+  const scriptStart = region?._tag === 'Script' ? region.start : 0
+  const scriptEnd = scriptStart + scriptSource.length
+  const { program, errors } = region?._tag === 'Authored' ? { program: region.program, errors: [] } : parseSync(region?.filename ?? path, scriptSource)
   if (errors?.length)
     process.stderr.write(`parse warnings in ${rel}: ${errors.length}\n`)
-  return { path, rel, fullSource: source, scriptSource: source, scriptStart: 0, scriptEnd: source.length, program, isSfc: false }
+  return { path, rel, fullSource: source, scriptSource, scriptStart, scriptEnd, program, isSfc: Boolean(region) }
 }
 
 export function spliceScript(file: ParsedFile, newScript: string): string {
@@ -288,7 +267,7 @@ export function writeChanges(changes: FileChange[]): void {
   try {
     for (const [target, change] of targets) {
       mkdirSync(dirname(target), { recursive: true })
-      const directory = mkdtempSync(join(dirname(target), '.ripast-tmp-'))
+      const directory = mkdtempSync(join(dirname(target), '.ripide-tmp-'))
       const tmp = join(directory, 'after')
       const backup = existsSync(target) ? join(directory, 'before') : null
       staged.push({ directory, tmp, target, backup })
@@ -320,59 +299,13 @@ export function writeChanges(changes: FileChange[]): void {
     }
     // Keep backups available if the filesystem also prevents restoration.
     if (failures.length > 1)
-      throw new AggregateError(failures, 'Could not restore every file. Original files remain in .ripast-tmp- directories.')
+      throw new AggregateError(failures, 'Could not restore every file. Original files remain in .ripide-tmp- directories.')
     for (const { directory } of staged)
       rmSync(directory, { recursive: true, force: true })
     throw err
   }
   for (const { directory } of staged)
     rmSync(directory, { recursive: true, force: true })
-}
-
-export function printDiffs(changes: FileChange[], out: NodeJS.WritableStream = process.stdout): void {
-  for (const c of changes) {
-    const patch = createPatch(c.rel, c.before, c.after, '', '', { context: 2 })
-    out.write(patch)
-  }
-}
-
-export interface ChangeSummary {
-  files: number
-  linesAdded: number
-  linesRemoved: number
-}
-
-export function summarize(changes: FileChange[]): ChangeSummary {
-  let added = 0
-  let removed = 0
-  for (const c of changes) {
-    const diff = diffLineCounts(c.before, c.after)
-    added += diff.added
-    removed += diff.removed
-  }
-  return { files: changes.length, linesAdded: added, linesRemoved: removed }
-}
-
-function diffLineCounts(before: string, after: string): { added: number, removed: number } {
-  const beforeLines = before.split('\n')
-  const afterLines = after.split('\n')
-  const beforeBag = new Map<string, number>()
-  for (const l of beforeLines) beforeBag.set(l, (beforeBag.get(l) ?? 0) + 1)
-  const afterBag = new Map<string, number>()
-  for (const l of afterLines) afterBag.set(l, (afterBag.get(l) ?? 0) + 1)
-  let removed = 0
-  for (const [l, n] of beforeBag.entries()) {
-    const a = afterBag.get(l) ?? 0
-    if (n > a)
-      removed += n - a
-  }
-  let added = 0
-  for (const [l, n] of afterBag.entries()) {
-    const b = beforeBag.get(l) ?? 0
-    if (n > b)
-      added += n - b
-  }
-  return { added, removed }
 }
 
 export function posToLineCol(source: string, pos: number): { line: number, col: number } {
@@ -386,4 +319,46 @@ export function posToLineCol(source: string, pos: number): { line: number, col: 
     else { col++ }
   }
   return { line, col }
+}
+
+/** Accept another casing of the source entry, but never a separate hard link. */
+export function isCaseOnlyFileRename(from: string, to: string): boolean {
+  if (from === to || dirname(from) !== dirname(to) || basename(from).toLowerCase() !== basename(to).toLowerCase())
+    return false
+  const source = lstatSync(from)
+  const target = lstatSync(to, { throwIfNoEntry: false })
+  return source.isFile() && target?.isFile() === true
+    && source.dev === target.dev && source.ino === target.ino
+    && !readdirSync(dirname(to)).includes(basename(to))
+}
+
+/** One transaction boundary for a planned file move and all consumer changes. */
+export function writeFileRename(result: RenameFileResult, expectedSource = readFileSync(result.fileMove.from, 'utf8')): void {
+  if (result.regressions.length)
+    throw new Error('Verification failed; file rename was refused')
+  if (readFileSync(result.fileMove.from, 'utf8') !== expectedSource)
+    throw new Error('Source changed since planning; file rename was refused')
+  if (lstatSync(result.fileMove.to, { throwIfNoEntry: false }) && !isCaseOnlyFileRename(result.fileMove.from, result.fileMove.to))
+    throw new Error('File rename target already exists')
+  const self = result.selfChange ? [{ path: result.fileMove.to, rel: result.fileMove.to, ...result.selfChange }] : []
+  // Validate consumers before moving. writeChanges repeats validation before committing.
+  for (const change of result.changes) {
+    const current = existsSync(change.path) ? readFileSync(change.path, 'utf8') : ''
+    if (current !== change.before)
+      throw new Error(`File changed since planning: ${change.rel}`)
+  }
+  mkdirSync(dirname(result.fileMove.to), { recursive: true })
+  renameSync(result.fileMove.from, result.fileMove.to)
+  try {
+    writeChanges([...self, ...result.changes])
+  }
+  catch (error) {
+    try {
+      renameSync(result.fileMove.to, result.fileMove.from)
+    }
+    catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], 'File rename failed; source restoration failed')
+    }
+    throw error
+  }
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
-import { findFiles, findFilesMany } from '@ripast/core/adapter'
+import { findFiles, findFilesMany } from 'ripide-api/adapter'
 import { it } from 'vitest'
 import { makeGitFixture } from './helpers.ts'
 

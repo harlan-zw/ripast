@@ -1,3 +1,6 @@
+import type { EngineServices } from './engine.ts'
+import type { ProfileSink } from './profile.ts'
+import type { ParsedFile } from './util.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -5,9 +8,9 @@ import { parseSync } from 'oxc-parser'
 import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, localExportSpecifierNames, localExportSpecifierRanges, parseSource } from './declarations.ts'
 import { listImports } from './imports.ts'
+import { timed, timedAsync } from './profile.ts'
 import { startTsServer } from './ts-server.ts'
-import { findFiles, findFilesMany, parseFile, posToLineCol } from './util.ts'
-import { extractTemplateExpressions } from './vue-template.ts'
+import { findFiles, findFilesMany, parseFile, parseSourceFile, posToLineCol } from './util.ts'
 
 export interface ScanHit {
   file: string
@@ -18,6 +21,8 @@ export interface ScanHit {
 }
 
 export interface ScanOptions {
+  engine?: EngineServices
+  profile?: ProfileSink
   cwd?: string
   glob?: string | string[]
   kinds?: string[]
@@ -62,6 +67,86 @@ export interface DeclarationTree {
   files: DeclarationTreeFile[]
 }
 
+export interface DeclarationCacheOptions {
+  maxEntries?: number
+  /** Bound retained source and analysis payloads, measured as UTF-16 bytes. */
+  maxBytes?: number
+}
+
+export interface DeclarationCacheStats {
+  hits: number
+  misses: number
+  evictions: number
+  entries: number
+  bytes: number
+}
+
+export interface DeclarationCache {
+  inspect: (path: string, source: string, cwd: string, engine?: EngineServices) => DeclarationTreeFile | null
+  stats: () => DeclarationCacheStats
+  clear: () => void
+}
+
+export interface DeclarationTreeOptions extends ScanOptions {
+  exports?: ExportFilter
+  cache?: DeclarationCache
+}
+
+type DeclarationFileAnalysis = Omit<DeclarationTreeFile, 'file'>
+
+/** Instance-owned syntax analysis. Every lookup checks actual content; no semantic results are retained. */
+export function createDeclarationCache(opts: DeclarationCacheOptions = {}): DeclarationCache {
+  const maxEntries = opts.maxEntries ?? 1024
+  const maxBytes = opts.maxBytes ?? 16 * 1024 * 1024
+  if (!Number.isSafeInteger(maxEntries) || maxEntries <= 0 || !Number.isSafeInteger(maxBytes) || maxBytes <= 0)
+    throw new Error('Declaration cache bounds must be a positive safe integer.')
+  const entries = new Map<string, { source: string, cwd: string, engine?: EngineServices, analysis: DeclarationFileAnalysis | null, bytes: number }>()
+  let hits = 0
+  let misses = 0
+  let evictions = 0
+  let bytes = 0
+  const remove = (key: string) => {
+    const entry = entries.get(key)!
+    entries.delete(key)
+    return entry.bytes
+  }
+  return {
+    inspect(path, source, cwd, engine) {
+      const abs = resolve(cwd, path)
+      const cached = entries.get(abs)
+      let analysis: DeclarationFileAnalysis | null
+      if (cached && cached.source === source && cached.cwd === cwd && cached.engine === engine) {
+        hits++
+        analysis = cached.analysis
+        entries.delete(abs)
+        entries.set(abs, cached)
+      }
+      else {
+        misses++
+        if (cached)
+          bytes -= remove(abs)
+        analysis = inspectDeclarationFile(abs, source, cwd, engine)
+        const size = 2 * (abs.length + cwd.length + source.length + JSON.stringify(analysis).length)
+        if (size <= maxBytes) {
+          while (entries.size >= maxEntries || bytes + size > maxBytes) {
+            bytes -= remove(entries.keys().next().value!)
+            evictions++
+          }
+          entries.set(abs, { source, cwd, engine, analysis, bytes: size })
+          bytes += size
+        }
+      }
+      // Consumers may mutate returned declarations. Keep retained analysis isolated.
+      return analysis ? { file: relative(cwd, abs), ...structuredClone(analysis) } : null
+    },
+    stats: () => ({ hits, misses, evictions, entries: entries.size, bytes }),
+    clear() {
+      entries.clear()
+      bytes = 0
+    },
+  }
+}
+
 export interface UnusedDeclarationFile {
   file: string
   declarations: DeclarationTreeItem[]
@@ -73,40 +158,42 @@ export interface UnusedDeclarations {
 
 export function scan(pattern: string, opts: ScanOptions = {}): ScanHit[] {
   const cwd = opts.cwd ?? process.cwd()
-  const files = findFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
-  const hits: ScanHit[] = []
-  for (const f of files) {
-    const file = parseFile(f, cwd)
-    const seen = new Set<string>()
-    if (file.program) {
-      walk(file.program as any, {
-        enter(node: any, parent: any) {
-          const kind = classify(node, parent, pattern)
-          if (!kind)
-            return
-          if (opts.kinds && !opts.kinds.includes(kind))
-            return
-          const abs = node.start + file.scriptStart
-          const key = `${abs}:${node.end + file.scriptStart}:${kind}`
-          if (seen.has(key))
-            return
-          seen.add(key)
-          pushHit(hits, file.rel, file.fullSource, abs, kind)
-        },
-      })
+  const files = timed(opts.profile, 'scan discovery', () => findFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob }))
+  return timed(opts.profile, 'scan parse', () => {
+    const hits: ScanHit[] = []
+    for (const f of files) {
+      const file = parseFile(f, cwd, opts.engine)
+      const seen = new Set<string>()
+      if (file.program) {
+        walk(file.program as any, {
+          enter(node: any, parent: any) {
+            const kind = classify(node, parent, pattern)
+            if (!kind)
+              return
+            if (opts.kinds && !opts.kinds.includes(kind))
+              return
+            const abs = node.start + file.scriptStart
+            const key = `${abs}:${node.end + file.scriptStart}:${kind}`
+            if (seen.has(key))
+              return
+            seen.add(key)
+            pushHit(hits, file.rel, file.fullSource, abs, kind)
+          },
+        })
+      }
+      if (file.isSfc)
+        scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen, opts.engine)
     }
-    if (file.isSfc)
-      scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen)
-  }
-  return hits
+    return hits
+  })
 }
 
 export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGraph {
   const cwd = opts.cwd ?? process.cwd()
-  const files = findFilesMany([pattern, '\\u', '\\x'], { cwd, glob: opts.glob })
+  const files = timed(opts.profile, 'graph discovery', () => findFilesMany([pattern, '\\u', '\\x'], { cwd, engine: opts.engine, glob: opts.glob }))
   const hitsByFile = new Map<string, ScanHit[]>()
-  const parsed = files.map((f) => {
-    const file = parseFile(f, cwd)
+  const parsed = timed(opts.profile, 'graph parse', () => files.map((f) => {
+    const file = parseFile(f, cwd, opts.engine)
     const seen = new Set<string>()
     const hits: ScanHit[] = []
     if (file.program) {
@@ -127,11 +214,11 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
       })
     }
     if (file.isSfc)
-      scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen)
+      scanTemplate(f, file.rel, file.fullSource, pattern, opts.kinds, hits, seen, opts.engine)
     if (hits.length)
       hitsByFile.set(file.path, hits)
     return file
-  })
+  }))
 
   const nodePathSet = new Set(hitsByFile.keys())
   const edges = new Map<string, ScanGraphEdge>()
@@ -139,7 +226,7 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
     if (!nodePathSet.has(file.path) || !file.program)
       continue
     for (const specifier of importSpecifiers(file.program as any)) {
-      const target = resolveModuleSpecifier(file.path, specifier)
+      const target = resolveModuleSpecifier(file.path, specifier, opts.engine)
       if (!target || !nodePathSet.has(target))
         continue
       const edge = {
@@ -160,20 +247,52 @@ export function buildScanGraph(pattern: string, opts: ScanOptions = {}): ScanGra
   }
 }
 
-export function buildDeclarationTree(opts: ScanOptions & { exports?: ExportFilter } = {}): DeclarationTree {
+export function buildDeclarationTree(opts: DeclarationTreeOptions = {}): DeclarationTree {
   const cwd = opts.cwd ?? process.cwd()
-  const files = findFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
+  const files = timed(opts.profile, 'tree discovery', () => findFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
   const exportFilter = opts.exports ?? 'all'
-  return buildDeclarationTreeForPaths(cwd, files, exportFilter)
+  return timed(opts.profile, 'tree parse', () => buildDeclarationTreeForPaths(cwd, files, exportFilter, opts.engine, opts.cache))
 }
 
-function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter: ExportFilter): DeclarationTree {
-  const out: DeclarationTreeFile[] = []
+function inspectDeclarationFile(abs: string, source: string, cwd: string, engine?: EngineServices): DeclarationFileAnalysis | null {
+  return inspectParsedDeclarationFile(parseSourceFile(abs, source, cwd, engine))
+}
+
+function inspectParsedDeclarationFile(file: ParsedFile): DeclarationFileAnalysis | null {
+  if (!file.program)
+    return null
+  return {
+    imports: moduleSpecifiers(file.program as any, 'import'),
+    reexports: moduleSpecifiers(file.program as any, 'reexport'),
+    declarations: collectTopLevelDeclarations(file.program as any, file.fullSource, file.scriptStart),
+  }
+}
+
+function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter: ExportFilter, engine?: EngineServices, cache?: DeclarationCache): DeclarationTree {
+  const analyses: DeclarationTreeFile[] = []
   for (const abs of files) {
-    const file = parseFile(abs, cwd)
-    if (!file.program)
+    const source = readFileSync(abs, 'utf8')
+    const analysis = cache ? cache.inspect(abs, source, cwd, engine) : inspectDeclarationFile(abs, source, cwd, engine)
+    if (!analysis)
       continue
-    const declarations = collectTopLevelDeclarations(file.program as any, file.fullSource, file.scriptStart)
+    analyses.push({ file: relative(cwd, abs), ...analysis })
+  }
+  return declarationTreeFromAnalyses(analyses, exportFilter)
+}
+
+/** Build declarations from the operation's already parsed source snapshot. */
+export function buildDeclarationTreeFromParsedFiles(files: readonly ParsedFile[], exportFilter: ExportFilter = 'all'): DeclarationTree {
+  const analyses = files.flatMap((file) => {
+    const analysis = inspectParsedDeclarationFile(file)
+    return analysis ? [{ file: file.rel, ...analysis }] : []
+  })
+  return declarationTreeFromAnalyses(analyses, exportFilter)
+}
+
+function declarationTreeFromAnalyses(files: DeclarationTreeFile[], exportFilter: ExportFilter): DeclarationTree {
+  const out: DeclarationTreeFile[] = []
+  for (const file of files) {
+    const declarations = file.declarations
       .filter((d) => {
         if (exportFilter === 'exported')
           return d.exported
@@ -181,12 +300,11 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
           return !d.exported
         return true
       })
-    const imports = moduleSpecifiers(file.program as any, 'import')
-    const reexports = moduleSpecifiers(file.program as any, 'reexport')
+    const { imports, reexports } = file
     if (!declarations.length && !imports.length && !reexports.length)
       continue
     out.push({
-      file: file.rel,
+      file: file.file,
       imports,
       reexports,
       declarations,
@@ -196,18 +314,18 @@ function buildDeclarationTreeForPaths(cwd: string, files: string[], exportFilter
   return { files: out }
 }
 
-export async function buildUnusedDeclarations(opts: ScanOptions & { exports?: ExportFilter } = {}): Promise<UnusedDeclarations> {
+export async function buildUnusedDeclarations(opts: DeclarationTreeOptions = {}): Promise<UnusedDeclarations> {
   const cwd = opts.cwd ?? process.cwd()
   const exportFilter = opts.exports ?? 'local'
-  const candidates = findFiles('', { cwd, glob: opts.glob, fixedStrings: false, listAll: true })
-    .filter(path => !path.endsWith('.vue'))
-  const tree = buildDeclarationTreeForPaths(cwd, candidates, exportFilter)
+  const sources = timed(opts.profile, 'unused discovery', () => findFiles('', { cwd, engine: opts.engine, glob: opts.glob, fixedStrings: false, listAll: true }))
+  const candidates = sources.filter(path => !opts.engine?.owns(path))
+  const tree = timed(opts.profile, 'unused parse', () => buildDeclarationTreeForPaths(cwd, candidates, exportFilter, opts.engine, opts.cache))
   const treeByFile = new Map(tree.files.map(file => [resolve(cwd, file.file), file]))
-  const potentialReferenceNames = buildPotentialReferenceNames(candidates, cwd)
-  const importedNames = buildImportedNames(candidates)
+  const potentialReferenceNames = buildPotentialReferenceNames(sources, cwd, opts.engine)
+  const importedNames = buildImportedNames(sources, cwd, opts.engine)
 
   const unusedByFile = new Map<string, Set<string>>()
-  const server = await startTsServer(cwd)
+  const server = await timedAsync(opts.profile, 'server start', () => startTsServer(cwd))
   try {
     for (const path of candidates) {
       if (!treeByFile.has(path))
@@ -266,7 +384,7 @@ function addUnusedName(unusedByFile: Map<string, Set<string>>, path: string, nam
 }
 
 /** Names each file exports that some other candidate imports or re-exports from it through a relative specifier. */
-function buildImportedNames(paths: string[]): Map<string, Set<string>> {
+function buildImportedNames(paths: string[], cwd: string, engine?: EngineServices): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>()
   const add = (target: string, name: string): void => {
     const names = out.get(target) ?? new Set<string>()
@@ -275,15 +393,11 @@ function buildImportedNames(paths: string[]): Map<string, Set<string>> {
   }
   for (const path of paths) {
     const source = readFileSync(path, 'utf8')
-    let program: any
-    try {
-      program = parseSync(path, source).program
-    }
-    catch {
+    const program = parseFile(path, cwd, engine).program
+    if (!program)
       continue
-    }
     for (const imp of listImports(source, path, program)) {
-      const target = resolveModuleSpecifier(path, imp.specifier)
+      const target = resolveModuleSpecifier(path, imp.specifier, engine)
       if (!target)
         continue
       for (const n of imp.named) add(target, n.name)
@@ -293,7 +407,7 @@ function buildImportedNames(paths: string[]): Map<string, Set<string>> {
     for (const statement of program.body ?? []) {
       if (statement.type !== 'ExportNamedDeclaration' || !statement.source)
         continue
-      const target = resolveModuleSpecifier(path, statement.source.value)
+      const target = resolveModuleSpecifier(path, statement.source.value, engine)
       if (!target)
         continue
       for (const spec of statement.specifiers ?? []) add(target, spec.local?.name ?? spec.local?.value)
@@ -310,6 +424,7 @@ function scanTemplate(
   kinds: string[] | undefined,
   hits: ScanHit[],
   seen: Set<string>,
+  engine?: EngineServices,
 ): void {
   const source = fullSource || (() => {
     try {
@@ -321,7 +436,7 @@ function scanTemplate(
   })()
   if (!source.includes(pattern) && !/\\[ux]/.test(source))
     return
-  const exprs = extractTemplateExpressions(source)
+  const exprs = engine?.expressions(absPath, source) ?? []
   for (const expr of exprs) {
     if (!expr.code.includes(pattern) && !/\\[ux]/.test(expr.code))
       continue
@@ -413,137 +528,15 @@ function classify(node: any, parent: any, pattern: string): string | null {
   return null
 }
 
-export function formatHits(hits: ScanHit[], json: boolean): string {
-  if (json)
-    return JSON.stringify(hits, null, 2)
-  const byKind: Record<string, number> = {}
-  const lines: string[] = []
-  for (const h of hits) {
-    byKind[h.kind] = (byKind[h.kind] ?? 0) + 1
-    lines.push(`${h.file}:${h.line}:${h.col}  ${h.kind.padEnd(22)} ${h.snippet}`)
-  }
-  lines.push('')
-  lines.push(`${hits.length} hits across ${new Set(hits.map(h => h.file)).size} files`)
-  for (const [k, n] of Object.entries(byKind).sort((a, b) => b[1] - a[1]))
-    lines.push(`  ${k.padEnd(22)} ${n}`)
-  return lines.join('\n')
-}
-
-export function formatAgentHits(hits: ScanHit[]): string {
-  const files = new Set(hits.map(h => h.file))
-  const byKind: Record<string, number> = {}
-  const byFile = new Map<string, ScanHit[]>()
-  for (const hit of hits) {
-    byKind[hit.kind] = (byKind[hit.kind] ?? 0) + 1
-    const fileHits = byFile.get(hit.file) ?? []
-    fileHits.push(hit)
-    byFile.set(hit.file, fileHits)
-  }
-  const lines = ['scan']
-  lines.push(`${hits.length} hits across ${files.size} files`)
-  if (hits.length) {
-    lines.push(`kinds: ${Object.entries(byKind).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ')}`)
-    lines.push('files:')
-    for (const [file, fileHits] of [...byFile.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))) {
-      const kinds = summarizeKinds(fileHits)
-      const first = fileHits[0]
-      lines.push(`  ${file}: ${fileHits.length} (${kinds}); first L${first.line}:${first.col}`)
-    }
-  }
-  return lines.join('\n')
-}
-
-export function formatScanGraph(graph: ScanGraph, format: 'mermaid' | 'dot'): string {
-  return format === 'dot' ? formatDotGraph(graph) : formatMermaidGraph(graph)
-}
-
-export function formatDeclarationTree(tree: DeclarationTree, json: boolean): string {
-  if (json)
-    return JSON.stringify(tree, null, 2)
-  const lines: string[] = []
-  for (const file of tree.files) {
-    lines.push(file.file)
-    if (file.imports.length) {
-      lines.push('  imports')
-      for (const specifier of file.imports)
-        lines.push(`    ${specifier}`)
-    }
-    if (file.reexports.length) {
-      lines.push('  reexports')
-      for (const specifier of file.reexports)
-        lines.push(`    ${specifier}`)
-    }
-    if (file.declarations.length) {
-      lines.push('  declarations')
-      for (const decl of file.declarations) {
-        const marker = decl.exported ? 'export' : 'local'
-        lines.push(`    ${marker.padEnd(6)} ${decl.kind.padEnd(10)} ${declarationLabel(decl)}  L${decl.line}:${decl.col}`)
-      }
-    }
-    lines.push('')
-  }
-  lines.push(`${tree.files.length} files`)
-  return lines.join('\n')
-}
-
-export function formatUnusedDeclarations(unused: UnusedDeclarations, json: boolean): string {
-  if (json)
-    return JSON.stringify(unused, null, 2)
-  const lines: string[] = []
-  for (const file of unused.files) {
-    lines.push(file.file)
-    for (const decl of file.declarations) {
-      const marker = decl.exported ? 'exported' : 'local'
-      lines.push(`  ${declarationLabel(decl)} ${decl.kind} ${marker} line ${decl.line}: no project references`)
-    }
-    lines.push('')
-  }
-  const count = unused.files.reduce((total, file) => total + file.declarations.length, 0)
-  lines.push(`${count} unused declaration${count === 1 ? '' : 's'} across ${unused.files.length} file${unused.files.length === 1 ? '' : 's'}`)
-  return lines.join('\n')
-}
-
-export function formatAgentDeclarationTree(tree: DeclarationTree, exportFilter: ExportFilter = 'exported'): string {
-  const lines = ['architecture']
-  for (const file of tree.files) {
-    const exported = file.declarations.filter(d => d.exported)
-    const local = file.declarations.filter(d => !d.exported)
-    const localImports = file.imports.filter(i => i.startsWith('.'))
-    const externalImports = file.imports.filter(i => !i.startsWith('.'))
-    const visibleDeclarations = exportFilter === 'exported'
-      ? exported
-      : exportFilter === 'local'
-        ? local
-        : file.declarations
-    if (!visibleDeclarations.length && !localImports.length)
-      continue
-    lines.push(file.file)
-    if (localImports.length)
-      lines.push(`  imports: ${localImports.join(', ')}`)
-    if (externalImports.length)
-      lines.push(`  external: ${externalImports.join(', ')}`)
-    if (file.reexports.length)
-      lines.push(`  reexports: ${file.reexports.join(', ')}`)
-    if (exportFilter !== 'local' && exported.length)
-      lines.push(`  exports: ${summarizeDeclarations(exported)}`)
-    if (exportFilter !== 'exported' && local.length)
-      lines.push(`  locals: ${summarizeDeclarations(local)}`)
-    else if (local.length)
-      lines.push(`  locals: ${local.length}`)
-  }
-  lines.push(`${tree.files.length} files`)
-  return lines.join('\n')
-}
-
 interface SourceRange {
   start: number
   end: number
 }
 
-function buildPotentialReferenceNames(paths: string[], cwd: string): Set<string> {
+function buildPotentialReferenceNames(paths: string[], cwd: string, engine?: EngineServices): Set<string> {
   const out = new Set<string>()
   for (const path of paths) {
-    const file = parseFile(path, cwd)
+    const file = parseFile(path, cwd, engine)
     if (!file.program)
       continue
     const ignored = ignoredTopLevelNameRanges(file.program as any, file.scriptStart)
@@ -793,84 +786,22 @@ function bindingName(node: any): string | undefined {
   return undefined
 }
 
-const RESOLVE_EXTS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.vue']
+const RESOLVE_EXTS = ['', '.ts', '.tsx', '.tsrx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 
-function resolveModuleSpecifier(fromFile: string, specifier: string): string | null {
+function resolveModuleSpecifier(fromFile: string, specifier: string, engine?: EngineServices): string | null {
   if (!specifier.startsWith('.'))
     return null
   const base = resolve(dirname(fromFile), specifier)
-  for (const ext of RESOLVE_EXTS) {
+  const suffixes = [...RESOLVE_EXTS, ...engine?.suffixes ?? []]
+  for (const ext of suffixes) {
     const candidate = `${base}${ext}`
     if (existsSync(candidate))
       return candidate
   }
-  for (const ext of RESOLVE_EXTS.slice(1)) {
+  for (const ext of suffixes.slice(1)) {
     const candidate = join(base, `index${ext}`)
     if (existsSync(candidate))
       return candidate
   }
   return null
-}
-
-function formatMermaidGraph(graph: ScanGraph): string {
-  const ids = nodeIds(graph.nodes.map(n => n.file))
-  const lines = ['flowchart LR']
-  for (const node of graph.nodes) {
-    const byKind = summarizeKinds(node.hits)
-    lines.push(`  ${ids.get(node.file)}["${escapeMermaid(`${node.file}<br/>${node.hits.length} hits${byKind ? `: ${byKind}` : ''}`)}"]`)
-  }
-  for (const edge of graph.edges)
-    lines.push(`  ${ids.get(edge.from)} -->|${escapeMermaid(edge.specifier)}| ${ids.get(edge.to)}`)
-  return lines.join('\n')
-}
-
-function formatDotGraph(graph: ScanGraph): string {
-  const lines = ['digraph ripast_scan {', '  rankdir=LR;']
-  for (const node of graph.nodes) {
-    const byKind = summarizeKinds(node.hits)
-    lines.push(`  "${escapeDot(node.file)}" [label="${escapeDot(`${node.file}\\n${node.hits.length} hits${byKind ? `: ${byKind}` : ''}`)}"];`)
-  }
-  for (const edge of graph.edges)
-    lines.push(`  "${escapeDot(edge.from)}" -> "${escapeDot(edge.to)}" [label="${escapeDot(edge.specifier)}"];`)
-  lines.push('}')
-  return lines.join('\n')
-}
-
-function summarizeKinds(hits: ScanHit[]): string {
-  const byKind: Record<string, number> = {}
-  for (const hit of hits) byKind[hit.kind] = (byKind[hit.kind] ?? 0) + 1
-  return Object.entries(byKind)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([kind, count]) => `${kind} ${count}`)
-    .join(', ')
-}
-
-function summarizeDeclarations(declarations: DeclarationTreeItem[]): string {
-  const byKind = new Map<string, string[]>()
-  for (const decl of declarations) {
-    const names = byKind.get(decl.kind) ?? []
-    names.push(declarationLabel(decl))
-    byKind.set(decl.kind, names)
-  }
-  return [...byKind.entries()]
-    .map(([kind, names]) => `${kind} ${names.join(', ')}`)
-    .join('; ')
-}
-
-function declarationLabel(decl: DeclarationTreeItem): string {
-  return decl.signature ?? decl.name
-}
-
-function nodeIds(files: string[]): Map<string, string> {
-  const out = new Map<string, string>()
-  files.forEach((file, i) => out.set(file, `n${i}`))
-  return out
-}
-
-function escapeMermaid(s: string): string {
-  return s.replaceAll('\\', '\\\\').replaceAll('"', '&quot;').replaceAll('|', '#124;')
-}
-
-function escapeDot(s: string): string {
-  return s.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
 }

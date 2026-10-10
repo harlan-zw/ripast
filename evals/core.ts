@@ -1,6 +1,6 @@
 import ts from 'typescript'
 
-export type Arm = 'ripast' | 'agent'
+export type Arm = 'ripide' | 'agent'
 export type CaseName = 'rename' | 'rename-file' | 'move'
 export const caseNames: CaseName[] = ['rename', 'rename-file', 'move']
 
@@ -12,7 +12,7 @@ export interface EvalCase {
   expected: Record<string, string>
 }
 
-/** Construct the answer independently of Ripast. Keep unrelated symbols and strings as traps. */
+/** Construct the answer independently of RipIDE. Keep unrelated symbols and strings as traps. */
 export function makeCase(name: CaseName, consumers: number): EvalCase {
   const declaration = 'export function calculateTotal(value: number) { return value * 2 }\n'
   const initial: Record<string, string> = {
@@ -37,9 +37,9 @@ export function makeCase(name: CaseName, consumers: number): EvalCase {
     'move': 'Move the calculateTotal export from src/pricing.ts to src/totals.ts. Update all consumers. Keep src/pricing.ts as an empty module.',
   }
   const commands = {
-    'rename': 'ripast rename calculateTotal computeTotal --scope src/pricing.ts --apply --no-vue',
-    'rename-file': 'ripast rename-file src/pricing.ts src/costs.ts --apply --no-vue',
-    'move': 'ripast move calculateTotal --from src/pricing.ts --to src/totals.ts --apply --no-vue',
+    'rename': 'ripide rename calculateTotal computeTotal --scope src/pricing.ts --apply --no-vue',
+    'rename-file': 'ripide rename-file src/pricing.ts src/costs.ts --apply --no-vue',
+    'move': 'ripide move calculateTotal --from src/pricing.ts --to src/totals.ts --apply --no-vue',
   }
   if (name === 'rename') {
     expected['src/pricing.ts'] = 'export function computeTotal(value: number) { return value * 2 }\n'
@@ -49,7 +49,7 @@ export function makeCase(name: CaseName, consumers: number): EvalCase {
     expected['src/costs.ts'] = declaration
   }
   else {
-    // Ripast leaves an empty source file. An empty module marker is also acceptable.
+    // RipIDE leaves an empty source file. An empty module marker is also acceptable.
     expected['src/pricing.ts'] = ''
     expected['src/totals.ts'] = declaration
   }
@@ -171,12 +171,12 @@ export function summarize(rows: Measurement[]) {
     const passed = all.filter(r => r.passed)
     return { passed: passed.length, runs: all.length, seconds: median(passed.map(r => r.seconds)), tokens: median(passed.flatMap(r => r.tokens === null ? [] : [r.tokens])) }
   }
-  const ripast = arm('ripast')
+  const ripide = arm('ripide')
   const agent = arm('agent')
   return {
-    ripast,
+    ripide,
     agent,
-    speedup: ripast.seconds && agent.seconds !== null ? agent.seconds / ripast.seconds : null,
-    tokenReduction: agent.tokens && ripast.tokens !== null ? 1 - ripast.tokens / agent.tokens : null,
+    speedup: ripide.seconds && agent.seconds !== null ? agent.seconds / ripide.seconds : null,
+    tokenReduction: agent.tokens && ripide.tokens !== null ? 1 - ripide.tokens / agent.tokens : null,
   }
 }

@@ -4,18 +4,18 @@ Mutations default to dry-run. If the target is uncertain, review the result, the
 
 | Command | Use |
 | --- | --- |
-| `ripast rename <from> <to>` | Rename a symbol and its references. |
-| `ripast replace <from> <to>` | Replace an imported binding with a project export. |
-| `ripast move <symbol> --from <a> --to <b>` | Move an export and update imports. |
-| `ripast delete <symbol> --from <file>` | Delete a declaration without references. |
-| `ripast rename-file <old> <new>` | Rename a file and update importers, including Vue consumers. |
-| `ripast css-class-rename <from> <to>` | Migrate class tokens. Use `--map <file.json>` for bulk mappings. |
-| `ripast vue-template-wrap <selector> <wrapper>` | Wrap matching Vue elements. |
-| `ripast vue-template-unwrap <selector>` | Remove matching wrappers, preserving children. |
-| `ripast scan <pattern>` | Resolve uncertain occurrences. |
-| `ripast css-class-scan` | Discover class mappings when the target is unknown. |
-| `ripast tree` | Show declarations and imports. |
-| `ripast unused` | Find declarations without project references. |
+| `ripide rename <from> <to>` | Rename a symbol and its references. |
+| `ripide replace <from> <to>` | Replace an imported binding with a project export. |
+| `ripide move <symbol> --from <a> --to <b>` | Move an export and update imports. |
+| `ripide delete <symbol> --from <file>` | Delete a declaration without references. |
+| `ripide rename-file <old> <new>` | Rename a file and update importers, including Vue consumers. |
+| `ripide css-class-rename <from> <to>` | Migrate class tokens. Use `--map <file.json>` for bulk mappings. |
+| `ripide vue-template-wrap <selector> <wrapper>` | Wrap matching Vue elements. |
+| `ripide vue-template-unwrap <selector>` | Remove matching wrappers, preserving children. |
+| `ripide scan <pattern>` | Resolve uncertain occurrences. |
+| `ripide css-class-scan` | Discover class mappings when the target is unknown. |
+| `ripide tree` | Show declarations and imports. |
+| `ripide unused` | Find declarations without project references. |
 
 ## Scope and output
 
@@ -24,14 +24,30 @@ Quote `--glob` patterns. CSS transforms affect strings, Vue classes, and CSS `@a
 Use a file glob when the task limits files. A Vue glob also includes script strings in Vue files.
 Use `--no-vue` only when there are no Vue consumers or Nuxt auto-imports.
 Template commands accept `--scope <file>` and `--root-only`.
-Mutation `--json` includes complete before/after source. Select fields before printing large results.
+Every JSON response contains `_tag`, `command`, `base`, and `data`.
+Mutation tags are `Preview`, `Applied`, `Refused`, or `Empty`. Failures use `Error`.
+Compact mutation JSON returns `data.verification` and `data.changes: [[path, lines]]`.
+Verification entries use `[checker, scope, files, newErrors, ignoredErrors?]`.
+Built-in checkers are `typescript` and `vue`. SDK extensions can use other checker names.
+Counts describe checks that ran against proposed content.
+Skipped checks return `disabled`, `no-changes`, or `not-applicable`.
+When ranges shift, entries use `[path, beforeLines, afterLines]`. Moves use `data.moves: [[from, to]]`.
+Lines are one-based and inclusive. Commas separate ranges; `3+` marks a gap after line 3.
+After apply, earlier file reads are outdated. Read changed ranges only when current code is needed.
+Follow any editing tool requirement for a fresh read. Do not reread every changed file just to confirm success.
+Use `--profile full --json` when you need complete before/after source.
+Use `--artifact <new-file.json>` to preserve the complete plan before apply.
+Display limits never narrow writes or the complete artifact.
+Save large results outside model context. Read the required fields or changed ranges on demand.
+Put actionable errors before optional previews. Preserve omitted details in a complete artifact.
+Batch independent searches. Keep dependent mutations and verification sequential.
 
 
 ## Examples
 
 ```bash
-ripast scan useStore --profile agent
-ripast rename useStore useAppStore --scope src/store.ts --profile full
+ripide scan useStore --profile agent
+ripide rename useStore useAppStore --scope src/store.ts --profile full
 ```
 
 These are separate task examples. Run only the requested operation.

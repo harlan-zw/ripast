@@ -1,24 +1,28 @@
+import type { EngineServices } from './engine.ts'
+import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
 import type { LspTextEdit, TsServer } from './ts-server.ts'
 import type { FileChange } from './util.ts'
+import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
-import { basename, dirname, extname, relative, resolve } from 'node:path'
+import { existsSync, lstatSync, readFileSync } from 'node:fs'
+import { dirname, extname, relative, resolve } from 'node:path'
 import process from 'node:process'
-import { loadAdapter } from './adapter.ts'
 import { computeSpecifier } from './imports.ts'
-import { findTsconfig, projectScriptFiles, resolveVerifyMode } from './project.ts'
+import { timed, timedAsync } from './profile.ts'
+import { assertSourceSupport, findTsconfig, projectScriptFiles, resolveVerificationOptions } from './project.ts'
 import { applyLspEdits, offsetOfPosition, startTsServer } from './ts-server.ts'
-import { findFiles, mergeFileChanges } from './util.ts'
-import { findRegressions } from './verify.ts'
-import { hyphenateVueName, rewriteTemplateReferences } from './vue-template.ts'
+import { isCaseOnlyFileRename, mergeFileChanges } from './util.ts'
+import { createVerification } from './verification.ts'
+import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface RenameFileOptions {
+  engine?: EngineServices
+  profile?: ProfileSink
   cwd?: string
   /** Configured project used for import rewrites and verification. */
   tsconfig?: string
-  verify?: boolean | VerifyMode
-  vue?: boolean
+  verifyMode?: VerifyMode
 }
 
 const TS_LIKE_RE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
@@ -33,11 +37,17 @@ export interface RenameFileResult {
   selfChange: { before: string, after: string } | null
   scanned: number
   regressions: Regression[]
+  verification: Verification
   warnings: string[]
 }
 
 export async function runRenameFile(oldPath: string, newPath: string, opts: RenameFileOptions = {}): Promise<RenameFileResult> {
+  const verifyMode = resolveVerificationOptions(opts)
   const cwd = opts.cwd ?? process.cwd()
+  const engine = opts.engine
+  assertSourceSupport(cwd, engine)
+  engine?.assertOperation({ operation: 'renameFile', from: oldPath, to: newPath }, cwd)
+  const profile = opts.profile
   const oldAbs = resolve(cwd, oldPath)
   const inferredNewPath = extname(newPath) ? newPath : `${newPath}${extname(oldPath)}`
   const newAbs = resolve(cwd, inferredNewPath)
@@ -47,52 +57,34 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
     const hint = looksSmushed
       ? ` (path contains whitespace; if you meant two arguments, quote each path separately: rename-file "<old>" "<new>")`
       : ''
-    throw new Error(`ripast rename-file: source "${oldPath}" does not exist${hint}`)
+    throw new Error(`ripide rename-file: source "${oldPath}" does not exist${hint}`)
   }
   if (lstatSync(oldAbs).isSymbolicLink())
-    throw new Error(`ripast rename-file: source "${oldPath}" is a symbolic link. Rename its target file instead.`)
+    throw new Error(`ripide rename-file: source "${oldPath}" is a symbolic link. Rename its target file instead.`)
   // Inspect the entry itself: existsSync follows symlinks and misses dangling targets.
   const target = lstatSync(newAbs, { throwIfNoEntry: false })
-  const source = lstatSync(oldAbs)
-  const caseOnlyRename = oldAbs !== newAbs
-    && dirname(oldAbs) === dirname(newAbs)
-    && basename(oldAbs).toLowerCase() === basename(newAbs).toLowerCase()
-    && target?.isFile()
-    && source.dev === target.dev && source.ino === target.ino
-    && !readdirSync(dirname(newAbs)).includes(basename(newAbs))
-  if (target && !caseOnlyRename)
-    throw new Error(`ripast rename-file: target "${newPath}" already exists`)
+  if (target && !isCaseOnlyFileRename(oldAbs, newAbs))
+    throw new Error(`ripide rename-file: target "${newPath}" already exists`)
 
-  const tsconfigPath = opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd)
+  const tsconfigPath = timed(profile, 'find tsconfig', () => opts.tsconfig ? resolve(cwd, opts.tsconfig) : findTsconfig(cwd))
   if (!tsconfigPath)
-    throw new Error('ripast rename-file: no tsconfig.json found; required for cross-file import rewriting')
+    throw new Error('ripide rename-file: no tsconfig.json found; required for cross-file import rewriting')
 
-  const verifyMode = resolveVerifyMode(opts.verify)
-  const vueAdapter = opts.vue === false ? null : await loadAdapter('vue')
+  const adapter = engine?.adapter ?? null
   const warnings: string[] = []
-  const server = !vueAdapter || verifyMode !== 'none' ? await startTsServer(cwd, { tsconfig: tsconfigPath }) : null
+  const server = !adapter || verifyMode !== 'none' ? await timedAsync(profile, 'server start', () => startTsServer(cwd, { tsconfig: tsconfigPath })) : null
   try {
     let consumerChanges: FileChange[]
-    if (vueAdapter) {
-      consumerChanges = await vueAdapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs)
-      const templateChanges = applyComponentTemplateRenameFallback(cwd, oldAbs, newAbs, consumerChanges)
-      mergeFileChanges(consumerChanges, templateChanges)
-      if (vueAdapter.finalizeFileRename) {
-        const finalize = await vueAdapter.finalizeFileRename(cwd, oldAbs, newAbs, consumerChanges)
+    if (adapter) {
+      consumerChanges = await timedAsync(profile, 'file rename transform', () => adapter.applyFileRenameEdits(tsconfigPath, cwd, oldAbs, newAbs))
+      if (adapter.finalizeFileRename) {
+        const finalize = await adapter.finalizeFileRename(cwd, oldAbs, newAbs, consumerChanges)
         mergeFileChanges(consumerChanges, finalize.changes)
         warnings.push(...finalize.warnings)
       }
     }
     else {
-      // No Vue adapter available (e.g. `npx @ripast/cli` without @ripast/vue
-      // installed). A pure-TS file rename does not need it: the TypeScript
-      // server rewrites every importing file on its own.
-      if (oldAbs.endsWith('.vue') || newAbs.endsWith('.vue'))
-        throw new Error('ripast rename-file: renaming .vue files requires the Vue adapter (install @ripast/vue)')
-      consumerChanges = await tsOnlyFileRename(server!, cwd, oldAbs, newAbs)
-      const vueConsumers = findFiles(basename(oldAbs, extname(oldAbs)), { cwd, glob: '*.vue' })
-      if (vueConsumers.length)
-        warnings.push(`${vueConsumers.length} .vue file(s) reference this name and were not checked; install @ripast/vue to rewrite .vue import sites`)
+      consumerChanges = await timedAsync(profile, 'file rename transform', () => tsOnlyFileRename(server!, cwd, oldAbs, newAbs))
     }
 
     const selfChangeRaw = consumerChanges.find(c => c.path === oldAbs || c.path === newAbs)
@@ -100,19 +92,24 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       ? { before: selfChangeRaw.before, after: selfChangeRaw.after }
       : null
     const consumerNoSelf = consumerChanges.filter(c => c.path !== oldAbs && c.path !== newAbs
-      && !c.path.split(/[\\/]/).includes('.nuxt') && !vueAdapter?.isGeneratedPath?.(cwd, c.path))
+      && !adapter?.isGeneratedPath?.(cwd, c.path))
 
+    const verification = createVerification(verifyMode, true)
     const regressions: Regression[] = []
     if (verifyMode !== 'none') {
-      if (vueAdapter && consumerNoSelf.some(c => c.path.endsWith('.vue'))) {
-        regressions.push(...await vueAdapter.regressions(tsconfigPath, cwd, [...consumerNoSelf, {
-          path: newAbs,
-          rel: relative(cwd, newAbs),
-          before: '',
-          after: selfChange?.after ?? readFileSync(oldAbs, 'utf8'),
-        }]))
+      const extensionChanges = [...consumerNoSelf, {
+        path: newAbs,
+        rel: relative(cwd, newAbs),
+        before: '',
+        after: selfChange?.after ?? readFileSync(oldAbs, 'utf8'),
+      }]
+      if (verifyMode === 'project') {
+        regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, extensionChanges, tsconfigPath, engine, verification.extension)))
       }
-      regressions.push(...await verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode))
+      else if (adapter && consumerNoSelf.some(c => engine?.owns(c.path))) {
+        regressions.push(...await timedAsync(profile, 'extension verify', () => adapter.regressions(tsconfigPath, cwd, extensionChanges, verification.extension(adapter.name))))
+      }
+      regressions.push(...await timedAsync(profile, 'verify', () => verifyFileRename(server!, cwd, oldAbs, newAbs, consumerNoSelf, selfChange, verifyMode, (consumer, specifier) => adapter?.isPlannedImportTarget?.(cwd, consumer, specifier, newAbs) ?? false, verification)))
     }
 
     return {
@@ -121,6 +118,7 @@ export async function runRenameFile(oldPath: string, newPath: string, opts: Rena
       selfChange,
       scanned: consumerNoSelf.length + 1,
       regressions,
+      verification: verification.result(),
       warnings,
     }
   }
@@ -151,7 +149,7 @@ const SPECIFIER_RE = /^(['"]?)(\.{1,2}\/.*?)\1$/
 const MODULE_EXT_RE = /\.(?:tsx?|jsx?|mts|cts|mjs|cjs)$/
 
 // The server picks module specifier endings from its own preferences (it
-// wrote `./aa.js` for an import that read `./a.ts`). ripast keeps the style
+// wrote `./aa.js` for an import that read `./a.ts`). ripide keeps the style
 // the file already used: same extension, or none. The server edits the string
 // contents, sometimes with the quotes and sometimes without.
 function keepSpecifierStyle(text: string, edit: LspTextEdit, path: string, oldAbs: string, newAbs: string): LspTextEdit {
@@ -168,7 +166,7 @@ function keepSpecifierStyle(text: string, edit: LspTextEdit, path: string, oldAb
   return { ...edit, newText: `${newMatch[1]}${stripped}${oldExt}${newMatch[1]}` }
 }
 
-async function verifyFileRename(
+export async function verifyFileRename(
   server: TsServer,
   cwd: string,
   oldAbs: string,
@@ -176,6 +174,8 @@ async function verifyFileRename(
   consumerChanges: FileChange[],
   selfChange: { before: string, after: string } | null,
   verifyMode: VerifyMode,
+  isPlannedImportTarget: (consumer: string, specifier: string) => boolean,
+  verification: ReturnType<typeof createVerification>,
 ): Promise<Regression[]> {
   const consumerTsChanges = consumerChanges.filter(c => TS_LIKE_RE.test(c.path))
   const moveIsTs = TS_LIKE_RE.test(oldAbs) && TS_LIKE_RE.test(newAbs)
@@ -201,10 +201,14 @@ async function verifyFileRename(
   const files = verifyMode === 'project'
     ? projectScriptFiles(cwd)
     : [...(moveIsTs ? [newAbs] : []), ...consumerTsChanges.map(c => c.path)]
-  const regressions = await findRegressions(server, changes, files)
-  return regressions.filter(r => r.file !== oldAbs
+  const regressions = await findRegressions(server, changes, files, verification.typescript)
+  const kept = regressions.filter(r => r.file !== oldAbs
     && !isUnresolvedNewPath(r, newAbs)
-    && !isUnresolvedRenamedSpecifier(r, newAbs, renamedSpecifiers))
+    && !isUnresolvedRenamedSpecifier(r, newAbs, renamedSpecifiers)
+    && !(r.code === CANNOT_FIND_MODULE_CODE && consumerTsChanges.some(change => change.path === r.file)
+      && isPlannedImportTarget(r.file, MODULE_IN_MESSAGE_RE.exec(r.message)?.[1] ?? '')))
+  verification.ignore('typescript', regressions.length - kept.length)
+  return kept
 }
 
 const CANNOT_FIND_MODULE_CODE = 2307
@@ -228,33 +232,4 @@ function isUnresolvedNewPath(regression: Regression, newAbs: string): boolean {
   const base = resolve(dirname(regression.file), specifier)
   const target = newAbs.replace(MODULE_EXT_RE, '')
   return base === newAbs || base === target || base.replace(MODULE_EXT_RE, '') === target
-}
-
-function applyComponentTemplateRenameFallback(cwd: string, oldAbs: string, newAbs: string, changes: FileChange[]): FileChange[] {
-  if (!oldAbs.endsWith('.vue') || !newAbs.endsWith('.vue'))
-    return []
-  const oldName = basename(oldAbs, '.vue')
-  const newName = basename(newAbs, '.vue')
-  if (oldName === newName)
-    return []
-  const byPath = new Map(changes.map(change => [change.path, change]))
-  const candidates = new Set([
-    ...findFiles(oldName, { cwd, glob: '*.vue' }),
-    ...findFiles(hyphenateVueName(oldName), { cwd, glob: '*.vue' }),
-  ])
-  const out: FileChange[] = []
-  for (const path of candidates) {
-    const before = byPath.get(path)?.before ?? readFileSync(path, 'utf8')
-    const baseAfter = byPath.get(path)?.after ?? before
-    const after = rewriteTemplateReferences(baseAfter, oldName, newName)
-    if (after === baseAfter)
-      continue
-    out.push({
-      path,
-      rel: relative(cwd, path),
-      before,
-      after,
-    })
-  }
-  return out
 }

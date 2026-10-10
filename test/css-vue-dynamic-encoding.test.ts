@@ -1,6 +1,7 @@
-import { runCssClassRename, runCssClassScan } from '@ripast/core'
 import { compileTemplate, parse } from '@vue/compiler-sfc'
+import { runCssClassRename, runCssClassScan } from 'ripide-api'
 import { describe, expect, it } from 'vitest'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
 
 const attributes = [
@@ -26,7 +27,7 @@ describe('vue dynamic class encoding', () => {
     const before = '<template><div :class="active ? String.raw`old-token` : \'flex\'" /></template>'
     const fx = makeFixture({ 'Page.vue': before }, false)
     try {
-      const result = await runCssClassRename(new Map([['old-token', replacement]]), { cwd: fx.dir })
+      const result = await runCssClassRename(new Map([['old-token', replacement]]), { ...{ cwd: fx.dir }, engine: vueServices() })
       expect(result.changes).toEqual([])
       expect(fx.read('Page.vue')).toBe(before)
       expect(await classValue(fx.read('Page.vue'), true)).toBe('old-token')
@@ -40,16 +41,16 @@ describe('vue dynamic class encoding', () => {
     const before = `<template><div ${attribute} /></template>`
     const fx = makeFixture({ 'Page.vue': before }, false)
     try {
-      expect(runCssClassScan({ cwd: fx.dir, pattern: ['old-token'] })).toEqual([{ token: 'old-token', count: 1, files: ['Page.vue'] }])
-      const result = await runCssClassRename(new Map([['old-token', replacement]]), { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir, pattern: ['old-token'] }, engine: vueServices() })).toEqual([{ token: 'old-token', count: 1, files: ['Page.vue'] }])
+      const result = await runCssClassRename(new Map([['old-token', replacement]]), { ...{ cwd: fx.dir }, engine: vueServices() })
       expect(result.changes.map(c => c.rel)).toEqual(['Page.vue'])
       const after = result.changes[0].after
       expect(await classValue(after, true)).toBe(replacement)
       expect(await classValue(after, false)).toBe('flex')
       expect(fx.read('Page.vue')).toBe(before)
       fx.write('Page.vue', after)
-      expect(runCssClassScan({ cwd: fx.dir, pattern: [replacement] })).toEqual([{ token: replacement, count: 1, files: ['Page.vue'] }])
-      const roundtrip = await runCssClassRename(new Map([[replacement, 'new-token']]), { cwd: fx.dir })
+      expect(runCssClassScan({ ...{ cwd: fx.dir, pattern: [replacement] }, engine: vueServices() })).toEqual([{ token: replacement, count: 1, files: ['Page.vue'] }])
+      const roundtrip = await runCssClassRename(new Map([[replacement, 'new-token']]), { ...{ cwd: fx.dir }, engine: vueServices() })
       expect(await classValue(roundtrip.changes[0].after, true)).toBe('new-token')
     }
     finally { fx.cleanup() }

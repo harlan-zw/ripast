@@ -1,5 +1,6 @@
 import { parseSync } from 'oxc-parser'
 import { isReferenceIdentifier, ScopeTracker, walk } from 'oxc-walker'
+import { parseTsrxSource } from './tsrx.ts'
 
 // Top-level declarations as data, from oxc. Positions are offsets into the
 // source the program was parsed from.
@@ -41,6 +42,8 @@ const KIND_BY_TYPE: Record<string, DeclarationKind> = {
 export const NAMED_DECLARATION_TYPES = new Set(Object.keys(KIND_BY_TYPE))
 
 export function parseSource(path: string, source: string): ParsedSource {
+  if (path.endsWith('.tsrx'))
+    return parseTsrxSource(path, source)
   const result = parseSync(path, source)
   return { program: result.program, comments: (result.comments ?? []).map((c: any) => ({ start: c.start, end: c.end })) }
 }

@@ -16,7 +16,7 @@ export function unboundNuxtSymbols(path: string, source: string, symbols: Set<st
   if (errors.length)
     throw errors[0]
   if (descriptor.template?.src)
-    throw new Error(`ripast ${purpose.toLowerCase()}: cannot inspect an external Nuxt template in ${path}. Use an inline template first.`)
+    throw new Error(`ripide ${purpose.toLowerCase()}: cannot inspect an external Nuxt template in ${path}. Use an inline template first.`)
   const extension = [descriptor.script?.lang, descriptor.scriptSetup?.lang].some(lang => lang === 'tsx' || lang === 'jsx') ? 'tsx' : 'ts'
   const normal = inspectScript(`${path}.${extension}`, descriptor.script?.content ?? '')
   for (const name of unresolvedReferences(normal.file, normal.checker, symbols))
@@ -65,7 +65,7 @@ export function unboundNuxtSymbols(path: string, source: string, symbols: Set<st
         }
         if (propsBindings?.[name] === 'props' || propsBindings?.[name] === 'props-aliased') {
           if (purpose === 'Move' && needed.has(name))
-            throw new Error(`ripast move: "${name}" is a Nuxt prop in ${path}. Use an explicit import alias before moving it.`)
+            throw new Error(`ripide move: "${name}" is a Nuxt prop in ${path}. Use an explicit import alias before moving it.`)
         }
         else if (!needed.has(name)) {
           needed.set(name, descriptor.scriptSetup ? 'scriptSetup' : 'script')
@@ -102,7 +102,7 @@ export function inspectSetup(path: string, normal: string, source: string) {
   const statement = script.file.statements[script.file.statements.length - 1]!
   if (!ts.isExpressionStatement(statement) || !ts.isParenthesizedExpression(statement.expression)
     || !ts.isFunctionExpression(statement.expression.expression)) {
-    throw new Error(`ripast: cannot inspect the Vue setup scope in ${path}`)
+    throw new Error(`ripide: cannot inspect the Vue setup scope in ${path}`)
   }
   return { ...script, body: statement.expression.expression.body, prefixLength: prefix.length }
 }

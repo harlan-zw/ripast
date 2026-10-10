@@ -1,8 +1,9 @@
-import type { FileChange } from './util.ts'
+import type { Verification } from 'ripide-api'
+import type { FileChange } from 'ripide-api/adapter'
 import { existsSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import process from 'node:process'
-import { findFiles } from './util.ts'
+import { findVueFiles } from './source.ts'
 import { hyphenateVueName, parseTemplateSelector, parseTemplateWrapper, unwrapTemplateElements, wrapTemplateElements } from './vue-template.ts'
 
 export interface VueTemplateWrapOptions {
@@ -15,15 +16,16 @@ export interface VueTemplateWrapOptions {
 export interface VueTemplateWrapResult {
   changes: FileChange[]
   scanned: number
+  verification: Verification
   regressions: never[]
 }
 
 function resolveScope(scope: string, cwd: string): string {
   const abs = resolve(cwd, scope)
   if (!existsSync(abs))
-    throw new Error(`ripast: --scope file "${scope}" does not exist`)
+    throw new Error(`ripide: --scope file "${scope}" does not exist`)
   if (!abs.endsWith('.vue'))
-    throw new Error(`ripast: --scope must point at a .vue file (got "${scope}")`)
+    throw new Error(`ripide: --scope must point at a .vue file (got "${scope}")`)
   return abs
 }
 
@@ -33,13 +35,13 @@ function candidateFiles(tag: string, opts: VueTemplateWrapOptions): string[] {
     return [resolveScope(opts.scope, cwd)]
   const glob = opts.glob ?? '*.vue'
   const seen = new Set<string>()
-  for (const path of findFiles(tag, { cwd, glob })) {
+  for (const path of findVueFiles(tag, { cwd, glob })) {
     if (path.endsWith('.vue'))
       seen.add(path)
   }
   const kebab = hyphenateVueName(tag)
   if (kebab !== tag) {
-    for (const path of findFiles(kebab, { cwd, glob })) {
+    for (const path of findVueFiles(kebab, { cwd, glob })) {
       if (path.endsWith('.vue'))
         seen.add(path)
     }
@@ -60,7 +62,7 @@ export async function runVueTemplateWrap(selector: string, wrapper: string, opts
     if (after !== before)
       changes.push({ path, rel: relative(cwd, path), before, after })
   }
-  return { changes, scanned: files.length, regressions: [] }
+  return { changes, scanned: files.length, regressions: [], verification: { _tag: 'Skipped', reason: changes.length ? 'not-applicable' : 'no-changes' } }
 }
 
 export async function runVueTemplateUnwrap(selector: string, opts: VueTemplateWrapOptions = {}): Promise<VueTemplateWrapResult> {
@@ -75,5 +77,5 @@ export async function runVueTemplateUnwrap(selector: string, opts: VueTemplateWr
     if (after !== before)
       changes.push({ path, rel: relative(cwd, path), before, after })
   }
-  return { changes, scanned: files.length, regressions: [] }
+  return { changes, scanned: files.length, regressions: [], verification: { _tag: 'Skipped', reason: changes.length ? 'not-applicable' : 'no-changes' } }
 }

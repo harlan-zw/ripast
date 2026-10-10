@@ -1,7 +1,10 @@
+import type { EngineServices } from './engine.ts'
 import type { ImportInfo } from './imports.ts'
+import type { ProfileSink } from './profile.ts'
 import type { VerifyMode } from './project.ts'
-import type { TsServer } from './ts-server.ts'
+import type { SourceSite, TsServer } from './ts-server.ts'
 import type { FileChange, TextEdit } from './util.ts'
+import type { Verification } from './verification.ts'
 import type { Regression } from './verify.ts'
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
@@ -9,15 +12,19 @@ import process from 'node:process'
 import { walk } from 'oxc-walker'
 import { listTopLevelDeclarations, parseSource, unrelatedVariableIdentifierOffsets } from './declarations.ts'
 import { addOrMergeImport, computeSpecifier, isImportEmpty, listImports, localNameOf, parseProgram, pruneUnusedImports, renderImport, rewriteImports, usedIdentifierNames } from './imports.ts'
-import { isVuePath, projectScriptFiles, resolveVerifyMode, verifyScope } from './project.ts'
+import { timed, timedAsync } from './profile.ts'
+import { assertSourceSupport, findTsconfig, isExtensionPath, projectScriptFiles, resolveVerificationOptions, verifyScope } from './project.ts'
 import { startTsServer } from './ts-server.ts'
 import { applyTextEdits, findFilesMany } from './util.ts'
-import { findRegressions } from './verify.ts'
+import { createVerification } from './verification.ts'
+import { findExtensionRegressions, findRegressions } from './verify.ts'
 
 export interface ReplaceOptions {
+  engine?: EngineServices
+  profile?: ProfileSink
   cwd?: string
   glob?: string | string[]
-  verify?: boolean | VerifyMode
+  verifyMode?: VerifyMode
   targetScope?: string
   /** Import specifier for the validated target, including framework aliases. */
   targetImport?: string
@@ -27,6 +34,7 @@ export interface ReplaceResult {
   changes: FileChange[]
   scanned: number
   regressions: Regression[]
+  verification: Verification
 }
 
 interface ReplacementTarget {
@@ -37,31 +45,39 @@ interface ReplacementTarget {
 }
 
 export async function runReplace(from: string, to: string, opts: ReplaceOptions = {}): Promise<ReplaceResult> {
+  const verifyMode = resolveVerificationOptions(opts, 'project')
   const cwd = opts.cwd ?? process.cwd()
-  const verifyMode = resolveVerifyMode(opts.verify)
+  const profile = opts.profile
+  const engine = opts.engine
+  assertSourceSupport(cwd, engine)
+  engine?.assertOperation({ operation: 'replace', from, to }, cwd)
   const targetPaths = opts.targetScope
     ? [resolve(cwd, opts.targetScope)]
-    : findFilesMany([to, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path))
+    : timed(profile, 'target discovery', () => findFilesMany([to, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine)))
   if (opts.targetImport !== undefined && (!opts.targetImport || /[\s'"\\]/.test(opts.targetImport)))
-    throw new Error('ripast replace: --target-import requires an import path without whitespace, quotes, or backslashes')
+    throw new Error('ripide replace: --target-import requires an import path without whitespace, quotes, or backslashes')
 
-  const server = await startTsServer(cwd)
+  const server = await timedAsync(profile, 'server start', () => startTsServer(cwd))
   try {
-    const target = await findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope)
+    const target = await timedAsync(profile, 'resolve replacement', () => findReplacementTarget(server, targetPaths, to, cwd, opts.targetScope))
     // A wrapper may call the imported symbol it replaces. Rewriting it creates recursion.
-    const candidatePaths = findFilesMany([from, '\\u'], { cwd, glob: opts.glob }).filter(path => !isVuePath(path) && !target.declarationFiles.includes(path))
+    const candidatePaths = timed(profile, 'candidate files', () => findFilesMany([from, '\\u'], { cwd, engine, glob: opts.glob }).filter(path => !isExtensionPath(path, engine) && !target.declarationFiles.includes(path)))
     const projectStyle = inferProjectSpecifierStyle(cwd)
     const changes: FileChange[] = []
+    const referenceCache = new Map<string, SourceSite[]>()
     for (const path of candidatePaths) {
       const before = readFileSync(path, 'utf8')
-      const after = await replaceImportedSymbol(server, path, before, from, to, target, projectStyle, opts.targetImport)
+      const after = await replaceImportedSymbol(server, referenceCache, path, before, from, to, target, projectStyle, opts.targetImport)
       if (after !== before)
         changes.push({ path, rel: relative(cwd, path), before, after })
     }
-    const regressions = verifyMode === 'none'
+    const verification = createVerification(verifyMode, !!changes.length)
+    const regressions = verifyMode === 'none' || !changes.length
       ? []
-      : await findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), opts.glob))
-    return { changes, scanned: candidatePaths.length, regressions }
+      : await timedAsync(profile, 'verify', () => findRegressions(server, changes, verifyScope(verifyMode, cwd, candidatePaths, changes.map(c => c.path), engine), verification.typescript))
+    if (verifyMode === 'project')
+      regressions.push(...await timedAsync(profile, 'extension verify', () => findExtensionRegressions(cwd, changes, findTsconfig(cwd), engine, verification.extension)))
+    return { changes, scanned: candidatePaths.length, regressions, verification: verification.result() }
   }
   finally {
     server.dispose()
@@ -111,13 +127,13 @@ async function findReplacementTarget(server: TsServer, paths: string[], symbol: 
   }
   if (!matches.length) {
     if (targetScope)
-      throw new Error(`ripast replace: no exported declaration of "${symbol}" in ${targetScope}`)
-    throw new Error(`ripast replace: no exported declaration of "${symbol}" found in project`)
+      throw new Error(`ripide replace: no exported declaration of "${symbol}" in ${targetScope}`)
+    throw new Error(`ripide replace: no exported declaration of "${symbol}" found in project`)
   }
   const uniqueFiles = new Set(matches.map(m => relative(cwd, m.filePath)))
   if (uniqueFiles.size > 1) {
     throw new Error(
-      `ripast replace: "${symbol}" is exported from multiple files (${[...uniqueFiles].join(', ')}). `
+      `ripide replace: "${symbol}" is exported from multiple files (${[...uniqueFiles].join(', ')}). `
       + `Pass --target-scope <file> to pick one.`,
     )
   }
@@ -131,7 +147,7 @@ interface ImportedBinding {
   offset: number
 }
 
-async function replaceImportedSymbol(server: TsServer, path: string, source: string, from: string, to: string, target: ReplacementTarget, projectStyle: (path: string) => string, targetImport?: string): Promise<string> {
+async function replaceImportedSymbol(server: TsServer, referenceCache: Map<string, SourceSite[]>, path: string, source: string, from: string, to: string, target: ReplacementTarget, projectStyle: (path: string) => string, targetImport?: string): Promise<string> {
   const program = parseProgram(path, source)
   const imports = listImports(source, path, program)
   const bindings: ImportedBinding[] = []
@@ -169,7 +185,7 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
       if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') && node.name === from)
         bindingNames.add(node.start)
       if (node.type === 'Identifier' && node.name === from && source.slice(node.start, node.end).includes('\\u') && !unrelated.has(node.start))
-        throw new Error(`ripast replace: TypeScript cannot resolve escaped references to "${from}" in ${path}`)
+        throw new Error(`ripide replace: TypeScript cannot resolve escaped references to "${from}" in ${path}`)
       if ((node.type === 'MemberExpression' && !node.computed) || node.type === 'JSXMemberExpression')
         qualifiedNames.add(node.property.start)
       if (node.type === 'TSQualifiedName')
@@ -194,7 +210,7 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   const edits: TextEdit[] = []
   let replaced = false
   for (const binding of bindings) {
-    for (const ref of await server.references(path, binding.offset)) {
+    for (const ref of await cachedReferences(server, referenceCache, path, binding.offset)) {
       if (ref.path !== path || imports.some(i => ref.start >= i.start && ref.start < i.end))
         continue
       // References can follow the exported symbol through other local aliases,
@@ -252,8 +268,22 @@ async function replaceImportedSymbol(server: TsServer, path: string, source: str
   return pruneUnusedImports(withImport, path)
 }
 
+async function cachedReferences(server: TsServer, cache: Map<string, SourceSite[]>, path: string, offset: number): Promise<SourceSite[]> {
+  const key = `${path}:${offset}`
+  const cached = cache.get(key)
+  if (cached)
+    return cached
+  const references = await server.references(path, offset)
+  cache.set(key, references)
+  // The server reports every reference to this symbol. Each reported site
+  // shares that result while the operation still reads the original sources.
+  for (const reference of references)
+    cache.set(`${reference.path}:${reference.start}`, references)
+  return references
+}
+
 function relativeScriptSpecifier(specifier: string): boolean {
-  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|vue|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
+  return specifier.startsWith('.') && !/[?#]/.test(specifier) && !/\.(?:json|css|scss|sass|less|svg|png|jpe?g|webp|woff2?|wasm)$/.test(specifier)
 }
 
 function inferProjectSpecifierStyle(cwd: string): (path: string) => string {

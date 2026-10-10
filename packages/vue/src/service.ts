@@ -1,16 +1,16 @@
-import type { FileChange, TextEdit } from '@ripast/core/adapter'
 import type { LanguageService, LanguageServiceEnvironment, ProjectContext } from '@volar/language-service'
 import type { TypeScriptProjectHost } from '@volar/typescript'
+import type { FileChange, TextEdit } from 'ripide-api/adapter'
 import type { WorkspaceEdit } from 'vscode-languageserver-protocol'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
-import { applyTextEdits, offsetOfPosition } from '@ripast/core/adapter'
 import ts from '@typescript/typescript6'
 import { createLanguage, createLanguageService, createUriMap, FileType } from '@volar/language-service'
 import { createLanguageServiceHost, resolveFileLanguageId } from '@volar/typescript'
 import { createParsedCommandLine, createVueLanguagePlugin, getAllExtensions } from '@vue/language-core'
 import { createVueLanguageServicePlugins } from '@vue/language-service'
+import { applyTextEdits, offsetOfPosition } from 'ripide-api/adapter'
 import { create as createTypeScriptServicePlugins } from 'volar-service-typescript'
 import { TextDocument } from 'vscode-languageserver-textdocument'
 import { URI } from 'vscode-uri'
@@ -139,7 +139,7 @@ export function vueProjectConfigs(tsconfigPath: string): { tsconfigPath: string,
       return
     seen.add(path)
     if (!existsSync(path))
-      throw new Error(`ripast: cannot inspect the referenced Vue project ${path}`)
+      throw new Error(`ripide: cannot inspect the referenced Vue project ${path}`)
     const { commandLine, fileNames } = withFilteredConsoleWarn(() => readVueProject(path))
     // Each project retains its own compiler options and path aliases.
     if (fileNames.length || !commandLine.projectReferences?.length)
@@ -158,8 +158,12 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
   const overlays = new Map<string, string>()
   const roots = new Set(fileNames.map(file => resolve(cwd, file)))
   const overlayDirectories = new Set<string>()
-  const sys: ts.System = {
+  let projectVersion = 0
+  const sys: ts.System & { readonly version: number } = {
     ...ts.sys,
+    // Volar can retain its project version when only script overlays change.
+    // Its host includes sys.version, so every overlay invalidates TypeScript.
+    get version() { return projectVersion },
     fileExists: file => overlays.has(normalizeFileName(file)) || ts.sys.fileExists(file),
     readFile: file => overlays.get(normalizeFileName(file)) ?? ts.sys.readFile(file),
     directoryExists: directory => overlayDirectories.has(normalizeFileName(directory)) || ts.sys.directoryExists(directory),
@@ -194,7 +198,6 @@ function createVueServiceInternal(tsconfigPath: string, cwd: string): VueService
     },
   )
 
-  let projectVersion = 0
   const projectHost: TypeScriptProjectHost = {
     getCurrentDirectory: () => cwd.replace(/\\/g, '/'),
     getCompilationSettings: () => commandLine.options,

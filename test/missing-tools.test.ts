@@ -4,8 +4,11 @@ import { relative, resolve } from 'node:path'
 import { it, vi } from 'vitest'
 import { findFiles, findFilesMany } from '../packages/core/src/adapter.ts'
 import { scan } from '../packages/core/src/index.ts'
-import vueAdapter from '../packages/vue/src/index.ts'
+import { createVueExtension } from '../packages/vue/src/index.ts'
+import { vueServices } from './engine-fixture.ts'
 import { makeFixture } from './helpers.ts'
+
+const vueAdapter = createVueExtension().semantic!
 
 it.each([
   ['ignored directories', { '.git/config': '', '.gitignore': 'ignored/\n', 'ignored/a.ts': 'target' }, ['*.ts', 'ignored/**'], []],
@@ -112,7 +115,7 @@ it('scan and the Vue adapter work without Git', () => {
   }, false)
   try {
     vi.stubEnv('PATH', fx.dir)
-    assert.ok(scan('target', { cwd: fx.dir }).some(hit => hit.file === 'source.ts' && hit.kind === 'identifier-binding'))
+    assert.ok(scan('target', { ...{ cwd: fx.dir }, engine: vueServices() }).some(hit => hit.file === 'source.ts' && hit.kind === 'identifier-binding'))
     assert.equal(vueAdapter.hasFilesContaining!(fx.dir, 'target'), true)
     assert.equal(vueAdapter.hasFilesContaining!(fx.dir, 'missing'), false)
   }
@@ -174,5 +177,5 @@ it('fallback refuses regex searches without Git', () => {
 })
 
 it('missing working directory remains an error', () => {
-  assert.throws(() => findFiles('target', { cwd: '/ripast-missing-directory-for-test' }), /ENOENT/)
+  assert.throws(() => findFiles('target', { cwd: '/ripide-missing-directory-for-test' }), /ENOENT/)
 })
