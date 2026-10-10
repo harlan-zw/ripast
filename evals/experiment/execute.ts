@@ -14,6 +14,9 @@ const treatment: Record<Mode, string> = {
   forced: 'Use the pinned refactoring tool for supported mechanical transformations. Use direct edits for unsupported design work.',
   hybrid: 'Choose the pinned refactoring tool when its supported operation matches the mechanical task. Otherwise use direct edits.',
 }
+function commandCompleted(record: RecordedCommand): boolean {
+  return record.childLifecycle._tag === 'ProvenComplete' && record.exit._tag === 'Exited'
+}
 export async function executeExperiment(manifest: Manifest, directory: string, options: {
   allowModelCalls: boolean
 } = { allowModelCalls: false }) {
@@ -51,6 +54,30 @@ export async function executeExperiment(manifest: Manifest, directory: string, o
     seconds: number
     cpuSeconds: number
   }[] = []
+  const abortStudy = (reason: string): never => {
+    const checkpoint = {
+      _tag: 'Aborted',
+      reason,
+      manifestHash: frozen.hash,
+      runtimeStarted,
+      completed: new Date().toISOString(),
+      elapsedSeconds: (performance.now() - start) / 1000,
+      attempts,
+      records,
+      qualityGates,
+      independentGrading,
+      importedUsage,
+      summaries: aggregateAttempts(attempts, manifest.seed),
+      recordedUsage: records.map(record => ({
+        role: record.role,
+        phase: record.phase,
+        path: record.observedEvents.path,
+        usage: parseUsage(readFileSync(record.observedEvents.path, 'utf8'), record.completed, sha256(record.observedEvents.path)),
+      })),
+    }
+    writeFileSync(join(directory, 'abort-checkpoint.json'), `${JSON.stringify(checkpoint, null, 2)}\n`, { flag: 'wx', mode: 0o400 })
+    throw new Error(reason)
+  }
   writeFileSync(join(directory, 'schedule.json'), `${JSON.stringify(schedule, null, 2)}\n`, { flag: 'wx', mode: 0o400 })
   const dispatch = async (command: string[], cwd: string, base: string, phase: RecordedCommand['phase'], role: RecordedCommand['role'], env?: NodeJS.ProcessEnv) => {
     const record = await recordCommand({ command, cwd, directory: join(base, `command-${records.length}`), phase, role, timeoutMs: manifest.timeoutMs, tracing: manifest.tracing, env })
@@ -60,15 +87,15 @@ export async function executeExperiment(manifest: Manifest, directory: string, o
   for (const command of manifest.versions) {
     const result = await dispatch(command, process.cwd(), directory, 'setup', 'controller')
     if (!commandSucceeded(result))
-      throw new Error('A preregistered runtime version command failed. Its complete record is retained.')
+      abortStudy('A preregistered runtime version command failed. Its complete record is retained.')
   }
   for (const entry of schedule) {
     const integrity = verifyFrozenManifest(frozen)
     const artifacts = verifyArtifacts(manifest)
     if (integrity._tag === 'Err')
-      throw new Error(integrity.message)
+      abortStudy(integrity.message)
     if (artifacts._tag === 'Err')
-      throw new Error(artifacts.message)
+      abortStudy(artifacts.message)
     const task = manifest.tasks.find(t => t.id === entry.task)!
     const base = join(directory, `${task.id}-${entry.repeat}-${entry.mode}`)
     mkdirSync(base, { mode: 0o700 })
@@ -105,7 +132,7 @@ export async function executeExperiment(manifest: Manifest, directory: string, o
       const seconds = (performance.now() - preparationStart) / 1000
       attempts.push({ task: task.id, mode: entry.mode, cohort: task.cohort, repeat: entry.repeat, attempt: 0, quality: 'unavailable', seconds, setupSeconds: seconds, preparedSeconds: 0, usage: { _tag: 'Unavailable', reason: 'Preparation failed before model execution.' } })
       writeFileSync(join(base, 'outcome.json'), JSON.stringify({ _tag: 'Unavailable', reason: 'Preparation failed.', setup }, null, 2))
-      continue
+      abortStudy('Project preparation failed before model execution.')
     }
     const baseline = snapshotProject(project, task.generatedDirectories)
     const expected = expectedProject(baseline, task.expected)
@@ -121,6 +148,9 @@ export async function executeExperiment(manifest: Manifest, directory: string, o
       const usage = imported.length ? combineUsage(imported.map(source => parseUsage(readFileSync(source.path, 'utf8'), source.cutoff, sha256(source.path)))) : parseUsage(readFileSync(runner.observedEvents.path, 'utf8'), runner.completed, sha256(runner.observedEvents.path))
       const checked: RecordedCommand[] = []
       let quality: AttemptMetric['quality'] = runner.childLifecycle._tag === 'Unavailable' ? 'unavailable' : commandSucceeded(runner) ? 'passed' : runner.exit._tag === 'Exited' && runner.exit.code === 3 ? 'refused' : 'failed'
+      let infrastructureFailure = commandCompleted(runner) && runner.exit._tag === 'Exited' && [0, 3].includes(runner.exit.code)
+        ? undefined
+        : 'The arm runner failed or has incomplete child lifecycle.'
       const gates: {
         id: string
         _tag: 'Passed' | 'Failed' | 'Unavailable' | 'NotRun'
@@ -130,16 +160,27 @@ export async function executeExperiment(manifest: Manifest, directory: string, o
         for (const stage of task.checks) {
           const record = await dispatch(expand(stage.command), project, base, stage.phase, stage.role, environment)
           checked.push(record)
+          if (!commandCompleted(record)) {
+            quality = 'unavailable'
+            infrastructureFailure = 'A preregistered check has incomplete command lifecycle.'
+            break
+          }
           if (!commandSucceeded(record))
             quality = 'failed'
         }
-        for (const gate of task.qualityGates) {
+        for (const gate of infrastructureFailure ? [] : task.qualityGates) {
           const record = await dispatch(expand(gate.command), project, base, 'verification', 'controller', environment)
           checked.push(record)
-          const unavailable = record.exit._tag === 'Exited' && record.exit.code === 4
+          const unavailable = !commandCompleted(record) || (record.exit._tag === 'Exited' && record.exit.code === 4)
           gates[gates.findIndex(row => row.id === gate.id)] = { id: gate.id, _tag: commandSucceeded(record) ? 'Passed' : unavailable ? 'Unavailable' : 'Failed', required: gate.required }
           if (!commandSucceeded(record) && gate.required)
             quality = unavailable ? 'unavailable' : 'failed'
+          if (!commandCompleted(record)) {
+            quality = 'unavailable'
+            infrastructureFailure = 'A quality gate has incomplete command lifecycle.'
+          }
+          if (infrastructureFailure || (unavailable && gate.required))
+            break
         }
       }
       const gradingStarted = new Date().toISOString()
@@ -159,7 +200,11 @@ export async function executeExperiment(manifest: Manifest, directory: string, o
       qualityRecords.push(outcome)
       qualityGates.push(...gates.map(gate => ({ ...gate, task: task.id, mode: entry.mode, repeat: entry.repeat, attempt })))
       writeFileSync(join(base, `attempt-${attempt}.json`), `${JSON.stringify(outcome, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
-      if (quality === 'passed' || quality === 'unavailable')
+      if (infrastructureFailure)
+        abortStudy(infrastructureFailure)
+      if (quality === 'unavailable')
+        abortStudy('A required quality gate is unavailable.')
+      if (quality === 'passed')
         break
     }
   }
