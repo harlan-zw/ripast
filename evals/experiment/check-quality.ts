@@ -15,9 +15,14 @@ async function main() {
       ['node_modules', '.git', '.build'].includes(entry.name) ? [] : entry.isDirectory() ? authored(join(directory, entry.name)) : [join(directory, entry.name)])
   }
   const paths = authored(project)
-  const tracked = new Set(execFileSync('git', ['ls-files', '-z'], { cwd: project, encoding: 'utf8' }).split('\0'))
+  const record = process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY
+  assert.ok(record, 'Supply the experiment record directory.')
+  const baseline = readFileSync(join(record, 'baseline-commit.txt'), 'utf8').trim()
+  assert.match(baseline, /^[a-f0-9]{40,64}$/, 'Record the frozen fixture commit during preflight.')
+  const tracked = new Set(execFileSync('git', ['ls-tree', '-r', '--name-only', '-z', baseline], { cwd: project, encoding: 'utf8' }).split('\0'))
   assert.deepEqual(paths.filter(path => /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path) && !tracked.has(relative(project, path))), [], 'Remove every new test module.')
-  const build = join(process.env.RIPIDE_EXPERIMENT_RECORD_DIRECTORY!, 'oracle-build')
+  assert.deepEqual(paths.filter(path => relative(project, path).replaceAll('\\', '/').startsWith('.checks/') && /\.[cm]?[jt]sx?$/.test(path) && !tracked.has(relative(project, path))), [], 'Remove every new code helper from .checks.')
+  const build = join(record, 'oracle-build')
   mkdirSync(build, { recursive: true })
   writeFileSync(join(build, 'package.json'), '{"type":"commonjs"}')
   const scenario = checkCases.find(row => row.id === task)!

@@ -54,7 +54,7 @@ const manifest = parseManifest({
   repairs: 0,
   tracing: 'strace',
   commonInstructions: `This is a ${values.scope === 'projects' ? 'complete Git project' : 'Git source slice'} with a seeded bug. Dependencies are installed. Show failing assertions before editing, repair only the named function body, then show passing assertions. Preserve signatures, comments, other functions, existing tests, configuration, and dependencies. Use TypeScript for new code. Remove newly authored test modules. The supplied vitest, ripide, and check-behavior executables are on PATH. Do not install dependencies.`,
-  runners: Object.fromEntries(['direct', 'forced', 'hybrid'].map(mode => [mode, { model: values.model, reasoning: 'provider-default', command: [process.execPath, runner, mode, '{project}', '{promptFile}', '{task}', root, values.model!, opencode, values.variant!, values.scope!] }])),
+  runners: Object.fromEntries(['direct', 'forced', 'hybrid'].map(mode => [mode, { model: values.model, reasoning: 'provider-default', command: [process.execPath, runner, mode, '{project}', '{promptFile}', '{task}', root, values.model!, opencode, values.variant!, values.scope!, sourcePath] }])),
   artifacts: [...new Set(pinned)].map(path => ({ path, sha256: sha256(readFileSync(path)) })),
   versions: [[process.execPath, '--version'], ['pnpm', '--version'], ['opencode', '--version'], ['/usr/bin/strace', '--version']],
   usageImports: [],
@@ -75,7 +75,7 @@ const manifest = parseManifest({
             { command: [process.execPath, fileURLToPath(new URL('./check-project-setup.ts', import.meta.url)), '{project}', sourcePath, scenario.id], phase: 'setup', role: 'controller' },
           ]
         : [{ command: [process.execPath, runner, 'setup', '{project}'], phase: 'setup', role: 'controller' }]),
-      { command: [process.execPath, runner, 'preflight', '{project}', '-', scenario.id, root, values.model!, opencode, values.variant!, values.scope!], phase: 'setup', role: 'controller' },
+      { command: [process.execPath, runner, 'preflight', '{project}', '-', scenario.id, root, values.model!, opencode, values.variant!, values.scope!, sourcePath], phase: 'setup', role: 'controller' },
     ],
     checks: [
       { command: [process.execPath, quality, '{project}', scenario.id], phase: 'verification', role: 'controller' },
