@@ -2,6 +2,7 @@ import type { CommandDef } from 'citty'
 import type { ExportFilter, ProfileSink, Verification, VerifyMode } from 'ripide-api'
 import type { JsonTag } from './json.ts'
 import type { OutputPage } from './presentation/index.ts'
+import { Buffer } from 'node:buffer'
 import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -26,6 +27,7 @@ import {
   writeChanges,
 } from 'ripide-api'
 import { agent, isAgent } from 'std-env'
+import { runCheck } from './check.ts'
 import { defineStrictCommand as defineCommand } from './command.ts'
 import { createCliEngine, discoverCliAdapters, loadVueOperations } from './engine.ts'
 import { jsonResult, mutationTag } from './json.ts'
@@ -54,6 +56,7 @@ import {
   selectOutput,
   summarize,
 } from './presentation/index.ts'
+import { MAX_TEST_SOURCE_BYTES } from './test-result.ts'
 
 export type { JsonResult, JsonTag } from './json.ts'
 
@@ -1097,10 +1100,104 @@ const doctorCmd = defineCommand({
   },
 }, ['changed'])
 
+const checkCmd = defineCommand({
+  meta: { name: 'check', description: 'Run transient Vitest checks from stdin or list changes that need checks.' },
+  args: {
+    symbol: { type: 'positional', required: false, description: 'Exported function to import automatically.' },
+    from: { type: 'string', description: 'Source file. Required when the function name is ambiguous.' },
+    base: { type: 'string', description: 'Git baseline. Enables the change checklist and execution evidence.' },
+    config: { type: 'string', description: 'Vitest configuration file.' },
+    project: { type: 'string', description: 'Vitest project name.' },
+    timeout: { type: 'string', description: 'Execution deadline in milliseconds.', default: '30000' },
+    profile: profileArg,
+    json: { type: 'boolean', default: false },
+    minify: outputArgs.minify,
+    artifact: outputArgs.artifact,
+  },
+  async run({ args }) {
+    const { agentProfile } = resolveProfile(args.profile, !!args.json)
+    let source: string | undefined
+    if (args.symbol || args.from) {
+      if (process.stdin.isTTY)
+        throw new Error('Pipe TypeScript tests through stdin.')
+      const chunks: Buffer[] = []
+      let bytes = 0
+      for await (const chunk of process.stdin) {
+        const buffer = Buffer.from(chunk)
+        bytes += buffer.length
+        if (bytes > MAX_TEST_SOURCE_BYTES)
+          throw new Error('The test module exceeds the 1 MiB input limit.')
+        chunks.push(buffer)
+      }
+      source = Buffer.concat(chunks).toString('utf8')
+      if (!source.trim())
+        throw new Error('Pipe TypeScript tests through stdin.')
+    }
+    const timeoutMs = Number(args.timeout)
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647)
+      throw new Error('Option --timeout requires a positive integer below 2147483648 milliseconds.')
+    const report = await runCheck({ cwd: process.cwd(), symbol: args.symbol, from: args.from, base: args.base, source, config: args.config, project: args.project, timeoutMs })
+    if (report._tag === 'Run' && report.result._tag !== 'Passed')
+      process.exitCode = 1
+    if (args.json) {
+      const checklist = report.checklist
+      const compactChecklist = checklist && {
+        ...checklist,
+        items: checklist.items.filter(item => item.status !== 'executed' || item.uncoveredBranches).map(({ body, target, ...item }) => ({
+          ...item,
+          ...(target ? { target: { file: target.file, symbol: target.symbol, line: target.line } } : {}),
+        })),
+      }
+      const executedCoverage = report._tag === 'Run' ? report.result.coverage.filter(fn => fn.hits > 0) : []
+      const compact = !agentProfile
+        ? report
+        : report._tag === 'Run'
+          ? {
+              ...report,
+              ...(compactChecklist ? { checklist: compactChecklist } : {}),
+              result: {
+                ...report.result,
+                tests: report.result.tests.filter(test => test.state !== 'passed'),
+                coverage: executedCoverage.slice(0, 20).map(fn => ({ file: fn.file, name: fn.name, line: fn.startLine, hits: fn.hits, uncoveredBranches: fn.branches.flatMap(branch => branch.hits).filter(hits => hits === 0).length })),
+                coverageOmitted: Math.max(0, executedCoverage.length - 20),
+              },
+            }
+          : { ...report, checklist: compactChecklist }
+      emitJson(compact, args, report, 'save', report._tag === 'Run' && report.result._tag === 'Error' ? 'Error' : 'Result')
+      return
+    }
+    if (report._tag === 'Run') {
+      const result = report.result
+      process.stdout.write(`${result._tag}: ${result.counts.passed} passed, ${result.counts.failed} failed, ${result.counts.skipped} skipped\n`)
+      if (result._tag === 'Error')
+        process.stdout.write(`${result.message}\n`)
+      if (result._tag === 'TimedOut')
+        process.stdout.write(`Execution exceeded ${result.timeoutMs} ms.\n`)
+      for (const test of result.tests.filter(test => !agentProfile || test.state !== 'passed')) {
+        process.stdout.write(`${test.state}: ${test.name}\n`)
+        for (const error of test.errors) process.stdout.write(`${error.line ? `<stdin>:${error.line}: ` : ''}${error.message}\n`)
+      }
+      if (result.logs.stdout)
+        process.stderr.write(result.logs.stdout)
+      if (result.logs.stderr)
+        process.stderr.write(result.logs.stderr)
+    }
+    const checklist = report.checklist
+    if (checklist) {
+      process.stdout.write(`Checks: ${checklist.counts.pending} pending, ${checklist.counts.executed} executed, ${checklist.counts.stale} stale\n`)
+      for (const item of checklist.items.filter(item => !agentProfile || item.status !== 'executed' || item.uncoveredBranches)) {
+        process.stdout.write(`${item.status} ${item.kind} ${item.file}:${item.line} ${item.symbol}${item.target ? ` -> ${item.target.file}:${item.target.symbol}` : ''}${item.uncoveredBranches ? ` (${item.uncoveredBranches} uncovered branches)` : ''}\n`)
+      }
+      process.stdout.write('Execution evidence requires assertion review. Integration and API contracts remain pending.\n')
+    }
+  },
+})
+
 const command = defineCommand({
   meta: { name: 'ripide', description: 'AST-aware refactor primitives. ripgrep-prefiltered, dry-run by default.' },
   subCommands: {
     'scan': scanCmd,
+    'check': checkCmd,
     'tree': treeCmd,
     'unused': unusedCmd,
     'doctor': doctorCmd,

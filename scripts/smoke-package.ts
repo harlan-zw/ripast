@@ -22,6 +22,10 @@ try {
 import { parseSourceFile } from 'ripide-api/adapter'
 import { createVueExtension } from 'ripide-vue'
 import { formatHits } from 'ripide/presentation'
+import { runInlineTest } from 'ripide/check'
+const checked = await runInlineTest({ cwd: process.cwd(), from: 'source.ts', source: "import { test, expect } from 'vitest'; import { target } from './source.ts'; test('target', () => expect(target).toBe(1))" })
+if (checked._tag !== 'Passed')
+  throw new Error('SDK transient check failed: ' + JSON.stringify(checked))
 const extension = createVueExtension()
 const engine = createEngine({ extensions: [extension] })
 const result = await engine.rename('target', 'next', { cwd: process.cwd(), scope: 'source.ts', verifyMode: 'none' })
@@ -35,6 +39,15 @@ console.log(JSON.stringify({ changes: result.changes.length, rendered, vueMatch:
   const cliPackage = join(cwd, 'node_modules/ripide')
   const cliManifest = JSON.parse(readFileSync(join(cliPackage, 'package.json'), 'utf8'))
   const cli = join(cliPackage, cliManifest.bin.ripide)
+  writeFileSync(join(cwd, 'math.ts'), 'export function add(a: number, b: number) { return a + b }\n')
+  const checked = JSON.parse(execFileSync(process.execPath, [cli, 'check', 'add', '--from', 'math.ts', '--json'], {
+    cwd,
+    encoding: 'utf8',
+    input: 'test(\'adds\', () => expect(add(2, 3)).toBe(5))',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  }))
+  assert.equal(checked.data.result._tag, 'Passed')
+  assert.ok(checked.data.result.coverage.length > 0)
   const isolated = { ...process.env, PATH: cwd }
   const renamed = JSON.parse(run([cli, 'rename', 'target', 'next', '--verify-mode', 'none', '--json', '--profile', 'full'], isolated))
   assert.ok(renamed.data.changes.some((change: { after: string }) => change.after.includes('export const next')))
@@ -46,6 +59,6 @@ console.log(JSON.stringify({ changes: result.changes.length, rendered, vueMatch:
   assert.equal(sdk.vueMatch, true)
   assert.match(sdk.rendered, /source\.ts:1:14\s+identifier-binding\s+export const target = 1/)
   assert.match(sdk.rendered, /1 hits across 1 files/)
-  process.stdout.write('Packed CLI and SDK passed installation, typecheck, and rename checks.\n')
+  process.stdout.write('Packed CLI and SDK passed installation, typecheck, rename, and transient checks.\n')
 }
 finally { rmSync(cwd, { recursive: true, force: true }) }
