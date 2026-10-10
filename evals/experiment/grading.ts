@@ -16,6 +16,8 @@ export function snapshotProject(directory: string, generatedDirectories: string[
     string,
     string,
   ][] => {
+    if (name === 'node_modules' || name === '.git')
+      return []
     const relative = prefix ? `${prefix}/${name}` : name
     if (ignored.some(path => relative === path || relative.startsWith(`${path}/`)))
       return []

@@ -65,7 +65,8 @@ pnpm exec tsx evals/experiment/check-preflight.ts run ~/scratch/check-registrati
 pnpm exec tsx evals/experiment/cli.ts run --manifest ~/scratch/check-registration/check-manifest.json --out ~/scratch/check-results --allow-model-calls
 ```
 
-Use `--case unhead-real-caller` to register one case. Use `--timeout 360000` for a different preregistered deadline.
+Use `--case unhead-real-caller` to register one case. Use `--timeout 360000` to set the preregistered deadline.
+Use `--repeats 2` and `--seed 20261010` to repeat a reproducible serial schedule.
 Every revision needs fresh registration and result directories. Preserve failures and their recorded usage.
 These are pilots. One attempt per method cannot establish token or time savings.
 Source slices cannot establish whole-project typecheck, build, or framework compatibility.
@@ -75,6 +76,48 @@ A required independent gate preserves signatures and surrounding bytes, then ass
 The gate requires failing and passing JSON evidence, method adherence, and removal of named test modules.
 Generated helper directories remain allowed. The gate does not prove the quality of every agent assertion.
 No persistent test source is needed in the evaluated fixture after completion.
+
+## Optimize transient checks
+
+Use `--scope projects` for complete Git copies with original lockfiles, dependencies, and Vitest configurations.
+Setup builds and typechecks each project before seeding and committing the bug.
+Final gates repeat the project build and typecheck after repair.
+Unhead uses a private incremental typecheck cache inside each fresh project.
+An independent probe confirmed that changed source errors invalidate that cache.
+Nuxt runs its original typecheck command. No cache or dependency tree is shared between project copies.
+Existing tests remain unchanged. Newly authored test modules must be removed.
+The independent oracle compiles outside the project so its output cannot invalidate execution receipts.
+
+Register both instruction variants before model dispatch. Keep their source commits and runtime artifacts identical.
+The baseline gives the commands. The guided variant adds an ordered recipe and a final checklist summary.
+Each variant uses the same assertion, preservation, build, typecheck, and cleanup gates.
+
+```sh
+pnpm exec tsx evals/experiment/check-study.ts --scope projects --variant baseline --repeats 2 --out ~/scratch/check-baseline-registration
+pnpm exec tsx evals/experiment/check-study.ts --scope projects --variant guided --repeats 2 --out ~/scratch/check-guided-registration
+pnpm exec tsx evals/experiment/check-preflight.ts run ~/scratch/check-baseline-registration/check-manifest.json ~/scratch/check-project-preflight
+pnpm exec tsx evals/experiment/cli.ts run --manifest ~/scratch/check-baseline-registration/check-manifest.json --out ~/scratch/check-baseline-results --allow-model-calls
+pnpm exec tsx evals/experiment/cli.ts run --manifest ~/scratch/check-guided-registration/check-manifest.json --out ~/scratch/check-guided-results --allow-model-calls
+pnpm exec tsx evals/experiment/check-analyze.ts ~/scratch/check-baseline-results ~/scratch/check-guided-results ~/scratch/check-comparison.json
+```
+
+Commands record assertion hashes, source hashes, exits, and output bytes outside the evaluated project.
+Red must run against the seeded source. Green must run identical assertions against the submitted repair.
+Transient workflows must record repaired-function execution. Integration and API obligations remain pending for assertion review.
+Private evaluation evidence may retain assertion text. The evaluated project retains no new test modules.
+
+The comparison refuses changed models, source inputs, oracles, schedules, runtime artifacts, and budgets.
+It reports paired changes in uncached input, output, agent time, and prepared workflow time.
+Failed executions, assertion revisions, and tool output bytes identify the next optimization.
+All failed workflows remain in the paired resource totals. Faster candidates with lower quality receive `Reject`.
+Recorded timeouts continue only after tracing proves every child exited. Other infrastructure failures stop the study.
+
+Run the next iteration with fresh registration directories. Change one treatment at a time.
+Use another project or task to confirm a change selected from these traces.
+Reverse variant order in the next batch to investigate drift. Whole batches still cannot fully control provider drift.
+Two repeats support diagnosis. They cannot establish a general efficiency claim or fully counterbalance six mode orders.
+Use the held-out protocol below before advertising savings.
+For a focused preflight, append a registered case ID after the output directory.
 
 ## Register a held-out study
 

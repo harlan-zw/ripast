@@ -33,6 +33,7 @@ if (action === 'pass-then-fail') {
     repeats: 1,
     cache: 'uncontrolled',
     timeoutMs: 5000,
+    timeoutPolicy: 'stop-study',
     repairs: 1,
     commonInstructions: 'Rename old to next.',
     artifacts: [],

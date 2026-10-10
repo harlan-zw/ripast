@@ -193,18 +193,20 @@ export async function executeExperiment(manifest: Manifest, directory: string, o
       if (grade._tag === 'Failed' && quality === 'passed')
         quality = 'failed'
       const preparedSeconds = runner.seconds + checked.reduce((n, r) => n + r.seconds, 0) + gradingSeconds
-      const metric: AttemptMetric = { task: task.id, mode: entry.mode, cohort: task.cohort, repeat: entry.repeat, attempt, quality, seconds: preparedSeconds + (attempt === 0 ? setupSeconds : 0), setupSeconds: attempt === 0 ? setupSeconds : 0, preparedSeconds, usage: usage._tag === 'Ok' ? { _tag: 'Recorded', value: usage.value } : { _tag: 'Unavailable', reason: usage.message } }
+      const metric: AttemptMetric = { task: task.id, mode: entry.mode, cohort: task.cohort, repeat: entry.repeat, attempt, quality, seconds: preparedSeconds + (attempt === 0 ? setupSeconds : 0), setupSeconds: attempt === 0 ? setupSeconds : 0, preparedSeconds, armSeconds: runner.seconds, usage: usage._tag === 'Ok' ? { _tag: 'Recorded', value: usage.value } : { _tag: 'Unavailable', reason: usage.message } }
       attempts.push(metric)
       const commits = checked.filter(r => r.phase === 'commit')
       const outcome = { metric, grade, gates, usage, usageSource: imported.length ? { _tag: 'Imported', artifacts: imported } : { _tag: 'Observed', artifact: runner.observedEvents }, prompt: message, responseBoundary: runner.completed, completeCommitToolOutput: commits.length ? { _tag: 'Recorded', commands: commits.map(r => ({ completed: r.completed, exit: r.exit })) } : { _tag: 'Unavailable', reason: 'No separate commit command was registered. Runner completion does not prove a commit.' }, deliveryCompleted: new Date().toISOString() }
       qualityRecords.push(outcome)
       qualityGates.push(...gates.map(gate => ({ ...gate, task: task.id, mode: entry.mode, repeat: entry.repeat, attempt })))
       writeFileSync(join(base, `attempt-${attempt}.json`), `${JSON.stringify(outcome, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
-      if (infrastructureFailure)
+      const parent = runner.exit._tag === 'DescendantsTerminated' ? runner.exit.parent : runner.exit
+      const retainedTimeout = parent._tag === 'TimedOut' && runner.childLifecycle._tag === 'ProvenComplete' && manifest.timeoutPolicy === 'continue-study'
+      if (infrastructureFailure && !retainedTimeout)
         abortStudy(infrastructureFailure)
       if (quality === 'unavailable')
         abortStudy('A required quality gate is unavailable.')
-      if (quality === 'passed')
+      if (quality === 'passed' || retainedTimeout)
         break
     }
   }
