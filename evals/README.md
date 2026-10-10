@@ -28,6 +28,14 @@ pnpm eval --case rename --arm ripide --skill /path/to/previous/SKILL.md
 Options: `--model`, `--runs`, `--consumers`, `--case`, `--arm`, `--timeout`, `--out`, `--skill`, and `--preflight`.
 `--skill` includes the complete Skill in the RipIDE prompt, replacing the supplied exact CLI command.
 The runner records the Skill's SHA-256 hash. Without this option, the comparison does not exercise a Skill.
+The inline entry is already loaded. Agents read linked references only when needed.
+Each tool-arm project receives the complete local reference tree under `.ripide-eval-skill/`.
+Relative links resolve from their containing resource. Run metadata records every resource hash and byte count.
+Entry and reference bytes remain unchanged. Metadata is separate from instruction bytes.
+Missing references, escaping paths, and symlink resources stop preparation before model dispatch.
+External documentation URLs remain outside the allowed scope. External-directory restrictions stay enabled.
+Custom entry files use their own directory as the Skill base.
+These loading changes do not establish a measured resource improvement.
 Cases: `rename`, `rename-file`, and `move`.
 Arms: `ripide`, `agent`, and `both`.
 Counts and timeout seconds must be positive integers.
@@ -89,6 +97,7 @@ Four cases rename TypeScript symbols. Two rename static Vue class tokens.
 Each Vue case includes ten affected files and up to ten unrelated files.
 
 The RipIDE arm receives the current Skill. The baseline receives normal editing tools.
+The tool arm receives the same complete local reference tree and inline loading contract described above.
 Each case runs once per arm. Three projects run concurrently to bound elapsed time.
 Each project alternates its two arms. Timing remains sensitive to concurrent work and provider load.
 

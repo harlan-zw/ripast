@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { caseNames, gradeFiles, makeCase, parseEvents, summarize } from './core.ts'
+import { loadSkillContext, prepareSkillContext, skillResourceMetadata } from './skill-context.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -119,7 +120,10 @@ async function main() {
     throw new Error('--arm requires both, agent, or ripide')
   const arms: Arm[] = values.arm === 'both' ? ['ripide', 'agent'] : [values.arm as Arm]
   const cases = (values.case ? [values.case as CaseName] : caseNames).map(name => makeCase(name, consumers))
-  const skill = values.skill ? readFileSync(values.skill === 'current' ? join(root, 'packages/cli/skills/ripast/SKILL.md') : resolve(values.skill), 'utf8') : null
+  const loadedSkill = values.skill ? loadSkillContext(values.skill === 'current' ? join(root, 'packages/cli/skills/ripast/SKILL.md') : resolve(values.skill)) : null
+  if (loadedSkill?._tag === 'Err')
+    throw new Error(loadedSkill.message)
+  const skill = loadedSkill?.value ?? null
   const cli = join(root, 'packages/cli/bin/ripide.mjs')
   if (!existsSync(join(root, 'packages/cli/dist/cli.mjs')))
     throw new Error('If the CLI build is missing, run pnpm build')
@@ -143,7 +147,9 @@ async function main() {
     started: new Date().toISOString(),
     timeoutMs: timeout,
     preflight: values.preflight,
-    skillHash: skill ? createHash('sha256').update(skill).digest('hex') : null,
+    skillHash: skill?.resources.find(resource => resource.path === skill.entryPath)?.sha256 ?? null,
+    skillContext: skill ? skillResourceMetadata(skill) : null,
+    skillLoaderHash: createHash('sha256').update(readFileSync(join(root, 'evals/skill-context.ts'))).digest('hex'),
   }
   writeFileSync(join(out, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`)
   // Read only provider settings. Do not inherit global plugins, MCP, instructions, or Skills.
@@ -193,12 +199,13 @@ async function main() {
     if (auth)
       env.OPENCODE_AUTH_CONTENT = auth
     const checkCommand = `node '${tsc}' --noEmit`
+    const preparedSkill = arm === 'ripide' && skill ? prepareSkillContext(skill, project) : null
     const prompt = [
       evalCase.task,
       'Preserve the unrelated calculateTotal in src/decoy.ts and the string in src/labels.ts.',
-      'Do not change configuration or add dependencies. Work only in this fixture. Do not read external Skills or repositories.',
-      arm === 'ripide' && skill
-        ? `Use the provided RipIDE Skill. The ripide executable is on PATH.\n<skill>\n${skill}\n</skill>`
+      'Do not change configuration or add dependencies. Work only in this fixture. Do not read other Skills or repositories.',
+      preparedSkill
+        ? `Use the provided RipIDE Skill. The ripide executable is on PATH.\n${preparedSkill.prompt}`
         : arm === 'ripide'
           ? `Use the local ripide CLI for this refactor. It is on PATH. Run: ${evalCase.command}. You may inspect files and use --help.`
           : 'Use your normal read, edit, and shell tools. You may write scripts. Do not use RipIDE or another refactor CLI.',
